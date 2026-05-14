@@ -67,6 +67,10 @@ hermes-agent/
 `gateway.log` when running the gateway. Profile-aware via `get_hermes_home()`.
 Browse with `hermes logs [--follow] [--level ...] [--session ...]`.
 
+## Platform Reply Formatting
+
+- In Discord replies, avoid Markdown tables. Use compact bullets, numbered lists, or short labeled sections instead; tables render poorly in many Discord clients and are hard to review in threads.
+
 ## File Dependency Chain
 
 ```
