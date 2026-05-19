@@ -896,11 +896,29 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
             last_result = result
         return last_result
 
+    # --- Mattermost: native file attachment support via REST files API ---
+    if platform == Platform.MATTERMOST and media_files:
+        last_result = None
+        for i, chunk in enumerate(chunks):
+            is_last = (i == len(chunks) - 1)
+            result = await _send_mattermost(
+                pconfig.token,
+                pconfig.extra,
+                chat_id,
+                chunk,
+                media_files=media_files if is_last else None,
+                thread_id=thread_id,
+            )
+            if isinstance(result, dict) and result.get("error"):
+                return result
+            last_result = result
+        return last_result
+
     # --- Non-media platforms ---
     if media_files and not message.strip():
         return {
             "error": (
-                f"send_message MEDIA delivery is currently only supported for telegram, discord, matrix, weixin, signal, yuanbao and feishu; "
+                f"send_message MEDIA delivery is currently only supported for telegram, discord, matrix, weixin, signal, yuanbao, feishu and mattermost; "
                 f"target {platform.value} had only media attachments"
             )
         }
@@ -908,7 +926,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     if media_files:
         warning = (
             f"MEDIA attachments were omitted for {platform.value}; "
-            "native send_message media delivery is currently only supported for telegram, discord, matrix, weixin, signal, yuanbao and feishu"
+            "native send_message media delivery is currently only supported for telegram, discord, matrix, weixin, signal, yuanbao, feishu and mattermost"
         )
 
     last_result = None
@@ -1523,6 +1541,105 @@ async def _send_sms(auth_token, chat_id, message):
                 return {"success": True, "platform": "sms", "chat_id": chat_id, "message_id": msg_sid}
     except Exception as e:
         return _error(f"SMS send failed: {e}")
+
+
+async def _send_mattermost(token, extra, chat_id, message, media_files=None, thread_id=None):
+    """Send via Mattermost REST API, preserving native file attachments."""
+    try:
+        import aiohttp
+    except ImportError:
+        return {"error": "aiohttp not installed. Run: pip install aiohttp"}
+    try:
+        import mimetypes
+        from pathlib import Path
+
+        base_url = (extra.get("url") or os.getenv("MATTERMOST_URL", "")).rstrip("/")
+        token = token or os.getenv("MATTERMOST_TOKEN", "")
+        if not base_url or not token:
+            return {"error": "Mattermost not configured (MATTERMOST_URL, MATTERMOST_TOKEN required)"}
+
+        media_files = media_files or []
+        headers = {"Authorization": f"Bearer {token}"}
+        json_headers = {**headers, "Content-Type": "application/json"}
+        file_ids = []
+        uploaded_files = []
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
+            for media_path, _is_voice in media_files:
+                path = Path(media_path)
+                if not path.exists():
+                    return _error(f"Mattermost media file not found: {media_path}")
+                filename = path.name
+                content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+                form = aiohttp.FormData()
+                form.add_field("channel_id", chat_id)
+                form.add_field(
+                    "files",
+                    path.read_bytes(),
+                    filename=filename,
+                    content_type=content_type,
+                )
+                async with session.post(f"{base_url}/api/v4/files", headers=headers, data=form) as resp:
+                    if resp.status not in {200, 201}:
+                        body = await resp.text()
+                        return _error(f"Mattermost file upload error ({resp.status}): {body}")
+                    upload_data = await resp.json()
+                infos = upload_data.get("file_infos") or []
+                if not infos or not infos[0].get("id"):
+                    return _error("Mattermost file upload returned no file id")
+                file_id = infos[0]["id"]
+                file_ids.append(file_id)
+                uploaded_files.append({
+                    "id": file_id,
+                    "name": infos[0].get("name") or filename,
+                    "size": infos[0].get("size"),
+                    "mime_type": infos[0].get("mime_type") or content_type,
+                })
+
+            payload = {"channel_id": chat_id, "message": message or ""}
+            if file_ids:
+                payload["file_ids"] = file_ids
+            if thread_id:
+                payload["root_id"] = thread_id
+            if not payload["message"] and not file_ids:
+                return _error("No deliverable text or media remained after processing Mattermost send")
+
+            async with session.post(f"{base_url}/api/v4/posts", headers=json_headers, json=payload) as resp:
+                if resp.status not in {200, 201}:
+                    body = await resp.text()
+                    return _error(f"Mattermost API error ({resp.status}): {body}")
+                data = await resp.json()
+
+            post_file_ids = data.get("file_ids") or []
+            if file_ids:
+                missing = [fid for fid in file_ids if fid not in post_file_ids]
+                if missing:
+                    # Read back once: some Mattermost responses omit fields that
+                    # are present on the stored post. Treat missing file_ids as a
+                    # hard failure so callers never mistake a text-only post for
+                    # a successful file delivery.
+                    post_id = data.get("id")
+                    if post_id:
+                        async with session.get(f"{base_url}/api/v4/posts/{post_id}", headers=headers) as resp:
+                            if resp.status in {200, 201}:
+                                data = await resp.json()
+                                post_file_ids = data.get("file_ids") or []
+                                missing = [fid for fid in file_ids if fid not in post_file_ids]
+                    if missing:
+                        return _error("Mattermost post was created without uploaded file_ids; treating file delivery as failed")
+
+        result = {
+            "success": True,
+            "platform": "mattermost",
+            "chat_id": chat_id,
+            "message_id": data.get("id"),
+        }
+        if file_ids:
+            result["file_ids"] = file_ids
+            result["files"] = uploaded_files
+        return result
+    except Exception as e:
+        return _error(f"Mattermost send failed: {e}")
 
 
 async def _send_matrix(token, extra, chat_id, message):
