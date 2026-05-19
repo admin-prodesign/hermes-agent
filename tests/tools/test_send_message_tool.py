@@ -29,6 +29,7 @@ from gateway.config import Platform
 from tools.send_message_tool import (
     _is_telegram_thread_not_found,
     _parse_target_ref,
+    _send_mattermost,
     _send_matrix_via_adapter,
     _send_signal,
     _send_telegram,
@@ -571,6 +572,35 @@ class TestSendToPlatformChunking:
         assert send.await_count >= 3
         for call in send.await_args_list:
             assert len(call.args[2]) <= 2020  # each chunk fits the limit
+
+    def test_mattermost_media_files_are_routed_to_native_sender(self, tmp_path):
+        """Mattermost MEDIA tags must not fall through to text-only sends."""
+        xlsx_path = tmp_path / "report.xlsx"
+        xlsx_path.write_bytes(b"xlsx bytes")
+        send = AsyncMock(return_value={"success": True, "message_id": "post1", "file_ids": ["file1"]})
+
+        with patch("tools.send_message_tool._send_mattermost", send):
+            result = asyncio.run(
+                _send_to_platform(
+                    Platform.MATTERMOST,
+                    SimpleNamespace(enabled=True, token="***", extra={"url": "https://mm.example.com"}),
+                    "channel1",
+                    "Here is the file",
+                    thread_id="root1",
+                    media_files=[(str(xlsx_path), False)],
+                )
+            )
+
+        assert result["success"] is True
+        assert result["file_ids"] == ["file1"]
+        send.assert_awaited_once_with(
+            "***",
+            {"url": "https://mm.example.com"},
+            "channel1",
+            "Here is the file",
+            media_files=[(str(xlsx_path), False)],
+            thread_id="root1",
+        )
 
     def test_slack_messages_are_formatted_before_send(self, monkeypatch):
         _ensure_slack_mock(monkeypatch)
