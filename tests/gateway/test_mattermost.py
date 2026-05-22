@@ -690,6 +690,85 @@ class TestMattermostWebSocketParsing:
         assert msg_event.channel_context is None
 
     @pytest.mark.asyncio
+    async def test_pd_one_policy_bridge_injects_openclaw_policy_context(self, tmp_path):
+        """PD One profile can inject OpenClaw sender policy cache into context."""
+        cache = tmp_path / "users"
+        cache.mkdir()
+        (cache / "user_123.json").write_text(json.dumps({
+            "schema": "pd-one.mattermost-policy-resolution.v1",
+            "found": True,
+            "active": True,
+            "decision": "allow_dm",
+            "turnHandling": "scoped_dm_allowed",
+            "language": "zh-tw",
+            "roles": ["facilities"],
+            "safeScopes": ["facilities", "appsheet-readonly"],
+            "tools": {"reads": "allowed", "writes": "confirm"},
+            "approval": {"writes": False, "gatewayRestart": False},
+            "setupResponse": {"en": "setup needed"},
+        }), encoding="utf-8")
+        self.adapter.config.extra.update({
+            "pd_one_policy_bridge": True,
+            "pd_one_openclaw_workspace": "/openclaw/workspace",
+            "pd_one_policy_cache_users": str(cache),
+        })
+        post_data = {
+            "id": "post_root",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Can I update this?",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert "PD One OpenClaw permission bridge" in msg_event.channel_context
+        assert '"requesterMattermostUserId": "user_123"' in msg_event.channel_context
+        assert '"roles": ["facilities"]' in msg_event.channel_context
+        assert "mattermost-channels.md" in msg_event.channel_context
+        assert "require explicit approved-user authorization" in msg_event.channel_context
+
+    @pytest.mark.asyncio
+    async def test_pd_one_policy_bridge_missing_cache_marks_lookup_failure(self, tmp_path):
+        """Missing OpenClaw policy cache entries are explicit, not silent allows."""
+        cache = tmp_path / "users"
+        cache.mkdir()
+        self.adapter.config.extra.update({
+            "pd_one_policy_bridge": True,
+            "pd_one_openclaw_workspace": "/openclaw/workspace",
+            "pd_one_policy_cache_users": str(cache),
+        })
+        post_data = {
+            "id": "post_root",
+            "user_id": "unknown_user",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Help me",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@unknown",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert "PD One OpenClaw permission bridge" in msg_event.channel_context
+        assert '"found": false' in msg_event.channel_context
+        assert "do not do substantive scoped work" in msg_event.channel_context
+
+    @pytest.mark.asyncio
     async def test_invalid_post_json_ignored(self):
         """Invalid JSON in data.post should be silently ignored."""
         event = {
