@@ -1493,10 +1493,30 @@ class TestMattermostMentionBehavior:
             assert self.adapter.handle_message.called
 
     @pytest.mark.asyncio
+    async def test_config_require_mention_false_responds_to_all(self):
+        """config.extra require_mention=false should respond without env vars."""
+        self.adapter.config.extra["require_mention"] = False
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MATTERMOST_REQUIRE_MENTION", None)
+            os.environ.pop("MATTERMOST_FREE_RESPONSE_CHANNELS", None)
+            await self.adapter._handle_ws_event(self._make_event("hello"))
+            assert self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
     async def test_free_response_channel_responds_without_mention(self):
         """Messages in free-response channels don't need @mention."""
         with patch.dict(os.environ, {"MATTERMOST_FREE_RESPONSE_CHANNELS": "chan_456,chan_789"}):
             os.environ.pop("MATTERMOST_REQUIRE_MENTION", None)
+            await self.adapter._handle_ws_event(self._make_event("hello", channel_id="chan_456"))
+            assert self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
+    async def test_config_free_response_channel_responds_without_mention(self):
+        """config.extra free_response_channels should bypass mention requirement."""
+        self.adapter.config.extra["free_response_channels"] = ["chan_456", "chan_789"]
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MATTERMOST_REQUIRE_MENTION", None)
+            os.environ.pop("MATTERMOST_FREE_RESPONSE_CHANNELS", None)
             await self.adapter._handle_ws_event(self._make_event("hello", channel_id="chan_456"))
             assert self.adapter.handle_message.called
 
