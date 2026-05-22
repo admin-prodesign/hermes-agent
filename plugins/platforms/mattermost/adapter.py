@@ -1995,12 +1995,22 @@ class MattermostAdapter(BasePlatformAdapter):
                 )
                 return
 
-            require_mention = os.getenv(
-                "MATTERMOST_REQUIRE_MENTION", "true"
-            ).lower() not in {"false", "0", "no"}
+            require_mention_raw = None
+            if self.config.extra:
+                require_mention_raw = self.config.extra.get("require_mention")
+            if require_mention_raw is None:
+                require_mention_raw = os.getenv("MATTERMOST_REQUIRE_MENTION", "true")
+            require_mention = str(require_mention_raw).lower() not in {"false", "0", "no"}
 
-            free_channels_raw = os.getenv("MATTERMOST_FREE_RESPONSE_CHANNELS", "")
-            free_channels = {ch.strip() for ch in free_channels_raw.split(",") if ch.strip()}
+            free_channels_raw = None
+            if self.config.extra:
+                free_channels_raw = self.config.extra.get("free_response_channels")
+            if free_channels_raw is None:
+                free_channels_raw = os.getenv("MATTERMOST_FREE_RESPONSE_CHANNELS", "")
+            if isinstance(free_channels_raw, list):
+                free_channels = {str(ch).strip() for ch in free_channels_raw if str(ch).strip()}
+            else:
+                free_channels = {ch.strip() for ch in str(free_channels_raw).split(",") if ch.strip()}
             is_free_channel = channel_id in free_channels
 
             mention_patterns = [
