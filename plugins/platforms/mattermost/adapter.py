@@ -266,6 +266,88 @@ class MattermostAdapter(BasePlatformAdapter):
             return data["root_id"]
         return post_id
 
+    def _format_thread_context_post(self, post: Dict[str, Any]) -> Optional[str]:
+        """Format a Mattermost thread post for channel_context injection."""
+        if not post or post.get("delete_at"):
+            return None
+        message = str(post.get("message") or "").strip()
+        file_ids = post.get("file_ids") or []
+        if not message and not file_ids:
+            return None
+        author = str(post.get("user_id") or "unknown").strip() or "unknown"
+        parts = []
+        if message:
+            parts.append(message)
+        if file_ids:
+            parts.append(f"[attachments: {', '.join(map(str, file_ids))}]")
+        return f"[{author}] " + " ".join(parts)
+
+    async def _fetch_thread_context(
+        self,
+        root_id: Optional[str],
+        triggering_post_id: Optional[str],
+    ) -> Tuple[Optional[str], List[str]]:
+        """Fetch and format Mattermost thread history before the triggering post.
+
+        Hermes already uses Mattermost root_id as thread_id for session keys.
+        This fills the missing bootstrap case: a first @mention in an existing
+        thread should show the root post and earlier replies even when Hermes
+        was not mentioned at the root.
+        """
+        if not root_id:
+            return None, []
+        try:
+            thread = await self._api_get(f"posts/{root_id}/thread")
+        except Exception as exc:
+            logger.warning("Mattermost: failed to fetch thread context for %s: %s", root_id, exc)
+            return None, []
+
+        posts_by_id = thread.get("posts") if isinstance(thread, dict) else None
+        if not isinstance(posts_by_id, dict):
+            return None, []
+        order = thread.get("order") if isinstance(thread, dict) else None
+        if not isinstance(order, list):
+            order = sorted(
+                posts_by_id,
+                key=lambda pid: int(posts_by_id.get(pid, {}).get("create_at") or 0),
+            )
+
+        max_posts = int(self.config.extra.get("thread_context_max_posts", 40) or 40)
+        max_chars = int(self.config.extra.get("thread_context_max_chars", 12000) or 12000)
+        max_files = int(self.config.extra.get("thread_context_max_files", 20) or 20)
+        lines: List[str] = []
+        thread_file_ids: List[str] = []
+        for post_id in order:
+            if post_id == triggering_post_id:
+                continue
+            post = posts_by_id.get(post_id)
+            if not isinstance(post, dict):
+                continue
+            for file_id in post.get("file_ids") or []:
+                file_id_str = str(file_id)
+                if file_id_str not in thread_file_ids:
+                    thread_file_ids.append(file_id_str)
+            formatted = self._format_thread_context_post(post)
+            if formatted:
+                lines.append(formatted)
+
+        omitted = 0
+        if len(lines) > max_posts:
+            omitted = len(lines) - max_posts
+            lines = lines[-max_posts:]
+        thread_file_ids = thread_file_ids[-max_files:] if max_files > 0 else []
+        if not lines:
+            return None, thread_file_ids
+
+        body = "\n".join(lines)
+        if len(body) > max_chars:
+            body = "[older thread context truncated]\n" + body[-max_chars:]
+        header = f"[Mattermost thread context: root={root_id}"
+        if omitted:
+            header += f"; omitted_older_posts={omitted}"
+        header += "]"
+        return f"{header}\n{body}", thread_file_ids
+
     async def send(
         self,
         chat_id: str,
@@ -788,9 +870,16 @@ class MattermostAdapter(BasePlatformAdapter):
 
         # Thread support: if the post is in a thread, use root_id.
         thread_id = post.get("root_id") or None
+        thread_context: Optional[str] = None
+        thread_file_ids: List[str] = []
+        if thread_id:
+            thread_context, thread_file_ids = await self._fetch_thread_context(thread_id, post_id)
 
         # Determine message type.
-        file_ids = post.get("file_ids") or []
+        file_ids = [str(fid) for fid in (post.get("file_ids") or [])]
+        for fid in thread_file_ids:
+            if fid not in file_ids:
+                file_ids.append(fid)
         msg_type = MessageType.TEXT
         if message_text.startswith("/"):
             msg_type = MessageType.COMMAND
@@ -866,6 +955,7 @@ class MattermostAdapter(BasePlatformAdapter):
             media_urls=media_urls if media_urls else None,
             media_types=media_types if media_types else None,
             channel_prompt=_channel_prompt,
+            channel_context=thread_context,
         )
 
         await self.handle_message(msg_event)
