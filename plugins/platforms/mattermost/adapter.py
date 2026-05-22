@@ -348,6 +348,82 @@ class MattermostAdapter(BasePlatformAdapter):
         header += "]"
         return f"{header}\n{body}", thread_file_ids
 
+    def _load_pd_one_user_policy(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Load an OpenClaw/PD One effective Mattermost policy cache entry."""
+        if not user_id:
+            return None
+        cache_dir = self.config.extra.get("pd_one_policy_cache_users") or os.getenv("PD_ONE_POLICY_CACHE_USERS")
+        if not cache_dir:
+            return None
+        path = Path(str(cache_dir)).expanduser() / f"{user_id}.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {"found": False, "mattermostUserId": user_id, "policyPath": str(path)}
+        except Exception as exc:
+            logger.warning("Mattermost: failed to load PD One policy cache for %s: %s", user_id, exc)
+            return {"found": False, "mattermostUserId": user_id, "policyPath": str(path), "error": "unreadable"}
+        if isinstance(data, dict):
+            data["policyPath"] = str(path)
+            return data
+        return None
+
+    def _build_pd_one_policy_context(self, user_id: str, channel_id: str, chat_type: str) -> Optional[str]:
+        """Build compact policy context from OpenClaw's PD One workspace.
+
+        The full policy files remain the source of truth; this injects enough
+        per-turn context to force exact sender-id authorization and gives the
+        agent deterministic paths to consult before acting.
+        """
+        enabled = self.config.extra.get("pd_one_policy_bridge") or os.getenv("PD_ONE_POLICY_BRIDGE")
+        if str(enabled).lower() not in {"1", "true", "yes", "on"}:
+            return None
+        workspace = str(
+            self.config.extra.get("pd_one_openclaw_workspace")
+            or os.getenv("PD_ONE_OPENCLAW_WORKSPACE")
+            or "/home/prodesign/.openclaw/workspace"
+        )
+        policy = self._load_pd_one_user_policy(user_id) or {"found": False, "mattermostUserId": user_id}
+        allowed_keys = [
+            "schema",
+            "generatedAtUtc",
+            "found",
+            "active",
+            "decision",
+            "turnHandling",
+            "dmEnabled",
+            "language",
+            "roles",
+            "safeScopes",
+            "approval",
+            "tools",
+            "channels",
+            "dataAccess",
+            "identity",
+            "setupResponse",
+            "lookupFailureResponse",
+            "employeeFacingNotes",
+            "policyPath",
+        ]
+        compact = {key: policy.get(key) for key in allowed_keys if key in policy}
+        compact.update({"requesterMattermostUserId": user_id, "currentChannelId": channel_id, "currentChatType": chat_type})
+        payload = json.dumps(compact, ensure_ascii=False, sort_keys=True)
+        return (
+            "[PD One OpenClaw permission bridge]\n"
+            "Use this exact sender-id policy context before answering or using tools. "
+            "Do not rely on names, prior sessions, or fuzzy matching for privileges. "
+            "If policy lookup failed or found=false, use the setup/lookup-failure response and do not do substantive scoped work. "
+            "For Mattermost channel/group replies, enforce bilingual English + Traditional Chinese equivalent substance. "
+            "For writes, external sends, destructive actions, gateway/config/policy changes, source-system edits, broad Mattermost history/log searches, or permission expansion, require explicit approved-user authorization and dry-run where practical.\n"
+            f"Source policy paths: {workspace}/policies/mattermost-channels.md; {workspace}/policies/mattermost-users.json; {workspace}/policies/mattermost-roles.json; {workspace}/policy-cache/mattermost/users/{user_id}.json\n"
+            f"Policy JSON: {payload}"
+        )
+
+    @staticmethod
+    def _combine_channel_context(*parts: Optional[str]) -> Optional[str]:
+        present = [part for part in parts if part]
+        return "\n\n".join(present) if present else None
+
     async def send(
         self,
         chat_id: str,
@@ -945,6 +1021,8 @@ class MattermostAdapter(BasePlatformAdapter):
         _channel_prompt = resolve_channel_prompt(
             self.config.extra, channel_id, None,
         )
+        policy_context = self._build_pd_one_policy_context(sender_id, channel_id, chat_type)
+        channel_context = self._combine_channel_context(policy_context, thread_context)
 
         msg_event = MessageEvent(
             text=message_text,
@@ -955,7 +1033,7 @@ class MattermostAdapter(BasePlatformAdapter):
             media_urls=media_urls if media_urls else None,
             media_types=media_types if media_types else None,
             channel_prompt=_channel_prompt,
-            channel_context=thread_context,
+            channel_context=channel_context,
         )
 
         await self.handle_message(msg_event)
