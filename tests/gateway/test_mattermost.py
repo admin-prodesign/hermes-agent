@@ -613,6 +613,83 @@ class TestMattermostWebSocketParsing:
         assert msg_event.source.thread_id == "root_post_123"
 
     @pytest.mark.asyncio
+    async def test_thread_reply_fetches_root_thread_context(self):
+        """A mention in an existing thread should prepend earlier thread posts."""
+        post_data = {
+            "id": "post_reply",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id What did we decide?",
+            "root_id": "root_post_123",
+        }
+        self.adapter._api_get = AsyncMock(return_value={
+            "order": ["root_post_123", "older_reply", "post_reply"],
+            "posts": {
+                "root_post_123": {
+                    "id": "root_post_123",
+                    "user_id": "user_root",
+                    "message": "Original question before Hermes was mentioned",
+                    "create_at": 1000,
+                },
+                "older_reply": {
+                    "id": "older_reply",
+                    "user_id": "user_older",
+                    "message": "Earlier answer in the Mattermost thread",
+                    "file_ids": ["prior_file_1"],
+                    "create_at": 2000,
+                },
+                "post_reply": post_data,
+            },
+        })
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        self.adapter._api_get.assert_any_await("posts/root_post_123/thread")
+        self.adapter._api_get.assert_any_await("files/prior_file_1/info")
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.source.thread_id == "root_post_123"
+        assert "Mattermost thread context" in msg_event.channel_context
+        assert "Original question before Hermes was mentioned" in msg_event.channel_context
+        assert "Earlier answer in the Mattermost thread" in msg_event.channel_context
+        assert "prior_file_1" in msg_event.channel_context
+        assert "What did we decide?" not in msg_event.channel_context
+
+    @pytest.mark.asyncio
+    async def test_thread_context_fetch_failure_does_not_drop_message(self):
+        """Thread API failures should not prevent the triggering mention from running."""
+        post_data = {
+            "id": "post_reply",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Continue",
+            "root_id": "root_post_123",
+        }
+        self.adapter._api_get = AsyncMock(side_effect=RuntimeError("thread unavailable"))
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        assert self.adapter.handle_message.called
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.text == "Continue"
+        assert msg_event.channel_context is None
+
+    @pytest.mark.asyncio
     async def test_invalid_post_json_ignored(self):
         """Invalid JSON in data.post should be silently ignored."""
         event = {
