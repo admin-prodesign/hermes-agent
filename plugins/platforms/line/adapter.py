@@ -71,10 +71,12 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
 import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import quote as _urlquote
@@ -689,6 +691,19 @@ class LineAdapter(BasePlatformAdapter):
             os.getenv("LINE_ALLOWED_ROOMS", "")
         ) | set(extra.get("allowed_rooms", []))
 
+        # Capture-only groups: persist inbound text/media, but do not route to
+        # the conversational agent or send LINE replies. This is for logbook
+        # style groups where PD One should be a read-only recorder.
+        self.capture_only_groups = _csv_set(
+            os.getenv("LINE_CAPTURE_ONLY_GROUPS", "")
+        ) | set(extra.get("capture_only_groups", []))
+        capture_dir = (
+            os.getenv("LINE_CAPTURE_LOG_DIR")
+            or extra.get("capture_log_dir")
+            or str(Path(os.getenv("HERMES_HOME", "~/.hermes")).expanduser() / "line_captures")
+        )
+        self.capture_log_dir = Path(capture_dir).expanduser() if capture_dir else None
+
         # Slow-LLM postback button threshold
         try:
             self.slow_response_threshold = float(
@@ -991,7 +1006,78 @@ class LineAdapter(BasePlatformAdapter):
             media_types=media_types,
         )
 
+        if chat_type == "group" and chat_id in self.capture_only_groups:
+            self._capture_event(event_obj, msg_type=msg_type, chat_id=chat_id, user_id=user_id)
+            logger.info("LINE: captured read-only group event from %s in %s", user_id, chat_id)
+            return
+
         await self.handle_message(event_obj)
+
+    def _capture_event(
+        self,
+        event_obj: MessageEvent,
+        *,
+        msg_type: str,
+        chat_id: str,
+        user_id: str,
+    ) -> None:
+        """Persist an allowed read-only group event as JSONL plus durable media copies."""
+        if not self.capture_log_dir:
+            return
+        now = datetime.now(timezone.utc).astimezone()
+        root = self.capture_log_dir / chat_id
+        media_records: List[Dict[str, Any]] = []
+
+        media_month = now.strftime("%Y-%m")
+        for idx, media_path in enumerate(event_obj.media_urls or []):
+            src = Path(str(media_path)).expanduser()
+            record: Dict[str, Any] = {
+                "type": (
+                    (event_obj.media_types or [msg_type])[idx]
+                    if idx < len(event_obj.media_types or [])
+                    else msg_type
+                ),
+                "cache_path": str(src),
+            }
+            try:
+                if src.exists():
+                    media_dir = root / "media" / media_month
+                    media_dir.mkdir(parents=True, exist_ok=True)
+                    suffix = src.suffix or ".bin"
+                    safe_message_id = re.sub(
+                        r"[^A-Za-z0-9_.-]+",
+                        "_",
+                        event_obj.message_id or uuid.uuid4().hex,
+                    )
+                    dest = media_dir / (
+                        f"{now.strftime('%Y%m%d-%H%M%S')}-{safe_message_id}-{idx}{suffix}"
+                    )
+                    shutil.copy2(src, dest)
+                    record.update({"path": str(dest), "bytes": dest.stat().st_size})
+            except Exception as exc:
+                record["copy_error"] = str(exc)
+                logger.warning("LINE: failed to persist captured media %s: %s", src, exc)
+            media_records.append(record)
+
+        raw = dict(event_obj.raw_message or {})
+        raw.pop("replyToken", None)  # short-lived credential-like token; do not persist
+        row = {
+            "captured_at": now.isoformat(),
+            "platform": "line",
+            "chat_type": "group",
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "message_id": event_obj.message_id,
+            "webhook_event_id": raw.get("webhookEventId"),
+            "message_type": msg_type,
+            "text": event_obj.text,
+            "media": media_records,
+            "raw_event": raw,
+        }
+        log_path = root / f"{media_month}.jsonl"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
     async def _handle_postback_event(self, event: Dict[str, Any]) -> None:
         """User tapped the slow-LLM postback button — deliver cached payload."""

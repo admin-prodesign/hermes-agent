@@ -642,6 +642,38 @@ class TestAdapterInit:
         assert asyncio.run(ad.get_chat_info("C123"))["type"] == "group"
         assert asyncio.run(ad.get_chat_info("R123"))["type"] == "channel"
 
+    def test_capture_only_group_logs_without_agent_reply(self, monkeypatch, tmp_path):
+        for k in ("LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET", "LINE_CAPTURE_ONLY_GROUPS"):
+            monkeypatch.delenv(k, raising=False)
+        from gateway.config import PlatformConfig
+
+        ad = LineAdapter(PlatformConfig(enabled=True, extra={
+            "channel_access_token": "tok",
+            "channel_secret": "sec",
+            "allowed_groups": ["Cjanitor"],
+            "capture_only_groups": ["Cjanitor"],
+            "capture_log_dir": str(tmp_path),
+        }))
+        ad.handle_message = AsyncMock()
+        event = {
+            "type": "message",
+            "webhookEventId": "evt-capture-1",
+            "replyToken": "temporary-token-not-persisted",
+            "source": {"type": "group", "groupId": "Cjanitor", "userId": "Uworker"},
+            "message": {"type": "text", "id": "msg1", "text": "打掃 2F 廁所"},
+        }
+
+        asyncio.run(ad._handle_message_event(event))
+
+        ad.handle_message.assert_not_called()
+        logs = list((tmp_path / "Cjanitor").glob("*.jsonl"))
+        assert len(logs) == 1
+        row = json.loads(logs[0].read_text(encoding="utf-8").strip())
+        assert row["chat_id"] == "Cjanitor"
+        assert row["user_id"] == "Uworker"
+        assert row["text"] == "打掃 2F 廁所"
+        assert "replyToken" not in row["raw_event"]
+
 
 # ---------------------------------------------------------------------------
 # 9. Inbound message-type classification
