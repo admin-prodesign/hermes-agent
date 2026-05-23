@@ -674,6 +674,30 @@ class TestAdapterInit:
         assert row["text"] == "打掃 2F 廁所"
         assert "replyToken" not in row["raw_event"]
 
+    def test_audio_download_uses_audio_cache(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "t")
+        monkeypatch.setenv("LINE_CHANNEL_SECRET", "s")
+        from gateway.config import PlatformConfig
+
+        ad = LineAdapter(PlatformConfig(enabled=True))
+
+        class _FakeClient:
+            async def fetch_content(self, message_id):
+                return b"audio-bytes"
+
+        cached = tmp_path / "voice.m4a"
+        def _cache_audio(data, ext):
+            cached.write_bytes(data)
+            return str(cached)
+
+        monkeypatch.setattr(_line, "cache_audio_from_bytes", _cache_audio)
+        ad._client = _FakeClient()
+
+        path = asyncio.run(ad._download_media("voice-msg", "audio"))
+
+        assert path == str(cached)
+        assert cached.read_bytes() == b"audio-bytes"
+
 
 # ---------------------------------------------------------------------------
 # 9. Inbound message-type classification
