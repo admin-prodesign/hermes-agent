@@ -71,10 +71,12 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
 import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import quote as _urlquote
@@ -1017,6 +1019,11 @@ class LineAdapter(BasePlatformAdapter):
             media_urls=media_urls,
             media_types=media_types,
         )
+
+        if chat_type == "group" and chat_id in self.capture_only_groups:
+            self._capture_event(event_obj, msg_type=msg_type, chat_id=chat_id, user_id=user_id)
+            logger.info("LINE: captured read-only group event from %s in %s", user_id, chat_id)
+            return
 
         await self.handle_message(event_obj)
 
