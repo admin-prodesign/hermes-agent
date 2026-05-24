@@ -675,6 +675,51 @@ class TestAdapterInit:
         assert row["text"] == "打掃 2F 廁所"
         assert "replyToken" not in row["raw_event"]
 
+    def test_capture_only_group_logs_image_media_without_agent_reply(self, monkeypatch, tmp_path):
+        for k in ("LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET", "LINE_CAPTURE_ONLY_GROUPS"):
+            monkeypatch.delenv(k, raising=False)
+        from gateway.config import PlatformConfig
+
+        cached_image = tmp_path / "cached.jpg"
+        cached_image.write_bytes(b"image-bytes")
+
+        ad = LineAdapter(PlatformConfig(enabled=True, extra={
+            "channel_access_token": "tok",
+            "channel_secret": "sec",
+            "allowed_groups": ["Cjanitor"],
+            "capture_only_groups": ["Cjanitor"],
+            "capture_log_dir": str(tmp_path / "captures"),
+        }))
+        ad.handle_message = AsyncMock()
+
+        async def _download_media(message_id, msg_type):
+            assert message_id == "img1"
+            assert msg_type == "image"
+            return str(cached_image)
+
+        ad._download_media = _download_media
+        event = {
+            "type": "message",
+            "webhookEventId": "evt-capture-image-1",
+            "replyToken": "temporary-token-not-persisted",
+            "source": {"type": "group", "groupId": "Cjanitor", "userId": "Uworker"},
+            "message": {"type": "image", "id": "img1"},
+        }
+
+        asyncio.run(ad._handle_message_event(event))
+
+        ad.handle_message.assert_not_called()
+        logs = list((tmp_path / "captures" / "Cjanitor").glob("*.jsonl"))
+        assert len(logs) == 1
+        row = json.loads(logs[0].read_text(encoding="utf-8").strip())
+        assert row["message_type"] == "image"
+        assert row["text"] == "[image]"
+        assert row["media"][0]["type"] == "image"
+        copied = row["media"][0]["path"]
+        assert os.path.exists(copied)
+        assert open(copied, "rb").read() == b"image-bytes"
+        assert "replyToken" not in row["raw_event"]
+
     def test_audio_download_uses_audio_cache(self, monkeypatch, tmp_path):
         monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "t")
         monkeypatch.setenv("LINE_CHANNEL_SECRET", "s")
