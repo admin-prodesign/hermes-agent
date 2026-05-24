@@ -13737,6 +13737,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
             from hermes_cli.tools_config import _get_platform_tools
             enabled_toolsets = sorted(_get_platform_tools(user_config, platform_key))
+            from gateway.pd_one_channel_scopes import (
+                build_scope_prompt,
+                resolve_pd_one_channel_scope,
+                scoped_toolsets,
+            )
+            pd_one_scope = resolve_pd_one_channel_scope(user_config, platform_key, source.chat_id)
+            enabled_toolsets = scoped_toolsets(enabled_toolsets, pd_one_scope)
             agent_cfg = user_config.get("agent") or {}
             disabled_toolsets = agent_cfg.get("disabled_toolsets") or None
 
@@ -13752,6 +13759,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # Enrich the prompt with image descriptions so the background
             # agent can see user-attached images (same as the main flow).
             enriched_prompt = prompt
+            scope_prompt = build_scope_prompt(pd_one_scope, channel_id=source.chat_id)
+            if scope_prompt:
+                enriched_prompt = f"{scope_prompt}\n\n[New background task]\n{enriched_prompt}"
             if media_urls:
                 image_paths = []
                 for i, path in enumerate(media_urls):
@@ -17551,6 +17561,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         from hermes_cli.tools_config import _get_platform_tools
         enabled_toolsets = sorted(_get_platform_tools(user_config, platform_key))
+        from gateway.pd_one_channel_scopes import (
+            build_scope_prompt,
+            resolve_pd_one_channel_scope,
+            scoped_toolsets,
+        )
+        pd_one_scope = resolve_pd_one_channel_scope(user_config, platform_key, source.chat_id)
+        enabled_toolsets = scoped_toolsets(enabled_toolsets, pd_one_scope)
         agent_cfg_local = user_config.get("agent") or {}
         disabled_toolsets = agent_cfg_local.get("disabled_toolsets") or None
 
@@ -18534,6 +18551,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # channel_overrides system_prompt (or global ephemeral), and gateway
             # ephemeral prompt from _get_system_prompt_for_channel.
             combined_ephemeral = context_prompt or ""
+            scope_prompt = build_scope_prompt(pd_one_scope, channel_id=source.chat_id)
+            if scope_prompt:
+                combined_ephemeral = (combined_ephemeral + "\n\n" + scope_prompt).strip()
             event_channel_prompt = (channel_prompt or "").strip()
             if event_channel_prompt:
                 combined_ephemeral = (combined_ephemeral + "\n\n" + event_channel_prompt).strip()

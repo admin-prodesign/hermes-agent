@@ -1238,6 +1238,12 @@ def load_gateway_config() -> GatewayConfig:
                         bridged["channel_prompts"] = {str(k): v for k, v in channel_prompts.items()}
                     else:
                         bridged["channel_prompts"] = channel_prompts
+                if plat == Platform.MATTERMOST and "pd_one_channel_scopes" in platform_cfg:
+                    scopes = platform_cfg["pd_one_channel_scopes"]
+                    if isinstance(scopes, dict):
+                        bridged["pd_one_channel_scopes"] = {str(k): v for k, v in scopes.items()}
+                    else:
+                        bridged["pd_one_channel_scopes"] = scopes
                 if "gateway_restart_notification" in platform_cfg:
                     bridged["gateway_restart_notification"] = platform_cfg["gateway_restart_notification"]
                 if "typing_indicator" in platform_cfg:
