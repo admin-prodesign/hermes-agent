@@ -621,6 +621,13 @@ def _truthy_env(name: str, default: bool = False) -> bool:
     return v.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _transcribe_audio_for_capture(path: str) -> Dict[str, Any]:
+    """Transcribe captured LINE audio with Hermes' configured STT provider."""
+    from tools.transcription_tools import transcribe_audio
+
+    return transcribe_audio(path)
+
+
 # ---------------------------------------------------------------------------
 # Adapter
 # ---------------------------------------------------------------------------
@@ -691,6 +698,10 @@ class LineAdapter(BasePlatformAdapter):
             or str(Path(os.getenv("HERMES_HOME", "~/.hermes")).expanduser() / "line_captures")
         )
         self.capture_log_dir = Path(capture_dir).expanduser() if capture_dir else None
+        self.capture_transcribe_audio = _truthy_env(
+            "LINE_CAPTURE_TRANSCRIBE_AUDIO",
+            bool(extra.get("capture_transcribe_audio", True)),
+        )
 
         # Slow-LLM postback button threshold
         try:
@@ -1026,14 +1037,16 @@ class LineAdapter(BasePlatformAdapter):
         media_records: List[Dict[str, Any]] = []
 
         media_month = now.strftime("%Y-%m")
+        transcription: Optional[Dict[str, Any]] = None
         for idx, media_path in enumerate(event_obj.media_urls or []):
             src = Path(str(media_path)).expanduser()
+            media_type = (
+                (event_obj.media_types or [msg_type])[idx]
+                if idx < len(event_obj.media_types or [])
+                else msg_type
+            )
             record: Dict[str, Any] = {
-                "type": (
-                    (event_obj.media_types or [msg_type])[idx]
-                    if idx < len(event_obj.media_types or [])
-                    else msg_type
-                ),
+                "type": media_type,
                 "cache_path": str(src),
             }
             try:
@@ -1051,6 +1064,24 @@ class LineAdapter(BasePlatformAdapter):
                     )
                     shutil.copy2(src, dest)
                     record.update({"path": str(dest), "bytes": dest.stat().st_size})
+                    if self.capture_transcribe_audio and media_type in {"audio", "voice"} and transcription is None:
+                        try:
+                            result = _transcribe_audio_for_capture(str(src))
+                            transcription = {
+                                "success": bool(result.get("success")),
+                                "provider": result.get("provider"),
+                                "transcript": result.get("transcript", ""),
+                            }
+                            if not transcription["success"]:
+                                transcription["error"] = result.get("error", "unknown transcription error")
+                        except Exception as exc:
+                            transcription = {
+                                "success": False,
+                                "provider": None,
+                                "transcript": "",
+                                "error": str(exc),
+                            }
+                            logger.warning("LINE: failed to transcribe captured audio %s: %s", src, exc)
             except Exception as exc:
                 record["copy_error"] = str(exc)
                 logger.warning("LINE: failed to persist captured media %s: %s", src, exc)
@@ -1071,6 +1102,8 @@ class LineAdapter(BasePlatformAdapter):
             "media": media_records,
             "raw_event": raw,
         }
+        if transcription is not None:
+            row["transcription"] = transcription
         log_path = root / f"{media_month}.jsonl"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("a", encoding="utf-8") as f:

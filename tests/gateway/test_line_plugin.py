@@ -719,6 +719,59 @@ class TestAdapterInit:
         assert open(copied, "rb").read() == b"image-bytes"
         assert "replyToken" not in row["raw_event"]
 
+    def test_capture_only_group_transcribes_audio_media(self, monkeypatch, tmp_path):
+        for k in ("LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET", "LINE_CAPTURE_ONLY_GROUPS"):
+            monkeypatch.delenv(k, raising=False)
+        from gateway.config import PlatformConfig
+
+        cached_audio = tmp_path / "voice.m4a"
+        cached_audio.write_bytes(b"audio-bytes")
+
+        ad = LineAdapter(PlatformConfig(enabled=True, extra={
+            "channel_access_token": "tok",
+            "channel_secret": "sec",
+            "allowed_groups": ["Cjanitor"],
+            "capture_only_groups": ["Cjanitor"],
+            "capture_log_dir": str(tmp_path / "captures"),
+            "capture_transcribe_audio": True,
+        }))
+        ad.handle_message = AsyncMock()
+
+        async def _download_media(message_id, msg_type):
+            assert message_id == "aud1"
+            assert msg_type == "audio"
+            return str(cached_audio)
+
+        def _transcribe_audio(path):
+            assert path == str(cached_audio)
+            return {"success": True, "transcript": "打掃好了", "provider": "fake-stt"}
+
+        ad._download_media = _download_media
+        monkeypatch.setattr(_line, "_transcribe_audio_for_capture", _transcribe_audio)
+        event = {
+            "type": "message",
+            "webhookEventId": "evt-capture-audio-1",
+            "replyToken": "temporary-token-not-persisted",
+            "source": {"type": "group", "groupId": "Cjanitor", "userId": "Uworker"},
+            "message": {"type": "audio", "id": "aud1", "duration": 4000},
+        }
+
+        asyncio.run(ad._handle_message_event(event))
+
+        ad.handle_message.assert_not_called()
+        logs = list((tmp_path / "captures" / "Cjanitor").glob("*.jsonl"))
+        assert len(logs) == 1
+        row = json.loads(logs[0].read_text(encoding="utf-8").strip())
+        assert row["message_type"] == "audio"
+        assert row["text"] == "[audio]"
+        assert row["transcription"] == {
+            "success": True,
+            "provider": "fake-stt",
+            "transcript": "打掃好了",
+        }
+        assert row["media"][0]["type"] == "audio"
+        assert "replyToken" not in row["raw_event"]
+
     def test_audio_download_uses_audio_cache(self, monkeypatch, tmp_path):
         monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "t")
         monkeypatch.setenv("LINE_CHANNEL_SECRET", "s")
