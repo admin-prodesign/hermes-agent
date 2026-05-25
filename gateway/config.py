@@ -1058,6 +1058,8 @@ def load_gateway_config() -> GatewayConfig:
                         bridged["pd_one_channel_scopes"] = {str(k): v for k, v in scopes.items()}
                     else:
                         bridged["pd_one_channel_scopes"] = scopes
+                if plat == Platform.MATTERMOST and "pd_one_admin_prefix" in platform_cfg:
+                    bridged["pd_one_admin_prefix"] = platform_cfg["pd_one_admin_prefix"]
                 if "gateway_restart_notification" in platform_cfg:
                     bridged["gateway_restart_notification"] = platform_cfg["gateway_restart_notification"]
                 if "typing_indicator" in platform_cfg:
