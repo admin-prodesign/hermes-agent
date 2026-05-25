@@ -137,6 +137,11 @@ class MattermostAdapter(BasePlatformAdapter):
         # Dedup cache (prevent reprocessing)
         self._dedup = MessageDeduplicator()
 
+        # Thread rehydration cache keyed by Hermes session key.  Once a
+        # Mattermost thread message/file has been injected for a live session,
+        # do not inject/download it again for later turns in the same thread.
+        self._thread_rehydration_cache: Dict[str, Dict[str, set[str]]] = {}
+
     # ------------------------------------------------------------------
     # Config helpers
     # ------------------------------------------------------------------
