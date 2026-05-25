@@ -958,3 +958,104 @@ class TestMattermostMediaTypes:
         assert msg.media_types == ["application/pdf"]
         assert not msg.media_types[0].startswith("image/")
         assert not msg.media_types[0].startswith("audio/")
+
+
+class TestMattermostThreadRehydrationCache:
+    """Thread rehydration should avoid re-sending already loaded context/files."""
+
+    def setup_method(self):
+        self.adapter = _make_adapter()
+        self.adapter._bot_user_id = "bot_user_id"
+
+    @pytest.mark.asyncio
+    async def test_same_session_only_returns_unseen_thread_posts_and_files(self):
+        thread = {
+            "order": ["root", "old_reply", "new_reply", "trigger"],
+            "posts": {
+                "root": {
+                    "id": "root",
+                    "user_id": "user_root",
+                    "message": "Root context",
+                    "file_ids": ["root_file"],
+                    "create_at": 1,
+                },
+                "old_reply": {
+                    "id": "old_reply",
+                    "user_id": "user_old",
+                    "message": "Already loaded reply",
+                    "file_ids": ["old_file"],
+                    "create_at": 2,
+                },
+                "new_reply": {
+                    "id": "new_reply",
+                    "user_id": "user_new",
+                    "message": "Fresh reply",
+                    "file_ids": ["new_file"],
+                    "create_at": 3,
+                },
+                "trigger": {
+                    "id": "trigger",
+                    "user_id": "user_trigger",
+                    "message": "@bot_user_id latest request",
+                    "file_ids": [],
+                    "create_at": 4,
+                },
+            },
+        }
+        self.adapter._api_get = AsyncMock(return_value=thread)
+
+        first_context, first_files = await self.adapter._fetch_thread_context(
+            "root",
+            "old_reply",
+            session_key="agent:main:mattermost:channel:chan:root",
+        )
+        second_context, second_files = await self.adapter._fetch_thread_context(
+            "root",
+            "trigger",
+            session_key="agent:main:mattermost:channel:chan:root",
+        )
+
+        assert "Root context" in first_context
+        assert "Fresh reply" in first_context
+        assert first_files == ["root_file", "new_file"]
+        assert second_context is None
+        assert second_files == []
+
+    @pytest.mark.asyncio
+    async def test_different_session_rehydrates_independently(self):
+        thread = {
+            "order": ["root", "trigger"],
+            "posts": {
+                "root": {
+                    "id": "root",
+                    "user_id": "user_root",
+                    "message": "Root context",
+                    "file_ids": ["root_file"],
+                    "create_at": 1,
+                },
+                "trigger": {
+                    "id": "trigger",
+                    "user_id": "user_trigger",
+                    "message": "@bot_user_id latest request",
+                    "file_ids": [],
+                    "create_at": 2,
+                },
+            },
+        }
+        self.adapter._api_get = AsyncMock(return_value=thread)
+
+        first_context, first_files = await self.adapter._fetch_thread_context(
+            "root",
+            "trigger",
+            session_key="session-a",
+        )
+        second_context, second_files = await self.adapter._fetch_thread_context(
+            "root",
+            "trigger",
+            session_key="session-b",
+        )
+
+        assert "Root context" in first_context
+        assert first_files == ["root_file"]
+        assert "Root context" in second_context
+        assert second_files == ["root_file"]
