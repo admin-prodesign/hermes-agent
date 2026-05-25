@@ -102,6 +102,11 @@ class MattermostAdapter(BasePlatformAdapter):
         # Dedup cache (prevent reprocessing)
         self._dedup = MessageDeduplicator()
 
+        # Thread rehydration cache keyed by Hermes session key.  Once a
+        # Mattermost thread message/file has been injected for a live session,
+        # do not inject/download it again for later turns in the same thread.
+        self._thread_rehydration_cache: Dict[str, Dict[str, set[str]]] = {}
+
     # ------------------------------------------------------------------
     # HTTP helpers
     # ------------------------------------------------------------------
@@ -348,6 +353,7 @@ class MattermostAdapter(BasePlatformAdapter):
         self,
         root_id: Optional[str],
         triggering_post_id: Optional[str],
+        session_key: Optional[str] = None,
     ) -> Tuple[Optional[str], List[str]]:
         """Fetch and format Mattermost thread history before the triggering post.
 
@@ -377,31 +383,54 @@ class MattermostAdapter(BasePlatformAdapter):
         max_posts = int(self.config.extra.get("thread_context_max_posts", 40) or 40)
         max_chars = int(self.config.extra.get("thread_context_max_chars", 12000) or 12000)
         max_files = int(self.config.extra.get("thread_context_max_files", 20) or 20)
-        lines: List[str] = []
-        thread_file_ids: List[str] = []
+
+        cache_key = session_key or root_id
+        loaded_posts: set[str] = set()
+        loaded_files: set[str] = set()
+        if cache_key:
+            cached = self._thread_rehydration_cache.setdefault(
+                cache_key,
+                {"posts": set(), "files": set()},
+            )
+            loaded_posts = cached.setdefault("posts", set())
+            loaded_files = cached.setdefault("files", set())
+
+        candidates: List[Tuple[str, str]] = []
+        candidate_file_ids: List[str] = []
         for post_id in order:
-            if post_id == triggering_post_id:
+            post_id_str = str(post_id)
+            if post_id_str == triggering_post_id:
+                continue
+            if post_id_str in loaded_posts:
                 continue
             post = posts_by_id.get(post_id)
             if not isinstance(post, dict):
                 continue
             for file_id in post.get("file_ids") or []:
                 file_id_str = str(file_id)
-                if file_id_str not in thread_file_ids:
-                    thread_file_ids.append(file_id_str)
+                if file_id_str not in loaded_files and file_id_str not in candidate_file_ids:
+                    candidate_file_ids.append(file_id_str)
             formatted = self._format_thread_context_post(post)
             if formatted:
-                lines.append(formatted)
+                candidates.append((post_id_str, formatted))
 
         omitted = 0
-        if len(lines) > max_posts:
-            omitted = len(lines) - max_posts
-            lines = lines[-max_posts:]
-        thread_file_ids = thread_file_ids[-max_files:] if max_files > 0 else []
-        if not lines:
+        selected = candidates
+        if len(selected) > max_posts:
+            omitted = len(selected) - max_posts
+            selected = selected[-max_posts:]
+        thread_file_ids = candidate_file_ids[-max_files:] if max_files > 0 else []
+
+        if cache_key:
+            loaded_posts.update(post_id for post_id, _ in selected)
+            if triggering_post_id:
+                loaded_posts.add(str(triggering_post_id))
+            loaded_files.update(thread_file_ids)
+
+        if not selected:
             return None, thread_file_ids
 
-        body = "\n".join(lines)
+        body = "\n".join(line for _, line in selected)
         if len(body) > max_chars:
             body = "[older thread context truncated]\n" + body[-max_chars:]
         header = f"[Mattermost thread context: root={root_id}"
@@ -1031,10 +1060,24 @@ class MattermostAdapter(BasePlatformAdapter):
             and post_id
         ):
             thread_id = post_id
+        source = self.build_source(
+            chat_id=channel_id,
+            chat_type=chat_type,
+            user_id=sender_id,
+            user_name=sender_name,
+            thread_id=thread_id,
+            message_id=post_id,
+        )
+        from gateway.session import build_session_key
+        session_key = build_session_key(source)
         thread_context: Optional[str] = None
         thread_file_ids: List[str] = []
         if thread_id:
-            thread_context, thread_file_ids = await self._fetch_thread_context(thread_id, post_id)
+            thread_context, thread_file_ids = await self._fetch_thread_context(
+                thread_id,
+                post_id,
+                session_key=session_key,
+            )
 
         # Determine message type.
         file_ids = [str(fid) for fid in (post.get("file_ids") or [])]
@@ -1092,15 +1135,6 @@ class MattermostAdapter(BasePlatformAdapter):
                 msg_type = MessageType.VOICE
             elif media_types:
                 msg_type = MessageType.DOCUMENT
-
-        source = self.build_source(
-            chat_id=channel_id,
-            chat_type=chat_type,
-            user_id=sender_id,
-            user_name=sender_name,
-            thread_id=thread_id,
-            message_id=post_id,
-        )
 
         # Per-channel ephemeral prompt
         from gateway.platforms.base import resolve_channel_prompt
