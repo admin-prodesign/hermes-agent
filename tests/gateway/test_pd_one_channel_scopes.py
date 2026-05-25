@@ -217,6 +217,9 @@ def test_load_gateway_config_bridges_mattermost_channel_scopes_into_platform_ext
         """
 mattermost:
   enabled: true
+  pd_one_admin_prefix:
+    allow_from:
+    - 5nak6m7nmf8kudbrwbtccazbgc
   pd_one_channel_scopes:
     finance-channel:
       agent_id: finance
@@ -236,6 +239,8 @@ platforms:
 
     scopes = cfg.platforms[Platform.MATTERMOST].extra["pd_one_channel_scopes"]
     assert scopes["finance-channel"]["agent_id"] == "finance"
+    admin_prefix = cfg.platforms[Platform.MATTERMOST].extra["pd_one_admin_prefix"]
+    assert admin_prefix["allow_from"] == ["5nak6m7nmf8kudbrwbtccazbgc"]
 
 
 
