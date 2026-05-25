@@ -15549,7 +15549,7 @@ class GatewayRunner:
             platform_key,
             source.chat_id,
             user_id=getattr(source, "user_id", None),
-            text=event.text,
+            text=message,
         )
         enabled_toolsets = scoped_toolsets(enabled_toolsets, pd_one_scope)
         agent_cfg_local = user_config.get("agent") or {}
