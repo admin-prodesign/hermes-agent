@@ -12050,7 +12050,13 @@ class GatewayRunner:
                 resolve_pd_one_channel_scope,
                 scoped_toolsets,
             )
-            pd_one_scope = resolve_pd_one_channel_scope(user_config, platform_key, source.chat_id)
+            pd_one_scope = resolve_pd_one_channel_scope(
+                user_config,
+                platform_key,
+                source.chat_id,
+                user_id=getattr(source, "user_id", None),
+                text=prompt,
+            )
             enabled_toolsets = scoped_toolsets(enabled_toolsets, pd_one_scope)
             agent_cfg = user_config.get("agent") or {}
             disabled_toolsets = agent_cfg.get("disabled_toolsets") or None
@@ -16367,7 +16373,13 @@ class GatewayRunner:
             resolve_pd_one_channel_scope,
             scoped_toolsets,
         )
-        pd_one_scope = resolve_pd_one_channel_scope(user_config, platform_key, source.chat_id)
+        pd_one_scope = resolve_pd_one_channel_scope(
+            user_config,
+            platform_key,
+            source.chat_id,
+            user_id=getattr(source, "user_id", None),
+            text=event.text,
+        )
         enabled_toolsets = scoped_toolsets(enabled_toolsets, pd_one_scope)
         agent_cfg_local = user_config.get("agent") or {}
         disabled_toolsets = agent_cfg_local.get("disabled_toolsets") or None
