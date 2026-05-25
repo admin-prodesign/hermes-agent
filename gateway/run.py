@@ -2167,6 +2167,16 @@ def _event_media_is_video(event, index: int) -> bool:
     return getattr(event, "message_type", None) == MessageType.VIDEO
 
 
+def _is_inbound_image_media(path: str, media_type: str, message_type: MessageType) -> bool:
+    """Return True only for attachments that should be sent as image input."""
+    mtype = (media_type or "").lower()
+    if mtype:
+        return mtype.startswith("image/")
+    if message_type != MessageType.PHOTO:
+        return False
+    return os.path.splitext(path)[1].lower() in _IMAGE_MEDIA_EXTENSIONS
+
+
 def _build_media_placeholder(event) -> str:
     """Build a text placeholder for media-only events so they aren't dropped.
 
@@ -2178,7 +2188,8 @@ def _build_media_placeholder(event) -> str:
     parts = []
     media_urls = getattr(event, "media_urls", None) or []
     for i, url in enumerate(media_urls):
-        if _event_media_is_image(event, i):
+        mtype = media_types[i] if i < len(media_types) else ""
+        if _is_inbound_image_media(url, mtype, getattr(event, "message_type", None)):
             parts.append(f"[User sent an image: {url}]")
         elif _event_media_is_audio(event, i):
             parts.append(f"[User sent audio: {url}]")
@@ -10729,12 +10740,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             audio_paths = []
             for i, path in enumerate(event.media_urls):
                 mtype = event.media_types[i] if i < len(event.media_types) else ""
-                # Classify images per-attachment: trust this attachment's own
-                # MIME, and only honour the message-level PHOTO type when the
-                # per-attachment MIME is unknown. Otherwise a document (or any
-                # non-image) sent alongside an image in the same message gets
-                # mis-routed here as an image and the provider 400s.
-                if _event_media_is_image(event, i):
+                if _is_inbound_image_media(path, mtype, event.message_type):
                     image_paths.append(path)
                 # MessageType.AUDIO = audio file attachment (e.g. .mp3, .m4a) — never STT
                 # MessageType.VOICE = voice message (Opus/OGG) — always STT
@@ -10868,6 +10874,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 ):
                     continue
                 mtype = event.media_types[i] if i < len(event.media_types) else ""
+                if _is_inbound_image_media(path, mtype, event.message_type):
+                    continue
+                if mtype.startswith("audio/"):
+                    continue
                 if mtype in {"", "application/octet-stream"}:
                     _ext = os.path.splitext(path)[1].lower()
                     if _ext in _TEXT_EXTENSIONS:
