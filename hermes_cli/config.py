@@ -1040,14 +1040,23 @@ DEFAULT_CONFIG = {
         # abandoned prompt — lower it if a single session must free up the
         # guard sooner.
         "clarify_timeout": 3600,
-        # Periodic "still working" notification interval (seconds).
-        # Sends a status message every N seconds so the user knows the
+        # Initial long-running notification delay (seconds). This fires
+        # before the periodic interval so chat users get early confirmation
+        # that a slow turn is alive. 0 = use gateway_notify_interval.
+        "gateway_first_notify_after": 45,
+        # Periodic informative progress heartbeat interval (seconds).
+        # Sends/edits a status message every N seconds so the user knows the
         # agent hasn't died during long tasks.  0 = disable notifications.
         # Lower values mean faster feedback on slow tasks but more chat
         # noise; 180s is a compromise that catches spinning weak-model runs
         # (60+ tool iterations with tiny output) before users assume the
         # bot is dead and /restart.
         "gateway_notify_interval": 180,
+        # Send a direct user-visible notice as soon as a notify_on_complete
+        # background process exits, before the synthetic result-review turn
+        # has finished.  This costs no model tokens and prevents completed
+        # subprocesses from looking "stuck" while review continues.
+        "gateway_background_completion_notice": True,
         # Freshness window for the gateway auto-continue note (seconds).
         # After a gateway crash/restart/SIGTERM mid-run, the next user
         # message gets a "[System note: your previous turn was
