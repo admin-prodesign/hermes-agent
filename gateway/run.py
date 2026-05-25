@@ -555,6 +555,69 @@ def _resolve_gateway_display_bool(
     if value is None:
         return bool(default)
     return bool(value)
+def _gateway_tool_activity_sentence(tool_name: Optional[str], preview: Optional[str]) -> str:
+    """Cheap, template-based description for gateway progress heartbeats.
+
+    This intentionally does not call an LLM.  It turns tool-progress state into
+    an "I'm now doing X" breadcrumb suitable for periodic chat heartbeats.
+    """
+    tool = str(tool_name or "").strip() or "a tool"
+    raw_preview = str(preview or "").strip().replace("\n", " ")
+    if len(raw_preview) > 120:
+        raw_preview = raw_preview[:117].rstrip() + "..."
+    preview_part = f": `{raw_preview}`" if raw_preview else ""
+    pretty = tool.replace("_", " ")
+    verbs = {
+        "browser_navigate": "opening a web page",
+        "browser_click": "interacting with the browser",
+        "browser_type": "typing into the browser",
+        "browser_snapshot": "checking the browser page",
+        "browser_console": "checking browser page state",
+        "read_file": "reading a file",
+        "search_files": "searching the codebase",
+        "patch": "editing files",
+        "write_file": "writing a file",
+        "terminal": "running a command",
+        "execute_code": "running a Python helper",
+        "web_search": "searching the web",
+        "web_extract": "reading web content",
+        "delegate_task": "checking with a subagent",
+        "cronjob": "working with scheduled jobs",
+        "process": "checking a background process",
+    }
+    action = verbs.get(tool, f"using {pretty}")
+    return f"I’m now {action}{preview_part}."
+
+
+def _build_gateway_heartbeat_message(
+    *,
+    elapsed_mins: int,
+    latest_status: Optional[Dict[str, Any]] = None,
+    activity: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Build an informative long-running heartbeat without extra model calls."""
+    elapsed = f"{elapsed_mins} min elapsed" if elapsed_mins else "under 1 min elapsed"
+    activity = activity or {}
+    latest_text = ""
+    if latest_status:
+        latest_text = str(latest_status.get("message") or "").strip()
+    if not latest_text and activity.get("current_tool"):
+        latest_text = _gateway_tool_activity_sentence(activity.get("current_tool"), None)
+    if not latest_text and activity.get("last_activity_desc"):
+        latest_text = str(activity.get("last_activity_desc") or "").strip()
+    if not latest_text:
+        latest_text = "Still working — waiting for the current model/tool step to finish."
+    latest_text = latest_text.replace("\n", " ").strip()
+    if len(latest_text) > 240:
+        latest_text = latest_text[:237].rstrip() + "..."
+
+    detail_parts: List[str] = []
+    if activity.get("api_call_count") is not None and activity.get("max_iterations"):
+        detail_parts.append(f"iteration {activity.get('api_call_count')}/{activity.get('max_iterations')}")
+    if activity.get("current_tool") and "current_tool" not in str(latest_status or {}):
+        detail_parts.append(f"tool: {activity.get('current_tool')}")
+    detail = f" ({elapsed}; {', '.join(detail_parts)})" if detail_parts else f" ({elapsed})"
+    return f"⏳ {latest_text}{detail}"
 
 
 def _telegramize_command_mentions(text: str, platform: Any) -> str:
@@ -1342,8 +1405,21 @@ def _bridge_max_turns_from_config(home: "Path") -> None:
         return
 
     agent_cfg = cfg.get("agent", {})
-    if isinstance(agent_cfg, dict) and "max_turns" in agent_cfg:
-        os.environ["HERMES_MAX_ITERATIONS"] = str(agent_cfg["max_turns"])
+    if isinstance(agent_cfg, dict):
+        if "max_turns" in agent_cfg:
+            os.environ["HERMES_MAX_ITERATIONS"] = str(agent_cfg["max_turns"])
+        if "gateway_timeout" in agent_cfg:
+            os.environ["HERMES_AGENT_TIMEOUT"] = str(agent_cfg["gateway_timeout"])
+        if "gateway_timeout_warning" in agent_cfg:
+            os.environ["HERMES_AGENT_TIMEOUT_WARNING"] = str(agent_cfg["gateway_timeout_warning"])
+        if "gateway_notify_interval" in agent_cfg:
+            os.environ["HERMES_AGENT_NOTIFY_INTERVAL"] = str(agent_cfg["gateway_notify_interval"])
+        if "gateway_first_notify_after" in agent_cfg:
+            os.environ["HERMES_AGENT_FIRST_NOTIFY_AFTER"] = str(agent_cfg["gateway_first_notify_after"])
+        if "gateway_background_completion_notice" in agent_cfg:
+            os.environ["HERMES_AGENT_BACKGROUND_COMPLETION_NOTICE"] = str(
+                agent_cfg["gateway_background_completion_notice"]
+            ).lower()
 
 
 def _current_max_iterations() -> int:
@@ -1556,6 +1632,12 @@ if _config_path.exists():
                 os.environ["HERMES_AGENT_TIMEOUT_WARNING"] = str(_agent_cfg["gateway_timeout_warning"])
             if "gateway_notify_interval" in _agent_cfg:
                 os.environ["HERMES_AGENT_NOTIFY_INTERVAL"] = str(_agent_cfg["gateway_notify_interval"])
+            if "gateway_first_notify_after" in _agent_cfg:
+                os.environ["HERMES_AGENT_FIRST_NOTIFY_AFTER"] = str(_agent_cfg["gateway_first_notify_after"])
+            if "gateway_background_completion_notice" in _agent_cfg:
+                os.environ["HERMES_AGENT_BACKGROUND_COMPLETION_NOTICE"] = str(
+                    _agent_cfg["gateway_background_completion_notice"]
+                ).lower()
             if "restart_drain_timeout" in _agent_cfg:
                 os.environ["HERMES_RESTART_DRAIN_TIMEOUT"] = str(_agent_cfg["restart_drain_timeout"])
             if "gateway_auto_continue_freshness" in _agent_cfg:
@@ -14783,6 +14865,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         message_id = str(watcher.get("message_id") or "").strip() or None
         agent_notify = watcher.get("notify_on_complete", False)
         notify_mode = self._load_background_notifications_mode()
+        completion_notice_enabled = is_truthy_value(
+            os.getenv("HERMES_AGENT_BACKGROUND_COMPLETION_NOTICE"),
+            default=True,
+        )
 
         logger.debug("Process watcher started: %s (every %ss, notify=%s, agent_notify=%s)",
                       session_id, interval, notify_mode, agent_notify)
@@ -14865,6 +14951,32 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             break
                     if adapter and source.chat_id:
                         try:
+                            if completion_notice_enabled:
+                                _notice_prefix = "✅" if session.exit_code == 0 else "⚠️"
+                                _notice_state = "successfully" if session.exit_code == 0 else "with an error"
+                                _notice_text = (
+                                    f"{_notice_prefix} Background process `{session_id}` finished {_notice_state} "
+                                    f"(exit code {session.exit_code}). I’m reviewing the output now and will post "
+                                    "the verified result shortly."
+                                )
+                                try:
+                                    await adapter.send(
+                                        source.chat_id,
+                                        _notice_text,
+                                        metadata={"thread_id": source.thread_id} if source.thread_id else None,
+                                    )
+                                    logger.info(
+                                        "Early background completion notice sent: process=%s chat=%s thread=%s",
+                                        session_id,
+                                        source.chat_id,
+                                        source.thread_id,
+                                    )
+                                except Exception as _notice_err:
+                                    logger.warning(
+                                        "Early background completion notice failed for %s: %s",
+                                        session_id,
+                                        _notice_err,
+                                    )
                             synth_event = MessageEvent(
                                 text=synth_text,
                                 message_type=MessageType.TEXT,
@@ -16163,6 +16275,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # fenced code block — consecutive terminal calls then drop the
         # repeated "💻 terminal" header and render back-to-back blocks.
         last_was_terminal_block = [False]
+        latest_heartbeat_status: Dict[str, Any] = {}
 
         # ── Discord voice "verbal ack before tool calls" ────────────────
         # When the bot is in a voice channel with the continuous mixer
@@ -16283,6 +16396,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # Only act on tool.started events (ignore tool.completed, reasoning.available, etc.)
             if event_type not in {"tool.started",}:
                 return
+
+            latest_heartbeat_status.clear()
+            latest_heartbeat_status.update({
+                "kind": "tool",
+                "tool_name": tool_name,
+                "message": _gateway_tool_activity_sentence(tool_name, preview),
+                "ts": time.time(),
+            })
 
             # Suppress tool-progress bubbles once the user has sent `stop`.
             # When the LLM response carries N parallel tool calls, the agent
@@ -16878,6 +16999,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     _redact_gateway_user_facing_secrets(str(message or ""))[:160],
                 )
                 return
+            latest_heartbeat_status.clear()
+            latest_heartbeat_status.update({
+                "kind": "status",
+                "event_type": event_type,
+                "message": prepared_message,
+                "ts": time.time(),
+            })
             _fut = safe_schedule_threadsafe(
                 _send_or_update_status_coro(_status_adapter, _status_chat_id, event_type, prepared_message, _status_thread_metadata),
                 _loop_for_step,
@@ -17055,6 +17183,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             def _interim_assistant_cb(text: str, *, already_streamed: bool = False) -> None:
                 if not _run_still_current():
                     return
+                _interim_text = str(text or "").strip()
+                if _interim_text:
+                    _preview = _interim_text.replace("\n", " ")
+                    if len(_preview) > 160:
+                        _preview = _preview[:157].rstrip() + "..."
+                    latest_heartbeat_status.clear()
+                    latest_heartbeat_status.update({
+                        "kind": "interim",
+                        "message": f"I’ve found an interim result and am continuing: {_preview}",
+                        "ts": time.time(),
+                    })
                 if _stream_consumer is not None:
                     if already_streamed:
                         _stream_consumer.on_segment_break()
@@ -18223,11 +18362,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         
         interrupt_monitor = asyncio.create_task(monitor_for_interrupt())
 
-        # Periodic "still working" notifications for long-running tasks.
-        # Fires every N seconds so the user knows the agent hasn't died.
-        # Config: agent.gateway_notify_interval in config.yaml, or
-        # HERMES_AGENT_NOTIFY_INTERVAL env var.  Default 180s (3 min).
-        # 0 = disable notifications.
+        # Informative progress heartbeats for long-running tasks.
+        # First fires quickly (agent.gateway_first_notify_after), then every
+        # gateway_notify_interval.  Messages are template-built from existing
+        # gateway state, so this adds no LLM/token cost.
         _NOTIFY_INTERVAL_RAW = _float_env("HERMES_AGENT_NOTIFY_INTERVAL", 180)
         _NOTIFY_INTERVAL = _NOTIFY_INTERVAL_RAW if _NOTIFY_INTERVAL_RAW > 0 else None
         if not bool(
@@ -18239,6 +18377,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             )
         ):
             _NOTIFY_INTERVAL = None
+        _FIRST_NOTIFY_RAW = _float_env("HERMES_AGENT_FIRST_NOTIFY_AFTER", 45)
+        _FIRST_NOTIFY_AFTER = _FIRST_NOTIFY_RAW if _FIRST_NOTIFY_RAW > 0 else None
         _notify_start = time.time()
 
         async def _notify_long_running():
@@ -18247,83 +18387,98 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             _notify_adapter = self.adapters.get(source.platform)
             if not _notify_adapter:
                 return
-            # Track the heartbeat message id so we can edit-in-place on
-            # platforms that support it (Telegram, Discord, Slack, etc.)
-            # instead of spamming a new "Still working" bubble every
-            # interval. Falls back to send-new when edit fails or isn't
-            # supported by the adapter.
+
             _heartbeat_msg_id: Optional[str] = None
-            while True:
-                await asyncio.sleep(_NOTIFY_INTERVAL)
-                # Stop heartbeating once this run no longer owns the session
-                # slot or the executor has finished — otherwise a stale
-                # "running: delegate_task" bubble can outlive the run that
-                # spawned it (#12029). _executor_task is a closure var bound
-                # just after this task is scheduled; tolerate the brief window
-                # before then (the first wake is _NOTIFY_INTERVAL away anyway).
+            _heartbeat_can_edit = True
+            _edit_accepts_metadata = False
+            try:
+                _edit_params = inspect.signature(_notify_adapter.edit_message).parameters
+                _edit_accepts_metadata = (
+                    "metadata" in _edit_params
+                    or any(param.kind is inspect.Parameter.VAR_KEYWORD for param in _edit_params.values())
+                )
+            except (TypeError, ValueError):
+                _edit_accepts_metadata = False
+
+            def _heartbeat_still_current() -> bool:
+                if not _run_still_current():
+                    return False
                 try:
                     _exec_ref = _executor_task
                 except NameError:
                     _exec_ref = None
-                if not self._should_emit_long_running_notification(
+                return self._should_emit_long_running_notification(
                     session_key, agent_holder[0], _exec_ref
-                ):
+                )
+
+            async def _send_or_edit_heartbeat(content: str) -> None:
+                nonlocal _heartbeat_msg_id, _heartbeat_can_edit
+                if not _heartbeat_still_current():
+                    return
+                if _heartbeat_msg_id and _heartbeat_can_edit:
+                    try:
+                        _kwargs = {
+                            "chat_id": source.chat_id,
+                            "message_id": _heartbeat_msg_id,
+                            "content": content,
+                        }
+                        if _edit_accepts_metadata:
+                            _kwargs["metadata"] = _status_thread_metadata
+                        _edit_res = await _notify_adapter.edit_message(**_kwargs)
+                        if getattr(_edit_res, "success", False):
+                            logger.info(
+                                "Long-running heartbeat edited: platform=%s chat=%s thread=%s message_id=%s",
+                                source.platform.value if source.platform else "unknown",
+                                source.chat_id,
+                                source.thread_id,
+                                _heartbeat_msg_id,
+                            )
+                            return
+                        if not getattr(_edit_res, "retryable", False):
+                            _heartbeat_can_edit = False
+                    except Exception as _edit_err:
+                        logger.debug("Long-running heartbeat edit error: %s", _edit_err)
+                        _heartbeat_can_edit = False
+
+                _notify_res = await _notify_adapter.send(
+                    source.chat_id,
+                    content,
+                    metadata=_status_thread_metadata,
+                )
+                if getattr(_notify_res, "success", False) and getattr(_notify_res, "message_id", None):
+                    _heartbeat_msg_id = str(_notify_res.message_id)
+                    if _cleanup_progress:
+                        _cleanup_msg_ids.append(_heartbeat_msg_id)
+                logger.info(
+                    "Long-running heartbeat sent: platform=%s chat=%s thread=%s success=%s message_id=%s",
+                    source.platform.value if source.platform else "unknown",
+                    source.chat_id,
+                    source.thread_id,
+                    getattr(_notify_res, "success", False),
+                    getattr(_notify_res, "message_id", None),
+                )
+
+            _sleep_for = _FIRST_NOTIFY_AFTER if _FIRST_NOTIFY_AFTER is not None else _NOTIFY_INTERVAL
+            while True:
+                await asyncio.sleep(_sleep_for)
+                _sleep_for = _NOTIFY_INTERVAL
+                if not _heartbeat_still_current():
                     break
                 _elapsed_mins = int((time.time() - _notify_start) // 60)
-                # Include agent activity context if available. Default
-                # heartbeat is terse: elapsed + current tool. Verbose
-                # iteration counter is gated on busy_ack_detail so users
-                # who want it can opt in per platform.
+                _activity: Dict[str, Any] = {}
                 _agent_ref = agent_holder[0]
-                _status_detail = ""
-                _want_iteration_detail = bool(
-                    resolve_display_setting(
-                        user_config,
-                        platform_key,
-                        "busy_ack_detail",
-                        True,
-                    )
-                )
                 if _agent_ref and hasattr(_agent_ref, "get_activity_summary"):
                     try:
-                        _a = _agent_ref.get_activity_summary()
-                        _parts = []
-                        if _want_iteration_detail:
-                            _parts.append(
-                                f"iteration {_a['api_call_count']}/{_a['max_iterations']}"
-                            )
-                        _action = _a.get("current_tool") or _a.get("last_activity_desc")
-                        if _action:
-                            _parts.append(str(_action))
-                        if _parts:
-                            _status_detail = " — " + ", ".join(_parts)
+                        _activity = _agent_ref.get_activity_summary() or {}
                     except Exception:
-                        pass
-                _heartbeat_text = f"⏳ Working — {_elapsed_mins} min{_status_detail}"
+                        _activity = {}
                 try:
-                    _notify_res = None
-                    if _heartbeat_msg_id:
-                        try:
-                            _notify_res = await _notify_adapter.edit_message(
-                                source.chat_id,
-                                _heartbeat_msg_id,
-                                _heartbeat_text,
-                            )
-                        except Exception as _ee:
-                            logger.debug("Heartbeat edit failed: %s", _ee)
-                            _notify_res = None
-                    if not (_notify_res and getattr(_notify_res, "success", False)):
-                        _notify_res = await _notify_adapter.send(
-                            source.chat_id,
-                            _heartbeat_text,
-                            metadata=_non_conversational_metadata(_status_thread_metadata, platform=source.platform),
-                        )
-                        if getattr(_notify_res, "success", False) and getattr(
-                            _notify_res, "message_id", None
-                        ):
-                            _heartbeat_msg_id = str(_notify_res.message_id)
-                            if _cleanup_progress:
-                                _cleanup_msg_ids.append(_heartbeat_msg_id)
+                    _message = _build_gateway_heartbeat_message(
+                        elapsed_mins=_elapsed_mins,
+                        latest_status=dict(latest_heartbeat_status) if latest_heartbeat_status else None,
+                        activity=_activity,
+                    )
+                    await _send_or_edit_heartbeat(_message)
                 except Exception as _ne:
                     logger.debug("Long-running notification error: %s", _ne)
 
