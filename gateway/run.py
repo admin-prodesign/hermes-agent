@@ -1510,6 +1510,25 @@ def _try_resolve_fallback_provider() -> dict | None:
     return None
 
 
+_IMAGE_MEDIA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+def _is_inbound_image_media(path: str, media_type: str, message_type: MessageType) -> bool:
+    """Return True only for attachments that should be sent as image input.
+
+    Some platforms, including Mattermost, set the whole event type to PHOTO
+    when any attachment in a mixed thread is an image.  Do not let that event
+    type promote PDFs, Office files, STEP models, or other documents to native
+    image input; providers reject those bytes with "invalid image" 400s.
+    """
+    mtype = (media_type or "").lower()
+    if mtype:
+        return mtype.startswith("image/")
+    if message_type != MessageType.PHOTO:
+        return False
+    return os.path.splitext(path)[1].lower() in _IMAGE_MEDIA_EXTENSIONS
+
+
 def _build_media_placeholder(event) -> str:
     """Build a text placeholder for media-only events so they aren't dropped.
 
@@ -1523,7 +1542,7 @@ def _build_media_placeholder(event) -> str:
     media_types = getattr(event, "media_types", None) or []
     for i, url in enumerate(media_urls):
         mtype = media_types[i] if i < len(media_types) else ""
-        if mtype.startswith("image/") or getattr(event, "message_type", None) == MessageType.PHOTO:
+        if _is_inbound_image_media(url, mtype, getattr(event, "message_type", None)):
             parts.append(f"[User sent an image: {url}]")
         elif mtype.startswith("audio/"):
             parts.append(f"[User sent audio: {url}]")
@@ -7884,7 +7903,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             audio_paths = []
             for i, path in enumerate(event.media_urls):
                 mtype = event.media_types[i] if i < len(event.media_types) else ""
-                if mtype.startswith("image/") or event.message_type == MessageType.PHOTO:
+                if _is_inbound_image_media(path, mtype, event.message_type):
                     image_paths.append(path)
                 # MessageType.AUDIO = audio file attachment (e.g. .mp3, .m4a) — never STT
                 # MessageType.VOICE = voice message (Opus/OGG) — always STT
@@ -8014,13 +8033,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 )
                 message_text = f"{_note}\n\n{message_text}"
 
-        if event.media_urls and event.message_type == MessageType.DOCUMENT:
+        if event.media_urls:
             import mimetypes as _mimetypes
             from tools.credential_files import to_agent_visible_cache_path
 
             _TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".log", ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg"}
             for i, path in enumerate(event.media_urls):
                 mtype = event.media_types[i] if i < len(event.media_types) else ""
+                if _is_inbound_image_media(path, mtype, event.message_type):
+                    continue
+                if mtype.startswith("audio/"):
+                    continue
                 if mtype in {"", "application/octet-stream"}:
                     _ext = os.path.splitext(path)[1].lower()
                     if _ext in _TEXT_EXTENSIONS:
@@ -8029,7 +8052,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         guessed, _ = _mimetypes.guess_type(path)
                         if guessed:
                             mtype = guessed
-                if not mtype.startswith(("application/", "text/")):
+                        else:
+                            mtype = "application/octet-stream"
+                if not mtype.startswith(("application/", "text/", "model/", "chemical/")):
                     continue
 
                 basename = os.path.basename(path)
