@@ -465,6 +465,23 @@ def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
     return redacted
 
 
+def _mattermost_progress_thread_route(
+    *,
+    source_thread_id: Optional[str],
+    event_message_id: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Return Mattermost progress/status route as (thread_id, reply_to).
+
+    Mattermost only sets ``source.thread_id`` for posts that are already replies.
+    A root-channel mention has no source thread yet, but synthetic progress/status
+    posts must still use the triggering post as ``root_id``; otherwise they show
+    up as channel-root leaks before the final reply.
+    """
+    thread_id = source_thread_id or event_message_id
+    reply_to = event_message_id if event_message_id else None
+    return thread_id, reply_to
+
+
 def _prepare_gateway_status_message(platform: Any, event_type: str, message: str) -> Optional[str]:
     """Filter/sanitize agent status callbacks before platform delivery.
 
@@ -17843,20 +17860,27 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # - Feishu only honors reply_in_thread when sending a reply, so topic
         #   progress uses the triggering event message as the reply target
         # - Other platforms should use explicit source.thread_id only
-        _progress_thread_id = _resolve_progress_thread_id(
-            source.platform, source.thread_id, event_message_id,
-        )
+        if source.platform == Platform.SLACK:
+            _progress_thread_id = source.thread_id or event_message_id
+            _progress_reply_to = None
+        elif source.platform == Platform.MATTERMOST:
+            _progress_thread_id, _progress_reply_to = _mattermost_progress_thread_route(
+                source_thread_id=source.thread_id,
+                event_message_id=event_message_id,
+            )
+        else:
+            _progress_thread_id = source.thread_id
+            _progress_reply_to = (
+                event_message_id
+                if source.platform == Platform.FEISHU and source.thread_id and event_message_id
+                else None
+            )
         _progress_metadata = (
             self._thread_metadata_for_source(source, event_message_id)
             if _progress_thread_id == source.thread_id
             else {"thread_id": _progress_thread_id}
         ) if _progress_thread_id else None
         _progress_metadata = _non_conversational_metadata(_progress_metadata, platform=source.platform)
-        _progress_reply_to = (
-            event_message_id
-            if source.platform in (Platform.FEISHU, Platform.MATTERMOST) and source.thread_id and event_message_id
-            else None
-        )
 
         async def write_tool_log():
             """Drain log_queue and append tool-call lines to tool_calls.log.
