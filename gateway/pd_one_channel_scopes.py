@@ -1,10 +1,9 @@
-"""PD One/OpenClaw-style channel scope helpers for Hermes gateway runs.
+"""PD One channel scope helpers for Hermes gateway runs.
 
-The PD One migration keeps a single Hermes profile, but OpenClaw used
-channel-bound agents to constrain behavior.  These helpers resolve a
-Mattermost channel to a compact scope object, build the per-turn system
-prompt, and hard-limit the toolsets passed to AIAgent when a scope defines
-an allowlist.
+PD One now runs as a Hermes profile.  These helpers preserve the old
+channel-bound behavior by resolving a Mattermost channel to a compact scope
+object, building the per-turn system prompt, and hard-limiting the toolsets
+passed to AIAgent when a scope defines an allowlist.
 """
 
 from __future__ import annotations
