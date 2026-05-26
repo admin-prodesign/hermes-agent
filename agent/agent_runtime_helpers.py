@@ -2073,19 +2073,18 @@ def apply_pending_steer_to_tool_results(agent, messages: list, num_tool_msgs: in
 
 
 def force_close_tcp_sockets(client: Any) -> int:
-    """Force-close underlying TCP sockets to prevent CLOSE-WAIT accumulation.
+    """Abort in-flight TCP I/O by shutting down sockets without closing FDs.
 
-    When a provider drops a connection mid-stream, httpx's ``client.close()``
-    performs a graceful shutdown which leaves sockets in CLOSE-WAIT until the
-    OS times them out (often minutes).  This method walks the httpx transport
-    pool and issues ``socket.shutdown(SHUT_RDWR)`` + ``socket.close()`` to
-    force an immediate TCP RST, freeing the file descriptors.
+    ``shutdown(SHUT_RDWR)`` unblocks pending httpx reads/writes without
+    releasing the file descriptor from a non-owner thread. The owning request
+    thread performs the full SDK/client close during normal unwind.
 
-    Returns the number of sockets force-closed.
+    Returns the number of sockets shut down. The historical log field name
+    ``tcp_force_closed`` is kept by callers for compatibility.
     """
     import socket as _socket
 
-    closed = 0
+    shutdown_count = 0
     try:
         http_client = getattr(client, "_client", None)
         if http_client is None:
@@ -2104,31 +2103,41 @@ def force_close_tcp_sockets(client: Any) -> int:
             or []
         )
         for conn in list(connections):
-            stream = (
-                getattr(conn, "_network_stream", None)
-                or getattr(conn, "_stream", None)
-            )
-            if stream is None:
-                continue
-            sock = getattr(stream, "_sock", None)
-            if sock is None:
-                sock = getattr(stream, "stream", None)
-                if sock is not None:
-                    sock = getattr(sock, "_sock", None)
-            if sock is None:
-                continue
-            try:
-                sock.shutdown(_socket.SHUT_RDWR)
-            except OSError:
-                pass
-            try:
-                sock.close()
-            except OSError:
-                pass
-            closed += 1
+            # httpcore layouts vary by version and connection state. Pool
+            # entries may be the connection itself or wrappers exposing the
+            # active connection via ``_connection``; streams may be attached
+            # directly or under HTTP/1.1/HTTP2 wrappers.
+            candidates = [conn, getattr(conn, "_connection", None)]
+            seen = set()
+            for candidate in candidates:
+                if candidate is None:
+                    continue
+                ident = id(candidate)
+                if ident in seen:
+                    continue
+                seen.add(ident)
+                stream = (
+                    getattr(candidate, "_network_stream", None)
+                    or getattr(candidate, "_stream", None)
+                )
+                if stream is None:
+                    continue
+                sock = getattr(stream, "_sock", None)
+                if sock is None:
+                    sock = getattr(stream, "stream", None)
+                    if sock is not None:
+                        sock = getattr(sock, "_sock", None)
+                if sock is None:
+                    continue
+                try:
+                    sock.shutdown(_socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                shutdown_count += 1
+                break
     except Exception as exc:
         _ra().logger.debug("Force-close TCP sockets sweep error: %s", exc)
-    return closed
+    return shutdown_count
 
 
 
