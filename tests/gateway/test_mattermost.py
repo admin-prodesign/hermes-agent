@@ -1030,6 +1030,85 @@ class TestMattermostFileUpload:
 
 
 # ---------------------------------------------------------------------------
+# Passive thread root heading automation
+# ---------------------------------------------------------------------------
+
+class TestMattermostAutoThreadRootHeading:
+    def setup_method(self):
+        self.adapter = _make_adapter()
+        self.adapter._bot_user_id = "bot_user_id"
+        self.adapter.config.extra["auto_thread_root_heading"] = True
+        self.adapter.handle_message = AsyncMock()
+
+    def _reply_event(self, message="Follow-up reply"):
+        post_data = {
+            "id": "reply_post",
+            "root_id": "root_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": message,
+        }
+        return {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+    def test_detects_existing_markdown_heading(self):
+        assert self.adapter._has_markdown_heading("### Proper title\n\nBody") is True
+        assert self.adapter._has_markdown_heading("body without heading") is False
+        assert self.adapter._has_markdown_heading("\n\n# Title") is True
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_adds_heading_before_mention_gate(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "Can someone look at this?",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="Shipping Delay Review")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("I can help"))
+
+        self.adapter._api_put.assert_awaited_once_with(
+            "posts/root_post/patch",
+            {"message": "### Shipping Delay Review\n\nCan someone look at this?"},
+        )
+        # No @mention in the reply, so the normal agent path should still be skipped.
+        assert getattr(self.adapter.handle_message, "call_count") == 0
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_root_that_already_has_heading(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "## Existing Thread Title\n\nBody",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="Ignored Title")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._generate_thread_root_heading_title.assert_not_awaited()
+        self.adapter._api_put.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_when_disabled(self):
+        self.adapter.config.extra["auto_thread_root_heading"] = False
+        self.adapter._api_get = AsyncMock(return_value={"message": "Root"})
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._api_get.assert_not_awaited()
+        self.adapter._api_put.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
 # Dedup cache
 # ---------------------------------------------------------------------------
 

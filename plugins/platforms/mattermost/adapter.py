@@ -21,6 +21,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from agent.auxiliary_client import async_call_llm
+
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.helpers import MessageDeduplicator
 from gateway.platforms.base import (
@@ -106,6 +108,11 @@ class MattermostAdapter(BasePlatformAdapter):
         # Mattermost thread message/file has been injected for a live session,
         # do not inject/download it again for later turns in the same thread.
         self._thread_rehydration_cache: Dict[str, Dict[str, set[str]]] = {}
+
+        # Best-effort guard so simultaneous replies do not all attempt to title
+        # the same Mattermost root post. The root message itself remains the
+        # source of truth, so a gateway restart safely rechecks headings.
+        self._auto_heading_roots_inflight: set[str] = set()
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -514,6 +521,109 @@ class MattermostAdapter(BasePlatformAdapter):
     def _combine_channel_context(*parts: Optional[str]) -> Optional[str]:
         present = [part for part in parts if part]
         return "\n\n".join(present) if present else None
+
+    def _auto_thread_root_heading_enabled(self) -> bool:
+        raw = None
+        if self.config.extra:
+            raw = self.config.extra.get("auto_thread_root_heading")
+        if raw is None:
+            raw = os.getenv("MATTERMOST_AUTO_THREAD_ROOT_HEADING", "false")
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _has_markdown_heading(message: str) -> bool:
+        for line in str(message or "").splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            return re.match(r"^#{1,6}\s+\S", stripped) is not None
+        return False
+
+    @staticmethod
+    def _sanitize_root_heading_title(raw: str) -> str:
+        title = " ".join(str(raw or "").strip().split())
+        title = re.sub(r"^#+\s*", "", title).strip()
+        title = title.strip('`*_"\' ')
+        if title.lower().startswith("title:"):
+            title = title[6:].strip()
+        title = title.rstrip(".。:：")
+        if len(title) > 80:
+            title = title[:77].rstrip() + "..."
+        return title
+
+    async def _generate_thread_root_heading_title(self, root_message: str, reply_message: str) -> Optional[str]:
+        """Use the auxiliary LLM slot as the cheap/utility agent for root titles."""
+        system_prompt = (
+            "You are a low-cost utility agent that writes Mattermost thread titles. "
+            "Return one concise title only: 3-9 words, no Markdown heading marks, "
+            "no quotes, no trailing punctuation, no explanation."
+        )
+        user_prompt = (
+            "Create a useful title for this Mattermost thread.\n\n"
+            f"Root message:\n{(root_message or '')[:1200]}\n\n"
+            f"Latest reply that triggered titling:\n{(reply_message or '')[:600]}"
+        )
+        try:
+            response = await async_call_llm(
+                task="mattermost_thread_title",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=80,
+                temperature=0.2,
+                timeout=20.0,
+            )
+        except Exception as exc:
+            logger.warning("Mattermost: auto thread root heading generation failed: %s", exc)
+            logger.debug("Mattermost auto-heading traceback", exc_info=True)
+            return None
+        try:
+            content = response.choices[0].message.content
+        except Exception:
+            content = ""
+        title = self._sanitize_root_heading_title(content)
+        return title or None
+
+    async def _maybe_auto_heading_thread_root(self, post: Dict[str, Any], channel_type_raw: str) -> None:
+        """Best-effort: when a Mattermost thread gets a reply, title its root post.
+
+        Skips roots that already start with a Markdown heading. The edit is gated
+        by config/env and runs before mention-gating so passive thread replies can
+        improve titles without invoking the main agent.
+        """
+        if not self._auto_thread_root_heading_enabled():
+            return
+        if channel_type_raw == "D":
+            return
+        root_id = str(post.get("root_id") or "").strip()
+        if not root_id:
+            return
+        if root_id in self._auto_heading_roots_inflight:
+            return
+
+        self._auto_heading_roots_inflight.add(root_id)
+        try:
+            root_post = await self._api_get(f"posts/{root_id}")
+            if not root_post or root_post.get("delete_at"):
+                return
+            root_message = str(root_post.get("message") or "")
+            if self._has_markdown_heading(root_message):
+                return
+            title = await self._generate_thread_root_heading_title(
+                root_message,
+                str(post.get("message") or ""),
+            )
+            if not title:
+                return
+            new_message = f"### {title}\n\n{root_message}" if root_message.strip() else f"### {title}"
+            data = await self._api_put(f"posts/{root_id}/patch", {"message": new_message})
+            if data and data.get("id"):
+                logger.info("Mattermost: auto-added heading to thread root %s", root_id)
+            else:
+                logger.warning("Mattermost: failed to patch auto-heading for thread root %s", root_id)
+        finally:
+            self._auto_heading_roots_inflight.discard(root_id)
 
     async def send(
         self,
@@ -976,6 +1086,11 @@ class MattermostAdapter(BasePlatformAdapter):
         channel_id = post.get("channel_id", "")
         channel_type_raw = data.get("channel_type", "O")
         chat_type = _CHANNEL_TYPE_MAP.get(channel_type_raw, "channel")
+
+        # Passive hygiene automation: on any non-DM thread reply, optionally
+        # add a Markdown heading to the root post before normal mention-gating.
+        # This does not invoke the main agent or post a public reply.
+        await self._maybe_auto_heading_thread_root(post, channel_type_raw)
 
         # For DMs, user_id is sufficient.  For channels, check for @mention.
         message_text = post.get("message", "")
