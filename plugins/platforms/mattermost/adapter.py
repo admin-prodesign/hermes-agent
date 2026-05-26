@@ -22,6 +22,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from agent.auxiliary_client import async_call_llm
+
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.helpers import MessageDeduplicator
 from gateway.platforms.base import (
@@ -160,6 +162,11 @@ class MattermostAdapter(BasePlatformAdapter):
         except (TypeError, ValueError):
             value = float(default)
         return max(value, minimum)
+
+        # Best-effort guard so simultaneous replies do not all attempt to title
+        # the same Mattermost root post. The root message itself remains the
+        # source of truth, so a gateway restart safely rechecks headings.
+        self._auto_heading_roots_inflight: set[str] = set()
 
     # ------------------------------------------------------------------
     # HTTP helpers
