@@ -2032,19 +2032,36 @@ class MattermostAdapter(BasePlatformAdapter):
         sender_id = post.get("user_id", "")
         sender_name = data.get("sender_name", "").lstrip("@") or sender_id
 
-        # Thread support: if the post is in a thread, use root_id. In
-        # thread mode, top-level channel posts are valid roots for progress.
-        thread_id = post.get("root_id") or None
-        if (
-            not thread_id
-            and self._reply_mode == "thread"
-            and channel_type_raw != "D"
-            and post_id
-        ):
-            thread_id = post_id
+        # Thread support: Mattermost replies carry root_id, while top-level
+        # channel posts are themselves thread roots. Use the triggering post id
+        # as the synthetic thread_id for non-DM root posts so each top-level
+        # task gets its own Hermes session and progress/final replies stay in
+        # that post's thread instead of sharing the whole channel root.
+        thread_id = post.get("root_id") or (post_id if channel_type_raw != "D" else None)
+        source = self.build_source(
+            chat_id=channel_id,
+            chat_type=chat_type,
+            user_id=sender_id,
+            user_name=sender_name,
+            thread_id=thread_id,
+            message_id=post_id,
+        )
+        from gateway.session import build_session_key
+        session_key = build_session_key(source)
+        thread_context: Optional[str] = None
+        thread_file_ids: List[str] = []
+        if thread_id:
+            thread_context, thread_file_ids = await self._fetch_thread_context(
+                thread_id,
+                post_id,
+                session_key=session_key,
+            )
 
         # Determine message type.
-        file_ids = post.get("file_ids") or []
+        file_ids = [str(fid) for fid in (post.get("file_ids") or [])]
+        for fid in thread_file_ids:
+            if fid not in file_ids:
+                file_ids.append(fid)
         msg_type = MessageType.TEXT
         if message_text[:1].isspace() and message_text.lstrip().startswith("/"):
             message_text = message_text.lstrip()
@@ -2093,24 +2110,6 @@ class MattermostAdapter(BasePlatformAdapter):
                 msg_type = MessageType.VOICE
             elif media_types:
                 msg_type = MessageType.DOCUMENT
-
-        source = self.build_source(
-            chat_id=channel_id,
-            chat_type=chat_type,
-            user_id=sender_id,
-            user_name=sender_name,
-            thread_id=thread_id,
-            message_id=post_id,
-        )
-        from gateway.session import build_session_key
-        session_key = build_session_key(source)
-        thread_context: Optional[str] = None
-        if thread_id:
-            thread_context, _thread_file_ids = await self._fetch_thread_context(
-                thread_id,
-                post_id,
-                session_key=session_key,
-            )
 
         # Per-channel ephemeral prompt
         from gateway.platforms.base import resolve_channel_prompt
