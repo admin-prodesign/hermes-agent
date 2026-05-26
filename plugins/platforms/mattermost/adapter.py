@@ -547,19 +547,22 @@ class MattermostAdapter(BasePlatformAdapter):
         if title.lower().startswith("title:"):
             title = title[6:].strip()
         title = title.rstrip(".。:：")
-        if len(title) > 80:
-            title = title[:77].rstrip() + "..."
+        if len(title) > 120:
+            title = title[:117].rstrip() + "..."
         return title
 
     async def _generate_thread_root_heading_title(self, root_message: str, reply_message: str) -> Optional[str]:
         """Use the auxiliary LLM slot as the cheap/utility agent for root titles."""
         system_prompt = (
             "You are a low-cost utility agent that writes Mattermost thread titles. "
-            "Return one concise title only: 3-9 words, no Markdown heading marks, "
-            "no quotes, no trailing punctuation, no explanation."
+            "Return one concise bilingual title only, formatted exactly as "
+            "English / 繁體中文. Keep each side short and equivalent in meaning. "
+            "Use no Markdown heading marks, no quotes, no trailing punctuation, "
+            "and no explanation."
         )
         user_prompt = (
-            "Create a useful title for this Mattermost thread.\n\n"
+            "Create a useful bilingual English + Traditional Chinese title for this "
+            "Mattermost thread. Return exactly one line in the format: English / 繁體中文.\n\n"
             f"Root message:\n{(root_message or '')[:1200]}\n\n"
             f"Latest reply that triggered titling:\n{(reply_message or '')[:600]}"
         )

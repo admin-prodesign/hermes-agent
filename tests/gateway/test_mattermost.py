@@ -1069,14 +1069,14 @@ class TestMattermostAutoThreadRootHeading:
             "message": "Can someone look at this?",
             "delete_at": 0,
         })
-        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="Shipping Delay Review")
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="Shipping Delay Review / 出貨延遲檢討")
         self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
 
         await self.adapter._handle_ws_event(self._reply_event("I can help"))
 
         self.adapter._api_put.assert_awaited_once_with(
             "posts/root_post/patch",
-            {"message": "### Shipping Delay Review\n\nCan someone look at this?"},
+            {"message": "### Shipping Delay Review / 出貨延遲檢討\n\nCan someone look at this?"},
         )
         # No @mention in the reply, so the normal agent path should still be skipped.
         assert getattr(self.adapter.handle_message, "call_count") == 0
