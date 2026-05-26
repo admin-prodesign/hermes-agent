@@ -264,6 +264,35 @@ class TestMattermostTruncateMessage:
 
 
 # ---------------------------------------------------------------------------
+# Gateway progress/status routing
+# ---------------------------------------------------------------------------
+
+class TestMattermostProgressRouting:
+    def test_root_post_progress_uses_triggering_post_as_thread_root(self):
+        """Root-channel mentions have no source.thread_id, but progress must thread."""
+        from gateway.run import _mattermost_progress_thread_route
+
+        thread_id, reply_to = _mattermost_progress_thread_route(
+            source_thread_id=None,
+            event_message_id="root_post",
+        )
+
+        assert thread_id == "root_post"
+        assert reply_to == "root_post"
+
+    def test_reply_progress_preserves_existing_root_and_reply_anchor(self):
+        from gateway.run import _mattermost_progress_thread_route
+
+        thread_id, reply_to = _mattermost_progress_thread_route(
+            source_thread_id="thread_root",
+            event_message_id="reply_post",
+        )
+
+        assert thread_id == "thread_root"
+        assert reply_to == "reply_post"
+
+
+# ---------------------------------------------------------------------------
 # Send
 # ---------------------------------------------------------------------------
 
