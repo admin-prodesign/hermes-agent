@@ -494,13 +494,14 @@ class MattermostAdapter(BasePlatformAdapter):
         system_prompt = (
             "You are a low-cost utility agent that writes Mattermost thread titles. "
             "Return one concise bilingual title only, formatted exactly as "
-            "English / 繁體中文. Keep each side short and equivalent in meaning. "
+            "繁體中文 / English. Put Traditional Chinese first because most users "
+            "are Chinese speakers. Keep each side short and equivalent in meaning. "
             "Use no Markdown heading marks, no quotes, no trailing punctuation, "
             "and no explanation."
         )
         user_prompt = (
-            "Create a useful bilingual English + Traditional Chinese title for this "
-            "Mattermost thread. Return exactly one line in the format: English / 繁體中文.\n\n"
+            "Create a useful bilingual Traditional Chinese + English title for this "
+            "Mattermost thread. Return exactly one line in the format: 繁體中文 / English.\n\n"
             f"Root message:\n{(root_message or '')[:1200]}\n\n"
             f"Latest reply that triggered titling:\n{(reply_message or '')[:600]}"
         )
