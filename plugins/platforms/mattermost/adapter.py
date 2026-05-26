@@ -1050,16 +1050,12 @@ class MattermostAdapter(BasePlatformAdapter):
         sender_id = post.get("user_id", "")
         sender_name = data.get("sender_name", "").lstrip("@") or sender_id
 
-        # Thread support: if the post is in a thread, use root_id. In
-        # thread mode, top-level channel posts are valid roots for progress.
-        thread_id = post.get("root_id") or None
-        if (
-            not thread_id
-            and self._reply_mode == "thread"
-            and channel_type_raw != "D"
-            and post_id
-        ):
-            thread_id = post_id
+        # Thread support: Mattermost replies carry root_id, while top-level
+        # channel posts are themselves thread roots. Use the triggering post id
+        # as the synthetic thread_id for non-DM root posts so each top-level
+        # task gets its own Hermes session and progress/final replies stay in
+        # that post's thread instead of sharing the whole channel root.
+        thread_id = post.get("root_id") or (post_id if channel_type_raw != "D" else None)
         source = self.build_source(
             chat_id=channel_id,
             chat_type=chat_type,

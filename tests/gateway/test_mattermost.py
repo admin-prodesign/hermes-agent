@@ -674,6 +674,30 @@ class TestMattermostWebSocketParsing:
         assert msg_event.source.thread_id == "root_post_123"
 
     @pytest.mark.asyncio
+    async def test_root_channel_post_uses_own_post_id_as_thread_id(self):
+        """Top-level Mattermost posts should get isolated sessions per post/thread."""
+        post_data = {
+            "id": "root_post_456",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Start a separate task",
+            "root_id": "",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+        assert self.adapter.handle_message.called
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.source.thread_id == "root_post_456"
+
+    @pytest.mark.asyncio
     async def test_thread_reply_fetches_root_thread_context(self):
         """A mention in an existing thread should prepend earlier thread posts."""
         post_data = {

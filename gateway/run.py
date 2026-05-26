@@ -15338,6 +15338,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "thread_id": _progress_thread_id,
                 "reply_to_message_id": event_message_id,
             }
+        elif source.platform == Platform.MATTERMOST and _progress_thread_id:
+            # Mattermost root-channel posts may have source.thread_id empty in
+            # older/resumed runs.  Reuse the progress route fallback so status,
+            # interim, clarify, and long-running heartbeat sends do not leak to
+            # the channel root.
+            _status_thread_metadata = {"thread_id": _progress_thread_id}
         else:
             _status_thread_metadata = self._thread_metadata_for_source(source, event_message_id) if _progress_thread_id else None
 
@@ -16588,7 +16594,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     "Long-running heartbeat sent: platform=%s chat=%s thread=%s success=%s message_id=%s",
                     source.platform.value if source.platform else "unknown",
                     source.chat_id,
-                    source.thread_id,
+                    _progress_thread_id,
                     getattr(_notify_res, "success", False),
                     getattr(_notify_res, "message_id", None),
                 )
