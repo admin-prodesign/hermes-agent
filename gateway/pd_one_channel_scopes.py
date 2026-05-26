@@ -133,6 +133,14 @@ def build_scope_prompt(scope: dict[str, Any] | None, *, channel_id: str | None =
             "If the request exceeds this channel scope, refuse briefly or ask for an admin-approved handoff instead of using broader tools.",
         ]
     )
+    if "pd_one_wiki" in toolsets:
+        lines.extend(
+            [
+                "Wiki candidate workflow: when an in-scope answer finds source-backed durable company knowledge, call emit_wiki_update_candidate before the final reply.",
+                "Use the current Mattermost channel_id from this scope/policy context as source_channel_id; use opaque post/thread/message IDs only, never raw URLs.",
+                "Emit candidates only for concise durable facts with evidence, not for private/sensitive data, raw transcripts, speculation, or routine chat.",
+            ]
+        )
     if custom_prompt:
         lines.extend(["Channel-specific instructions:", custom_prompt])
     return "\n".join(lines)

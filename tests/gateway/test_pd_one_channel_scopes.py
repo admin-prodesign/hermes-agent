@@ -282,6 +282,20 @@ def test_build_scope_prompt_contains_hard_boundary_and_paths():
     assert "If the request exceeds this channel scope" in prompt
 
 
+def test_build_scope_prompt_instructs_wiki_candidate_emission_when_toolset_enabled():
+    scope = {
+        "agent_id": "senior-staff",
+        "name": "PD One Inter-Department Discussion",
+        "allowed_toolsets": ["skills", "pd_one_wiki"],
+    }
+
+    prompt = build_scope_prompt(scope, channel_id="miiyt4zm9frexdbhxokxqgyxeo")
+
+    assert "Wiki candidate workflow" in prompt
+    assert "emit_wiki_update_candidate" in prompt
+    assert "source_channel_id" in prompt
+
+
 def test_scope_signature_fragment_changes_with_agent_toolsets_and_prompt():
     a = {
         "agent_id": "finance",
