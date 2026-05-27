@@ -4803,7 +4803,9 @@ def _build_call_kwargs(
     # Provider-specific extra_body
     merged_extra = dict(extra_body or {})
     if provider == "nous" or auxiliary_is_nous:
-        merged_extra.setdefault("tags", []).extend(_nous_portal_tags())
+        portal_tags = _nous_portal_tags() or []
+        if portal_tags:
+            merged_extra.setdefault("tags", []).extend(portal_tags)
     if merged_extra:
         kwargs["extra_body"] = merged_extra
 
