@@ -193,7 +193,7 @@ def _make_adapter():
     config = PlatformConfig(
         enabled=True,
         token="test-token",
-        extra={"url": "https://mm.example.com"},
+        extra={"url": "https://mm.example.com", "pd_one_policy_bridge": False},
     )
     adapter = MattermostAdapter(config)
     return adapter
@@ -819,6 +819,7 @@ class TestMattermostWebSocketParsing:
             "safeScopes": ["facilities", "appsheet-readonly"],
             "tools": {"reads": "allowed", "writes": "confirm"},
             "approval": {"writes": False, "gatewayRestart": False},
+            "dataAccess": {"credentials": "deny", "operationalDocs": "read-summarize-only"},
             "setupResponse": {"en": "setup needed"},
         }), encoding="utf-8")
         self.adapter.config.extra.update({
@@ -845,10 +846,13 @@ class TestMattermostWebSocketParsing:
 
         msg_event = self.adapter.handle_message.call_args[0][0]
         assert "PD One OpenClaw permission bridge" in msg_event.channel_context
-        assert '"requesterMattermostUserId": "user_123"' in msg_event.channel_context
-        assert '"roles": ["facilities"]' in msg_event.channel_context
+        assert '"requesterMattermostUserId":"user_123"' in msg_event.channel_context
+        assert '"roles":["facilities"]' in msg_event.channel_context
+        assert '"dataAccessSummary"' in msg_event.channel_context
+        assert '"denied":["credentials"]' in msg_event.channel_context
+        assert '"read_limited":["operationalDocs"]' in msg_event.channel_context
         assert "mattermost-channels.md" in msg_event.channel_context
-        assert "require explicit approved-user authorization" in msg_event.channel_context
+        assert "require approved-user authorization" in msg_event.channel_context
 
     @pytest.mark.asyncio
     async def test_pd_one_policy_bridge_missing_cache_marks_lookup_failure(self, tmp_path):
@@ -879,8 +883,8 @@ class TestMattermostWebSocketParsing:
 
         msg_event = self.adapter.handle_message.call_args[0][0]
         assert "PD One OpenClaw permission bridge" in msg_event.channel_context
-        assert '"found": false' in msg_event.channel_context
-        assert "do not do substantive scoped work" in msg_event.channel_context
+        assert '"found":false' in msg_event.channel_context
+        assert "stop scoped work" in msg_event.channel_context
 
     @pytest.mark.asyncio
     async def test_invalid_post_json_ignored(self):

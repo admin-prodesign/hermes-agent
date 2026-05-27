@@ -492,7 +492,7 @@ class MattermostAdapter(BasePlatformAdapter):
         per-turn context to force exact sender-id authorization and gives the
         agent deterministic paths to consult before acting.
         """
-        enabled = self.config.extra.get("pd_one_policy_bridge") or os.getenv("PD_ONE_POLICY_BRIDGE")
+        enabled = self.config.extra.get("pd_one_policy_bridge") if "pd_one_policy_bridge" in self.config.extra else os.getenv("PD_ONE_POLICY_BRIDGE")
         if str(enabled).lower() not in {"1", "true", "yes", "on"}:
             return None
         workspace = str(
@@ -501,39 +501,114 @@ class MattermostAdapter(BasePlatformAdapter):
             or "/home/prodesign/.openclaw/workspace"
         )
         policy = self._load_pd_one_user_policy(user_id) or {"found": False, "mattermostUserId": user_id}
-        allowed_keys = [
-            "schema",
-            "generatedAtUtc",
-            "found",
-            "active",
-            "decision",
-            "turnHandling",
-            "dmEnabled",
-            "language",
-            "roles",
-            "safeScopes",
-            "approval",
-            "tools",
-            "channels",
-            "dataAccess",
-            "identity",
-            "setupResponse",
-            "lookupFailureResponse",
-            "employeeFacingNotes",
-            "policyPath",
-        ]
-        compact = {key: policy.get(key) for key in allowed_keys if key in policy}
+        def _summarize_data_access(data_access: Any) -> Dict[str, Any]:
+            if not isinstance(data_access, dict):
+                return {}
+            denied = []
+            full = []
+            read_limited = []
+            planned = []
+            other: Dict[str, str] = {}
+            for key, value in sorted(data_access.items()):
+                text = str(value).strip()
+                lower = text.lower()
+                if lower == "deny":
+                    denied.append(key)
+                elif "planned" in lower:
+                    planned.append(key)
+                elif "full" in lower:
+                    full.append(key)
+                elif "read" in lower or "summar" in lower or "limited" in lower or "draft" in lower:
+                    read_limited.append(key)
+                else:
+                    other[key] = text[:120]
+            summary: Dict[str, Any] = {}
+            if full:
+                summary["full"] = full
+            if read_limited:
+                summary["read_limited"] = read_limited
+            if planned:
+                summary["planned"] = planned
+            if denied:
+                summary["denied"] = denied
+            if other:
+                summary["other"] = other
+            return summary
+
+        def _compact_identity(identity: Any) -> Dict[str, Any]:
+            if not isinstance(identity, dict):
+                return {}
+            result = {key: identity.get(key) for key in ("nameZh", "nameEn", "appsheetPersonId") if identity.get(key)}
+            result["identityRule"] = "Exact Mattermost sender id only; no name/fuzzy fallback."
+            return result
+
+        mode_raw = self.config.extra.get("pd_one_policy_bridge_mode") or os.getenv("PD_ONE_POLICY_BRIDGE_MODE") or "compact"
+        mode = str(mode_raw).strip().lower()
+        if mode in {"full", "legacy"}:
+            allowed_keys = [
+                "schema",
+                "generatedAtUtc",
+                "found",
+                "active",
+                "decision",
+                "turnHandling",
+                "dmEnabled",
+                "language",
+                "roles",
+                "safeScopes",
+                "approval",
+                "tools",
+                "channels",
+                "dataAccess",
+                "identity",
+                "setupResponse",
+                "lookupFailureResponse",
+                "employeeFacingNotes",
+                "policyPath",
+            ]
+            compact = {key: policy.get(key) for key in allowed_keys if key in policy}
+        else:
+            compact = {
+                key: policy.get(key)
+                for key in (
+                    "schema",
+                    "generatedAtUtc",
+                    "found",
+                    "active",
+                    "decision",
+                    "turnHandling",
+                    "dmEnabled",
+                    "language",
+                    "roles",
+                    "safeScopes",
+                    "approval",
+                    "tools",
+                    "policyPath",
+                )
+                if key in policy
+            }
+            needs_refusal_text = not policy.get("found") or not policy.get("active", True) or str(policy.get("decision", "")).startswith("deny")
+            if needs_refusal_text:
+                for key in ("setupResponse", "lookupFailureResponse"):
+                    if key in policy:
+                        compact[key] = policy.get(key)
+            if "identity" in policy:
+                compact["identity"] = _compact_identity(policy.get("identity"))
+            data_access_summary = _summarize_data_access(policy.get("dataAccess"))
+            if data_access_summary:
+                compact["dataAccessSummary"] = data_access_summary
+            if policy.get("channels"):
+                compact["channelAccess"] = policy.get("channels")
         compact.update({"requesterMattermostUserId": user_id, "currentChannelId": channel_id, "currentChatType": chat_type})
-        payload = json.dumps(compact, ensure_ascii=False, sort_keys=True)
+        payload = json.dumps(compact, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return (
             "[PD One OpenClaw permission bridge]\n"
-            "Use this exact sender-id policy context before answering or using tools. "
-            "Do not rely on names, prior sessions, or fuzzy matching for privileges. "
-            "If policy lookup failed or found=false, use the setup/lookup-failure response and do not do substantive scoped work. "
-            "For Mattermost channel/group replies, enforce bilingual English + Traditional Chinese equivalent substance. "
-            "For writes, external sends, destructive actions, gateway/config/policy changes, source-system edits, broad Mattermost history/log searches, or permission expansion, require explicit approved-user authorization and dry-run where practical.\n"
-            f"Source policy paths: {workspace}/policies/mattermost-channels.md; {workspace}/policies/mattermost-users.json; {workspace}/policies/mattermost-roles.json; {workspace}/policy-cache/mattermost/users/{user_id}.json\n"
-            f"Policy JSON: {payload}"
+            "Authorize by exact sender id only; never name/fuzzy/prior-session identity. "
+            "If found=false, lookup failed, inactive, or not allowed, use setup/lookup-failure response and stop scoped work. "
+            "Mattermost channel/group replies must be bilingual English + Traditional Chinese. "
+            "Writes/external sends/destructive/gateway/config/policy/source edits/broad history/permission expansion require approved-user authorization plus dry-run where practical.\n"
+            f"Policy sources: {workspace}/policies/mattermost-channels.md; {workspace}/policies/mattermost-users.json; {workspace}/policies/mattermost-roles.json; {workspace}/policy-cache/mattermost/users/{user_id}.json\n"
+            f"Policy JSON ({mode}): {payload}"
         )
 
     @staticmethod
