@@ -1168,6 +1168,10 @@ class TestMattermostAutoThreadRootHeading:
         assert self.adapter._has_markdown_heading("body without heading") is False
         assert self.adapter._has_markdown_heading("\n\n# Title") is True
 
+    def test_fallback_thread_root_heading_title_is_bilingual(self):
+        assert self.adapter._fallback_thread_root_heading_title("請幫忙確認出貨延遲") == "請幫忙確認出貨延遲 / Thread Discussion"
+        assert self.adapter._fallback_thread_root_heading_title("Shipping delay needs review") == "討論串 / Shipping delay needs review"
+
     @pytest.mark.asyncio
     async def test_thread_reply_adds_heading_before_mention_gate(self):
         self.adapter._api_get = AsyncMock(return_value={
