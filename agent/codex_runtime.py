@@ -26,6 +26,61 @@ from typing import Any, Dict, List
 logger = logging.getLogger(__name__)
 
 
+def _is_codex_null_output_parser_error(exc: BaseException) -> bool:
+    """Detect OpenAI SDK crashes on Codex stream completions with output=null."""
+    return isinstance(exc, TypeError) and "'NoneType' object is not iterable" in str(exc)
+
+
+def _backfill_codex_stream_response(
+    *,
+    final_response: Any = None,
+    collected_output_items: list | None = None,
+    text_parts: list | None = None,
+    has_tool_calls: bool = False,
+) -> Any:
+    """Repair Codex stream responses whose final snapshot has no output.
+
+    The chatgpt.com/backend-api/codex stream can emit usable item/text events
+    and then finish with ``response.output`` as ``null``. openai-python tries
+    to iterate that field while building the final snapshot, raising a plain
+    TypeError before callers can inspect the terminal response. When we have
+    already collected stream data, return a response-shaped object instead of
+    turning the successful stream into a non-retryable local error.
+    """
+    collected_output_items = collected_output_items or []
+    text_parts = text_parts or []
+
+    if final_response is None:
+        final_response = SimpleNamespace(output=None, status="completed")
+
+    _out = getattr(final_response, "output", None)
+    if isinstance(_out, list) and _out:
+        return final_response
+
+    if collected_output_items:
+        final_response.output = list(collected_output_items)
+        logger.debug(
+            "Codex stream: backfilled %d output items from stream events",
+            len(collected_output_items),
+        )
+    elif text_parts and not has_tool_calls:
+        assembled = "".join(text_parts)
+        final_response.output = [
+            SimpleNamespace(
+                type="message",
+                role="assistant",
+                status="completed",
+                content=[SimpleNamespace(type="output_text", text=assembled)],
+            )
+        ]
+        logger.debug(
+            "Codex stream: synthesized output from %d text deltas (%d chars)",
+            len(text_parts),
+            len(assembled),
+        )
+    return final_response
+
+
 def run_codex_app_server_turn(
     agent,
     *,
@@ -248,29 +303,14 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
                         )
                 final_response = stream.get_final_response()
                 # PATCH: ChatGPT Codex backend streams valid output items
-                # but get_final_response() can return an empty output list.
+                # but get_final_response() can return an empty/null output.
                 # Backfill from collected items or synthesize from deltas.
-                _out = getattr(final_response, "output", None)
-                if isinstance(_out, list) and not _out:
-                    if collected_output_items:
-                        final_response.output = list(collected_output_items)
-                        logger.debug(
-                            "Codex stream: backfilled %d output items from stream events",
-                            len(collected_output_items),
-                        )
-                    elif agent._codex_streamed_text_parts and not has_tool_calls:
-                        assembled = "".join(agent._codex_streamed_text_parts)
-                        final_response.output = [SimpleNamespace(
-                            type="message",
-                            role="assistant",
-                            status="completed",
-                            content=[SimpleNamespace(type="output_text", text=assembled)],
-                        )]
-                        logger.debug(
-                            "Codex stream: synthesized output from %d text deltas (%d chars)",
-                            len(agent._codex_streamed_text_parts), len(assembled),
-                        )
-                return final_response
+                return _backfill_codex_stream_response(
+                    final_response=final_response,
+                    collected_output_items=collected_output_items,
+                    text_parts=agent._codex_streamed_text_parts,
+                    has_tool_calls=has_tool_calls,
+                )
         except (_httpx.RemoteProtocolError, _httpx.ReadTimeout, _httpx.ConnectError, ConnectionError) as exc:
             if attempt < max_stream_retries:
                 logger.debug(
@@ -335,6 +375,37 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
                 )
                 return agent._run_codex_create_stream_fallback(api_kwargs, client=active_client)
             raise
+        except TypeError as exc:
+            if not _is_codex_null_output_parser_error(exc):
+                raise
+            if collected_output_items or (agent._codex_streamed_text_parts and not has_tool_calls):
+                logger.warning(
+                    "Codex stream final parser returned output=null; recovered from "
+                    "stream events/text (%d items, %d chars). %s",
+                    len(collected_output_items),
+                    sum(len(p) for p in agent._codex_streamed_text_parts),
+                    agent._client_log_context(),
+                )
+                return _backfill_codex_stream_response(
+                    collected_output_items=collected_output_items,
+                    text_parts=agent._codex_streamed_text_parts,
+                    has_tool_calls=has_tool_calls,
+                )
+            if attempt < max_stream_retries:
+                logger.debug(
+                    "Codex stream final parser returned output=null with no "
+                    "recoverable stream data (attempt %s/%s); retrying. %s",
+                    attempt + 1,
+                    max_stream_retries + 1,
+                    agent._client_log_context(),
+                )
+                continue
+            logger.debug(
+                "Codex stream final parser returned output=null; falling back "
+                "to create(stream=True). %s",
+                agent._client_log_context(),
+            )
+            return agent._run_codex_create_stream_fallback(api_kwargs, client=active_client)
 
 
 
