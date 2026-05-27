@@ -84,6 +84,46 @@ def test_authorized_admin_prefix_overrides_employee_channel_scope():
     assert scoped_toolsets(["skills"], scope) == ["terminal", "file"]
 
 
+def test_admin_prefix_escalation_uses_raw_text_not_prepared_context():
+    cfg = {
+        "mattermost": {
+            "pd_one_admin_prefix": {"allow_from": ["admin-user"]},
+            "pd_one_channel_scopes": {
+                "admin-channel": {"agent_id": "admin", "allowed_toolsets": ["terminal"]},
+                "employee-channel": {"agent_id": "employee-assistant", "allowed_toolsets": ["skills"]},
+            },
+        }
+    }
+    prepared_message = """[PD One OpenClaw permission bridge]
+Policy context...
+
+[Mattermost thread context]
+[New message]
+[andy.lin] admin: show current PD One scope only"""
+
+    hidden_scope = resolve_pd_one_channel_scope(
+        cfg,
+        "mattermost",
+        "employee-channel",
+        user_id="admin-user",
+        text=prepared_message,
+    )
+    raw_scope = resolve_pd_one_channel_scope(
+        cfg,
+        "mattermost",
+        "employee-channel",
+        user_id="admin-user",
+        text="admin: show current PD One scope only",
+    )
+
+    assert hidden_scope is not None
+    assert hidden_scope["agent_id"] == "employee-assistant"
+    assert raw_scope is not None
+    assert raw_scope["agent_id"] == "admin"
+    assert raw_scope["admin_prefix_invoked"] is True
+    assert scope_signature_fragment(hidden_scope) != scope_signature_fragment(raw_scope)
+
+
 def test_unauthorized_admin_prefix_keeps_channel_scope():
     cfg = {
         "mattermost": {

@@ -8904,6 +8904,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # attachments (documents, audio, etc.) are not sent to the vision
         # tool even when they appear in the same message.
         # -----------------------------------------------------------------
+        # Preserve the raw platform event text before we prepend policy,
+        # thread, attachment, or other context. PD One/OpenClaw admin-prefix
+        # routing must be resolved against the actual user message so an
+        # ``admin:`` turn in the middle of a Mattermost thread is not hidden
+        # behind injected context.
+        raw_event_text = event.text or ""
         message_text = await self._prepare_inbound_message_text(
             event=event,
             source=source,
@@ -8945,6 +8951,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 run_generation=run_generation,
                 event_message_id=self._reply_anchor_for_event(event),
                 channel_prompt=event.channel_prompt,
+                raw_event_text=raw_event_text,
             )
 
             # Stop persistent typing indicator now that the agent is done
@@ -13592,6 +13599,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         _interrupt_depth: int = 0,
         event_message_id: Optional[str] = None,
         channel_prompt: Optional[str] = None,
+        raw_event_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Run the agent with the given message and context.
@@ -13641,8 +13649,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             platform_key,
             source.chat_id,
             user_id=getattr(source, "user_id", None),
-            text=message,
+            text=raw_event_text if raw_event_text is not None else message,
         )
+        if pd_one_scope and pd_one_scope.get("admin_prefix_invoked"):
+            logger.info(
+                "PD One admin-prefix escalation: platform=%s chat_id=%s user_id=%s agent_id=%s original_agent_id=%s",
+                platform_key,
+                source.chat_id,
+                getattr(source, "user_id", None),
+                pd_one_scope.get("agent_id"),
+                (pd_one_scope.get("original_channel_scope") or {}).get("agent_id"),
+            )
         enabled_toolsets = scoped_toolsets(enabled_toolsets, pd_one_scope)
         agent_cfg_local = user_config.get("agent") or {}
         disabled_toolsets = agent_cfg_local.get("disabled_toolsets") or None
@@ -15996,6 +16013,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 updated_history = result.get("messages", history)
                 next_source = source
                 next_message = pending
+                next_raw_event_text = pending
                 next_message_id = None
                 next_channel_prompt = None
                 if pending_event is not None:
@@ -16006,6 +16024,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             session_key or "?",
                         )
                         return result
+                    next_raw_event_text = pending_event.text or ""
                     next_message = await self._prepare_inbound_message_text(
                         event=pending_event,
                         source=next_source,
@@ -16040,6 +16059,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     _interrupt_depth=_interrupt_depth + 1,
                     event_message_id=next_message_id,
                     channel_prompt=next_channel_prompt,
+                    raw_event_text=next_raw_event_text,
                 )
                 return _preserve_queued_followup_history_offset(result, followup_result)
         finally:
