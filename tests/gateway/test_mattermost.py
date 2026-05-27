@@ -193,7 +193,7 @@ def _make_adapter():
     config = PlatformConfig(
         enabled=True,
         token="test-token",
-        extra={"url": "https://mm.example.com"},
+        extra={"url": "https://mm.example.com", "pd_one_policy_bridge": False},
     )
     adapter = MattermostAdapter(config)
     return adapter
@@ -851,6 +851,190 @@ class TestMattermostWebSocketParsing:
         assert self.adapter.handle_message.called
         msg_event = self.adapter.handle_message.call_args[0][0]
         assert msg_event.source.thread_id == "root_post_123"
+
+    @pytest.mark.asyncio
+    async def test_root_channel_post_uses_own_post_id_as_thread_id(self):
+        """Top-level Mattermost posts should get isolated sessions per post/thread."""
+        post_data = {
+            "id": "root_post_456",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Start a separate task",
+            "root_id": "",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+        assert self.adapter.handle_message.called
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.source.thread_id == "root_post_456"
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_fetches_root_thread_context(self):
+        """A mention in an existing thread should prepend earlier thread posts."""
+        post_data = {
+            "id": "post_reply",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id What did we decide?",
+            "root_id": "root_post_123",
+        }
+        self.adapter._api_get = AsyncMock(return_value={
+            "order": ["root_post_123", "older_reply", "post_reply"],
+            "posts": {
+                "root_post_123": {
+                    "id": "root_post_123",
+                    "user_id": "user_root",
+                    "message": "Original question before Hermes was mentioned",
+                    "create_at": 1000,
+                },
+                "older_reply": {
+                    "id": "older_reply",
+                    "user_id": "user_older",
+                    "message": "Earlier answer in the Mattermost thread",
+                    "file_ids": ["prior_file_1"],
+                    "create_at": 2000,
+                },
+                "post_reply": post_data,
+            },
+        })
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        self.adapter._api_get.assert_any_await("posts/root_post_123/thread")
+        self.adapter._api_get.assert_any_await("files/prior_file_1/info")
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.source.thread_id == "root_post_123"
+        assert "Mattermost thread context" in msg_event.channel_context
+        assert "Original question before Hermes was mentioned" in msg_event.channel_context
+        assert "Earlier answer in the Mattermost thread" in msg_event.channel_context
+        assert "prior_file_1" in msg_event.channel_context
+        assert "What did we decide?" not in msg_event.channel_context
+
+    @pytest.mark.asyncio
+    async def test_thread_context_fetch_failure_does_not_drop_message(self):
+        """Thread API failures should not prevent the triggering mention from running."""
+        post_data = {
+            "id": "post_reply",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Continue",
+            "root_id": "root_post_123",
+        }
+        self.adapter._api_get = AsyncMock(side_effect=RuntimeError("thread unavailable"))
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        assert self.adapter.handle_message.called
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.text == "Continue"
+        assert msg_event.channel_context is None
+
+    @pytest.mark.asyncio
+    async def test_pd_one_policy_bridge_injects_hermes_policy_context(self, tmp_path):
+        """PD One profile can inject Hermes sender policy cache into context."""
+        cache = tmp_path / "users"
+        cache.mkdir()
+        (cache / "user_123.json").write_text(json.dumps({
+            "schema": "pd-one.mattermost-policy-resolution.v1",
+            "found": True,
+            "active": True,
+            "decision": "allow_dm",
+            "turnHandling": "scoped_dm_allowed",
+            "language": "zh-tw",
+            "roles": ["facilities"],
+            "safeScopes": ["facilities", "appsheet-readonly"],
+            "tools": {"reads": "allowed", "writes": "confirm"},
+            "approval": {"writes": False, "gatewayRestart": False},
+            "dataAccess": {"credentials": "deny", "operationalDocs": "read-summarize-only"},
+            "setupResponse": {"en": "setup needed"},
+        }), encoding="utf-8")
+        self.adapter.config.extra.update({
+            "pd_one_policy_bridge": True,
+            "pd_one_openclaw_workspace": "/openclaw/workspace",
+            "pd_one_policy_cache_users": str(cache),
+        })
+        post_data = {
+            "id": "post_root",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Can I update this?",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert "PD One Hermes permission bridge" in msg_event.channel_context
+        assert '"requesterMattermostUserId":"user_123"' in msg_event.channel_context
+        assert '"roles":["facilities"]' in msg_event.channel_context
+        assert '"dataAccessSummary"' in msg_event.channel_context
+        assert '"denied":["credentials"]' in msg_event.channel_context
+        assert '"read_limited":["operationalDocs"]' in msg_event.channel_context
+        assert "mattermost-channels.md" in msg_event.channel_context
+        assert "require approved-user authorization" in msg_event.channel_context
+
+    @pytest.mark.asyncio
+    async def test_pd_one_policy_bridge_missing_cache_marks_lookup_failure(self, tmp_path):
+        """Missing Hermes policy cache entries are explicit, not silent allows."""
+        cache = tmp_path / "users"
+        cache.mkdir()
+        self.adapter.config.extra.update({
+            "pd_one_policy_bridge": True,
+            "pd_one_openclaw_workspace": "/openclaw/workspace",
+            "pd_one_policy_cache_users": str(cache),
+        })
+        post_data = {
+            "id": "post_root",
+            "user_id": "unknown_user",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Help me",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@unknown",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert "PD One Hermes permission bridge" in msg_event.channel_context
+        assert '"found":false' in msg_event.channel_context
+        assert "stop scoped work" in msg_event.channel_context
 
     @pytest.mark.asyncio
     async def test_invalid_post_json_ignored(self):
