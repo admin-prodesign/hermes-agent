@@ -1376,6 +1376,18 @@ class MattermostAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="Failed to edit post")
         return SendResult(success=True, message_id=data["id"])
 
+    async def delete_message(self, chat_id: str, message_id: str) -> bool:
+        """Delete a previously sent Mattermost post.
+
+        Mattermost post IDs are globally unique, so the channel ID is not
+        needed by the REST endpoint.  The gateway only tracks IDs returned from
+        sends it performed itself; Mattermost enforces token permissions server
+        side if a caller ever passes an invalid/unauthorized post ID.
+        """
+        if not message_id:
+            return False
+        return await self._api_delete(f"posts/{message_id}")
+
     async def send_image(
         self,
         chat_id: str,
