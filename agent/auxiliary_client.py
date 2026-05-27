@@ -6498,8 +6498,10 @@ def _build_call_kwargs(
         else:
             effort = reasoning_config.get("effort") or "medium"
             merged_extra["reasoning"] = {"enabled": True, "effort": effort}
-    if provider == "nous" and "tags" not in merged_extra:
-        merged_extra["tags"] = _nous_portal_tags()
+    if (provider == "nous" or auxiliary_is_nous) and "tags" not in merged_extra:
+        portal_tags = _nous_portal_tags() or []
+        if portal_tags:
+            merged_extra["tags"] = portal_tags
     if merged_extra:
         kwargs["extra_body"] = merged_extra
 
