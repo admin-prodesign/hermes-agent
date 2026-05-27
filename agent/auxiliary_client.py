@@ -796,22 +796,45 @@ class _CodexCompletionsAdapter:
                 timeout_timer.daemon = True
                 timeout_timer.start()
             _check_cancelled()
-            with self._client.responses.stream(**resp_kwargs) as stream:
-                for _event in stream:
+            final = None
+            try:
+                with self._client.responses.stream(**resp_kwargs) as stream:
+                    for _event in stream:
+                        _check_cancelled()
+                        _etype = getattr(_event, "type", "")
+                        if _etype == "response.output_item.done":
+                            _done = getattr(_event, "item", None)
+                            if _done is not None:
+                                collected_output_items.append(_done)
+                        elif "output_text.delta" in _etype:
+                            _delta = getattr(_event, "delta", "")
+                            if _delta:
+                                collected_text_deltas.append(_delta)
+                        elif "function_call" in _etype:
+                            has_function_calls = True
                     _check_cancelled()
-                    _etype = getattr(_event, "type", "")
-                    if _etype == "response.output_item.done":
-                        _done = getattr(_event, "item", None)
-                        if _done is not None:
-                            collected_output_items.append(_done)
-                    elif "output_text.delta" in _etype:
-                        _delta = getattr(_event, "delta", "")
-                        if _delta:
-                            collected_text_deltas.append(_delta)
-                    elif "function_call" in _etype:
-                        has_function_calls = True
-                _check_cancelled()
-                final = stream.get_final_response()
+                    final = stream.get_final_response()
+            except TypeError as exc:
+                # Some Codex Responses streams end with response.output=None,
+                # which makes the OpenAI SDK final parser raise while streamed
+                # deltas/items are already available.  Recover from the events
+                # we collected instead of failing short auxiliary tasks like
+                # Mattermost thread titling.
+                if "NoneType" not in str(exc) or not (collected_output_items or collected_text_deltas):
+                    raise
+                logger.warning(
+                    "Codex auxiliary: recovering from Responses final parser output=None "
+                    "using %d output item(s), %d text delta(s)",
+                    len(collected_output_items),
+                    len(collected_text_deltas),
+                )
+                final = SimpleNamespace(output=list(collected_output_items), usage=None)
+                if not collected_output_items and collected_text_deltas and not has_function_calls:
+                    assembled = "".join(collected_text_deltas)
+                    final.output = [SimpleNamespace(
+                        type="message", role="assistant", status="completed",
+                        content=[SimpleNamespace(type="output_text", text=assembled)],
+                    )]
 
             # Backfill empty output from collected stream events
             _output = getattr(final, "output", None)
