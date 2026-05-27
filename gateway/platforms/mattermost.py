@@ -558,7 +558,7 @@ class MattermostAdapter(BasePlatformAdapter):
             )
             if not title:
                 return
-            new_message = f"### {title}\n\n{root_message}" if root_message.strip() else f"### {title}"
+            new_message = f"##### {title}\n\n{root_message}" if root_message.strip() else f"##### {title}"
             data = await self._api_put(f"posts/{root_id}/patch", {"message": new_message})
             if data and data.get("id"):
                 logger.info("Mattermost: auto-added heading to thread root %s", root_id)

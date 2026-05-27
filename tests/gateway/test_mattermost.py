@@ -854,7 +854,7 @@ class TestMattermostAutoThreadRootHeading:
 
         self.adapter._api_put.assert_awaited_once_with(
             "posts/root_post/patch",
-            {"message": "### 出貨延遲檢討 / Shipping Delay Review\n\nCan someone look at this?"},
+            {"message": "##### 出貨延遲檢討 / Shipping Delay Review\n\nCan someone look at this?"},
         )
         # No @mention in the reply, so the normal agent path should still be skipped.
         assert getattr(self.adapter.handle_message, "call_count") == 0
