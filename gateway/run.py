@@ -11918,6 +11918,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # attachments (documents, audio, etc.) are not sent to the vision
         # tool even when they appear in the same message.
         # -----------------------------------------------------------------
+        # Preserve the raw user text before policy/thread/attachment context
+        # is prepended so admin-prefix routing sees the actual command.
+        raw_event_text = event.text or ""
         message_text = await self._prepare_profile_scoped_inbound_message_text(
             event=event,
             source=source,
@@ -12003,6 +12006,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 moa_config=getattr(event, "_moa_config", None),
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
+                raw_event_text=raw_event_text,
             )
 
             # Stop persistent typing indicator now that the agent is done.
@@ -17482,6 +17486,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         moa_config: Optional[dict] = None,
         persist_user_message: Optional[Any] = None,
         persist_user_timestamp: Optional[float] = None,
+        raw_event_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Profile-scoping wrapper around the agent run.
 
@@ -17500,6 +17505,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 channel_prompt=channel_prompt, moa_config=moa_config,
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
+                raw_event_text=raw_event_text,
             )
 
         profile_home = self._resolve_profile_home_for_source(source)
@@ -17511,6 +17517,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 channel_prompt=channel_prompt, moa_config=moa_config,
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
+                raw_event_text=raw_event_text,
             )
 
     def _resolve_profile_home_for_source(self, source: SessionSource) -> "Path":
@@ -17543,6 +17550,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         moa_config: Optional[dict] = None,
         persist_user_message: Optional[Any] = None,
         persist_user_timestamp: Optional[float] = None,
+        raw_event_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Run the agent with the given message and context.
@@ -17587,7 +17595,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             resolve_pd_one_channel_scope,
             scoped_toolsets,
         )
-        pd_one_scope = resolve_pd_one_channel_scope(user_config, platform_key, source.chat_id)
+        pd_one_scope = resolve_pd_one_channel_scope(
+            user_config,
+            platform_key,
+            source.chat_id,
+            user_id=getattr(source, "user_id", None),
+            text=raw_event_text if raw_event_text is not None else message,
+        )
+        if pd_one_scope and pd_one_scope.get("admin_prefix_invoked"):
+            logger.info(
+                "PD One admin-prefix escalation: platform=%s chat_id=%s user_id=%s agent_id=%s original_agent_id=%s",
+                platform_key,
+                source.chat_id,
+                getattr(source, "user_id", None),
+                pd_one_scope.get("agent_id"),
+                (pd_one_scope.get("original_channel_scope") or {}).get("agent_id"),
+            )
         enabled_toolsets = scoped_toolsets(enabled_toolsets, pd_one_scope)
         agent_cfg_local = user_config.get("agent") or {}
         disabled_toolsets = agent_cfg_local.get("disabled_toolsets") or None
@@ -20492,6 +20515,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 updated_history = result.get("messages", history)
                 next_source = source
                 next_message = pending
+                next_raw_event_text = pending
                 next_message_id = None
                 next_channel_prompt = None
                 next_session_key = session_key
@@ -20503,11 +20527,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             session_key or "?",
                         )
                         return result
-                    # Resolve the follow-up's session key BEFORE preparing the
-                    # inbound text: _prepare_inbound_message_text buffers native
-                    # image paths under the key it is given, and the recursive
-                    # _run_agent below consumes them under next_session_key.
-                    # The write and consume keys must match or the images drop.
+                    # Resolve the follow-up key before buffering native media;
+                    # the write and consume session keys must match.
                     try:
                         next_session_key = self._session_key_for_source(next_source)
                     except Exception:
@@ -20516,6 +20537,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             session_key or "?",
                             exc_info=True,
                         )
+                    next_raw_event_text = pending_event.text or ""
                     next_message = await self._prepare_profile_scoped_inbound_message_text(
                         event=pending_event,
                         source=next_source,
@@ -20567,6 +20589,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     _interrupt_depth=_interrupt_depth + 1,
                     event_message_id=next_message_id,
                     channel_prompt=next_channel_prompt,
+                    raw_event_text=next_raw_event_text,
                 )
                 return _preserve_queued_followup_history_offset(result, followup_result)
         finally:
