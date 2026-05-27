@@ -68,6 +68,17 @@ def test_programmatic_surfaces_keep_raw_status():
         )
 
 
+def test_mattermost_status_suppresses_retry_noise():
+    """Mattermost progress breadcrumbs should not expose provider retry chatter."""
+    noisy_messages = [
+        "⏳ Retrying in 2.4s (attempt 1/3)...",
+        "⚠️ Max retries (3) exhausted — trying fallback...",
+    ]
+
+    for message in noisy_messages:
+        assert _prepare_gateway_status_message(Platform.MATTERMOST, "warn", message) is None
+
+
 @pytest.mark.parametrize("platform", CHAT_PLATFORMS)
 @pytest.mark.parametrize("message", NOISY_STATUS_MESSAGES)
 def test_all_chat_gateways_suppress_noise(platform, message):
@@ -169,6 +180,17 @@ def test_telegram_status_sanitizes_raw_provider_security_errors():
     assert "req_123" not in sanitized
 
 
+def test_mattermost_status_sanitizes_raw_provider_errors():
+    raw = "❌ Non-retryable error (HTTP None): 'NoneType' object is not iterable"
+
+    sanitized = _prepare_gateway_status_message(Platform.MATTERMOST, "lifecycle", raw)
+
+    assert sanitized is not None
+    assert "model provider failed" in sanitized.lower()
+    assert "NoneType" not in sanitized
+    assert "HTTP None" not in sanitized
+
+
 def test_telegram_final_response_sanitizes_raw_provider_errors():
     """Final Telegram replies should not expose raw provider/security details."""
     raw = (
@@ -182,6 +204,16 @@ def test_telegram_final_response_sanitizes_raw_provider_errors():
     assert "cybersecurity risk" not in sanitized.lower()
     assert "HTTP 400" not in sanitized
     assert "req_abc" not in sanitized
+
+
+def test_mattermost_final_response_sanitizes_raw_provider_errors():
+    raw = "API call failed after 3 retries: HTTP 500: upstream exploded request_id=req_mm"
+
+    sanitized = _sanitize_gateway_final_response(Platform.MATTERMOST, raw)
+
+    assert "model provider failed" in sanitized.lower()
+    assert "HTTP 500" not in sanitized
+    assert "req_mm" not in sanitized
 
 
 def test_telegram_final_response_redacts_auth_secrets():
