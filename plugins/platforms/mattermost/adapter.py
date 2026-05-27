@@ -1169,10 +1169,6 @@ class MattermostAdapter(BasePlatformAdapter):
         except (json.JSONDecodeError, TypeError):
             return
 
-        # Ignore own messages.
-        if post.get("user_id") == self._bot_user_id:
-            return
-
         # Ignore system posts.
         if post.get("type"):
             return
@@ -1190,8 +1186,15 @@ class MattermostAdapter(BasePlatformAdapter):
 
         # Passive hygiene automation: on any non-DM thread reply, optionally
         # add a Markdown heading to the root post before normal mention-gating.
-        # This does not invoke the main agent or post a public reply.
+        # Run this before the self-message guard because the most common
+        # qualifying reply may be PD One's own threaded answer to a user's
+        # untitled root question.  This does not invoke the main agent or post
+        # a public reply.
         await self._maybe_auto_heading_thread_root(post, channel_type_raw)
+
+        # Ignore own messages for the main agent loop after passive hygiene.
+        if post.get("user_id") == self._bot_user_id:
+            return
 
         # For DMs, user_id is sufficient.  For channels, check for @mention.
         message_text = post.get("message", "")

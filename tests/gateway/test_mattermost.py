@@ -970,6 +970,30 @@ class TestMattermostAutoThreadRootHeading:
         assert getattr(self.adapter.handle_message, "call_count") == 0
 
     @pytest.mark.asyncio
+    async def test_own_thread_reply_adds_heading_but_does_not_reenter_agent(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "Untitled user question",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="使用者問題 / User Question")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+        event = self._reply_event("PD One answer")
+        post = json.loads(event["data"]["post"])
+        post["id"] = "bot_reply_post"
+        post["user_id"] = "bot_user_id"
+        event["data"]["post"] = json.dumps(post)
+        event["data"]["sender_name"] = "@pd_one_bot"
+
+        await self.adapter._handle_ws_event(event)
+
+        self.adapter._api_put.assert_awaited_once_with(
+            "posts/root_post/patch",
+            {"message": "##### 使用者問題 / User Question\n\nUntitled user question"},
+        )
+        assert getattr(self.adapter.handle_message, "call_count") == 0
+
+    @pytest.mark.asyncio
     async def test_thread_reply_skips_root_that_already_has_heading(self):
         self.adapter._api_get = AsyncMock(return_value={
             "id": "root_post",
