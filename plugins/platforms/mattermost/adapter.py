@@ -1265,6 +1265,25 @@ class MattermostAdapter(BasePlatformAdapter):
 
         return SendResult(success=True, message_id=last_id)
 
+    async def _resolve_effective_thread_root(
+        self,
+        reply_to: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        """Return the Mattermost root_id for a send, honoring metadata.
+
+        Text sends already accept thread routing either through ``reply_to`` or
+        synthetic-send metadata (``thread_id`` / ``root_id``). File/image sends
+        must use the same routing; otherwise MEDIA attachments emitted after a
+        threaded text reply become top-level channel posts.
+        """
+        effective_reply_to = reply_to
+        if not effective_reply_to and metadata:
+            effective_reply_to = metadata.get("thread_id") or metadata.get("root_id")
+        if effective_reply_to and self._reply_mode == "thread":
+            return await self._resolve_root_id(str(effective_reply_to))
+        return None
+
     async def get_chat_info(self, chat_id: str) -> Dict[str, Any]:
         """Return channel name and type."""
         data = await self._api_get(f"channels/{chat_id}")
@@ -1367,7 +1386,7 @@ class MattermostAdapter(BasePlatformAdapter):
     ) -> SendResult:
         """Download an image and upload it as a file attachment."""
         return await self._send_url_as_file(
-            chat_id, image_url, caption, reply_to, "image", metadata
+            chat_id, image_url, caption, reply_to, "image", metadata=metadata
         )
 
     async def send_image_file(
@@ -1394,7 +1413,7 @@ class MattermostAdapter(BasePlatformAdapter):
     ) -> SendResult:
         """Upload a local file as a document."""
         return await self._send_local_file(
-            chat_id, file_path, caption, reply_to, file_name, metadata
+            chat_id, file_path, caption, reply_to, file_name, metadata=metadata
         )
 
     async def send_voice(
@@ -1492,9 +1511,9 @@ class MattermostAdapter(BasePlatformAdapter):
             "message": caption or "",
             "file_ids": [file_id],
         }
-        resolved_root = await self._thread_root_for_send(reply_to, metadata)
-        if resolved_root:
-            payload["root_id"] = resolved_root
+        root_id = await self._resolve_effective_thread_root(reply_to, metadata)
+        if root_id:
+            payload["root_id"] = root_id
 
         data = await self._post_preserving_thread(chat_id, payload, metadata)
         if not data or "id" not in data:
@@ -1533,9 +1552,9 @@ class MattermostAdapter(BasePlatformAdapter):
             "message": caption or "",
             "file_ids": [file_id],
         }
-        resolved_root = await self._thread_root_for_send(reply_to, metadata)
-        if resolved_root:
-            payload["root_id"] = resolved_root
+        root_id = await self._resolve_effective_thread_root(reply_to, metadata)
+        if root_id:
+            payload["root_id"] = root_id
 
         data = await self._post_preserving_thread(chat_id, payload, metadata)
         if not data or "id" not in data:
@@ -1621,9 +1640,9 @@ class MattermostAdapter(BasePlatformAdapter):
                     "message": "\n".join(caption_parts),
                     "file_ids": file_ids,
                 }
-                resolved_root = await self._thread_root_for_send(None, metadata)
-                if resolved_root:
-                    payload["root_id"] = resolved_root
+                root_id = await self._resolve_effective_thread_root(metadata=metadata)
+                if root_id:
+                    payload["root_id"] = root_id
                 logger.info(
                     "Mattermost: sending %d image(s) as single post (chunk %d/%d)",
                     len(file_ids), chunk_idx + 1, len(chunks),
