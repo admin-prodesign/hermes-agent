@@ -709,6 +709,110 @@ class MattermostAdapter(BasePlatformAdapter):
             return cls._sanitize_root_heading_title(f"{candidate} / Thread Discussion")
         return cls._sanitize_root_heading_title(f"{candidate} / 討論串")
 
+    @classmethod
+    def _mention_translation_marker_present(cls, message: str) -> bool:
+        return "**Translation / 翻譯 (utility-agent):**" in str(message or "")
+
+    @staticmethod
+    def _truncate_translation_text(text: str, max_chars: int = 1600) -> str:
+        cleaned = str(text or "").strip()
+        cleaned = re.sub(r"^```(?:\w+)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+        if len(cleaned) > max_chars:
+            cleaned = cleaned[: max_chars - 1].rstrip() + "…"
+        return cleaned
+
+    async def _generate_mention_translation(self, message: str) -> Optional[str]:
+        """Use the auxiliary LLM slot as the utility agent for mention translations."""
+        source = str(message or "").strip()
+        if not source:
+            return None
+        system_prompt = (
+            "You are a low-cost utility agent that translates Mattermost messages. "
+            "Translate the user's message faithfully and concisely. If the source is "
+            "primarily English, translate to Traditional Chinese. If it is primarily "
+            "Traditional Chinese or mixed Chinese, translate to English. If both "
+            "languages are already present with equivalent meaning, return an empty "
+            "string. Preserve names, @mentions, URLs, file names, numbers, and technical "
+            "terms. Do not answer the message, do not add commentary, and do not wrap "
+            "the result in quotes or Markdown fences."
+        )
+        user_prompt = (
+            "Translate this Mattermost message only. Return only the translation text, "
+            "or an empty string if no translation is needed.\n\n"
+            f"Message:\n{source[:3000]}"
+        )
+        try:
+            response = await async_call_llm(
+                task="mattermost_mention_translation",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=500,
+                temperature=0.1,
+                timeout=30.0,
+            )
+        except Exception as exc:
+            logger.warning("Mattermost: mention translation generation failed: %s", exc)
+            logger.debug("Mattermost mention translation traceback", exc_info=True)
+            return None
+        try:
+            content = response.choices[0].message.content
+        except Exception:
+            content = ""
+        return self._truncate_translation_text(content)
+
+    async def _maybe_append_mention_translation(
+        self,
+        post: Dict[str, Any],
+        *,
+        has_mention: bool,
+        channel_type_raw: str,
+    ) -> None:
+        """Best-effort: append a clearly labeled utility-agent translation to channel mentions."""
+        if channel_type_raw == "D" or not has_mention:
+            return
+        enabled_raw = None
+        if self.config.extra:
+            enabled_raw = self.config.extra.get("auto_translate_mentioned_channel_messages")
+        if enabled_raw is None:
+            enabled_raw = os.getenv("MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES", "false")
+        enabled = str(enabled_raw).lower() in {"true", "1", "yes", "on"}
+        if not enabled:
+            return
+
+        post_id = str(post.get("id") or "").strip()
+        message = str(post.get("message") or "")
+        if not post_id or not message.strip() or self._mention_translation_marker_present(message):
+            return
+
+        translation = await self._generate_mention_translation(message)
+        if not translation:
+            return
+
+        appended = (
+            f"{message.rstrip()}\n\n---\n"
+            f"**Translation / 翻譯 (utility-agent):**\n{translation}"
+        )
+        if len(appended) > MAX_POST_LENGTH:
+            budget = MAX_POST_LENGTH - len(message.rstrip()) - len("\n\n---\n**Translation / 翻譯 (utility-agent):**\n")
+            if budget < 80:
+                logger.warning("Mattermost: skipped mention translation for %s because post is too long", post_id)
+                return
+            translation = self._truncate_translation_text(translation, budget)
+            appended = (
+                f"{message.rstrip()}\n\n---\n"
+                f"**Translation / 翻譯 (utility-agent):**\n{translation}"
+            )
+
+        data = await self._api_put(f"posts/{post_id}/patch", {"message": appended})
+        if data and data.get("id"):
+            post["message"] = appended
+            logger.info("Mattermost: appended utility-agent translation to mentioned post %s", post_id)
+        else:
+            logger.warning("Mattermost: failed to append mention translation for post %s", post_id)
+
     async def _generate_thread_root_heading_title(
         self,
         root_message: str,
@@ -1410,6 +1514,13 @@ class MattermostAdapter(BasePlatformAdapter):
                 for pattern in mention_patterns
             )
 
+            if has_mention:
+                await self._maybe_append_mention_translation(
+                    post,
+                    has_mention=has_mention,
+                    channel_type_raw=channel_type_raw,
+                )
+
             if require_mention and not is_free_channel and not has_mention:
                 logger.debug(
                     "Mattermost: skipping non-DM message without @mention (channel=%s)",
@@ -1769,6 +1880,13 @@ def _apply_yaml_config(yaml_cfg: dict, mattermost_cfg: dict) -> dict | None:
     """
     if "require_mention" in mattermost_cfg and not os.getenv("MATTERMOST_REQUIRE_MENTION"):
         os.environ["MATTERMOST_REQUIRE_MENTION"] = str(mattermost_cfg["require_mention"]).lower()
+    if (
+        "auto_translate_mentioned_channel_messages" in mattermost_cfg
+        and not os.getenv("MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES")
+    ):
+        os.environ["MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES"] = str(
+            mattermost_cfg["auto_translate_mentioned_channel_messages"]
+        ).lower()
     frc = mattermost_cfg.get("free_response_channels")
     if frc is not None and not os.getenv("MATTERMOST_FREE_RESPONSE_CHANNELS"):
         if isinstance(frc, list):

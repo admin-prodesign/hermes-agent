@@ -1676,3 +1676,59 @@ class TestMattermostThreadRehydrationCache:
         assert first_files == ["root_file"]
         assert "Root context" in second_context
         assert second_files == ["root_file"]
+
+
+# ---------------------------------------------------------------------------
+# Mention translation append
+# ---------------------------------------------------------------------------
+
+class TestMattermostMentionTranslation:
+    @pytest.mark.asyncio
+    async def test_appends_utility_translation_when_enabled(self):
+        adapter = _make_adapter()
+        adapter.config.extra["auto_translate_mentioned_channel_messages"] = True
+        adapter._generate_mention_translation = AsyncMock(return_value="請檢查今天的排程。")
+        adapter._api_put = AsyncMock(return_value={"id": "post123"})
+        post = {"id": "post123", "message": "@pd-one please check today's schedule."}
+
+        await adapter._maybe_append_mention_translation(
+            post,
+            has_mention=True,
+            channel_type_raw="O",
+        )
+
+        adapter._api_put.assert_awaited_once()
+        path, payload = adapter._api_put.await_args.args
+        assert path == "posts/post123/patch"
+        assert "**Translation / 翻譯 (utility-agent):**" in payload["message"]
+        assert "請檢查今天的排程。" in payload["message"]
+        assert post["message"] == payload["message"]
+
+    @pytest.mark.asyncio
+    async def test_skips_dm_and_existing_translation_marker(self):
+        adapter = _make_adapter()
+        adapter.config.extra["auto_translate_mentioned_channel_messages"] = True
+        adapter._generate_mention_translation = AsyncMock(return_value="translation")
+        adapter._api_put = AsyncMock(return_value={"id": "post123"})
+
+        await adapter._maybe_append_mention_translation(
+            {"id": "post123", "message": "@pd-one hello"},
+            has_mention=True,
+            channel_type_raw="D",
+        )
+        await adapter._maybe_append_mention_translation(
+            {"id": "post124", "message": "@pd-one hello\n\n**Translation / 翻譯 (utility-agent):**\n你好"},
+            has_mention=True,
+            channel_type_raw="O",
+        )
+
+        adapter._generate_mention_translation.assert_not_awaited()
+        adapter._api_put.assert_not_awaited()
+
+    def test_yaml_bridge_exports_mention_translation_env(self, monkeypatch):
+        from plugins.platforms.mattermost.adapter import _apply_yaml_config
+
+        monkeypatch.delenv("MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES", raising=False)
+        _apply_yaml_config({}, {"auto_translate_mentioned_channel_messages": True})
+
+        assert os.environ["MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES"] == "true"
