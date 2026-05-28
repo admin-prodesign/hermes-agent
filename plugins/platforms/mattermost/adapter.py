@@ -175,6 +175,51 @@ class MattermostAdapter(BasePlatformAdapter):
             logger.error("MM API PUT %s network error: %s", path, exc)
             return {}
 
+    def _file_download_timeout(self):
+        """Return a generous timeout for Mattermost attachment downloads.
+
+        Mattermost can serve larger Office/CAD attachments slowly from the
+        production host.  A 30s total timeout is fine for JSON API calls but it
+        can silently drop valid thread attachments before the agent sees them.
+        Keep a bounded total timeout, but allow enough wall clock time for
+        multi-MB files over slow links.
+        """
+        import aiohttp
+
+        raw_total = (
+            self.config.extra.get("file_download_timeout")
+            if self.config.extra and "file_download_timeout" in self.config.extra
+            else os.getenv("MATTERMOST_FILE_DOWNLOAD_TIMEOUT", "600")
+        )
+        raw_sock_read = (
+            self.config.extra.get("file_download_sock_read_timeout")
+            if self.config.extra and "file_download_sock_read_timeout" in self.config.extra
+            else os.getenv("MATTERMOST_FILE_DOWNLOAD_SOCK_READ_TIMEOUT", "120")
+        )
+        try:
+            total = max(float(str(raw_total or "600")), 30.0)
+        except (TypeError, ValueError):
+            total = 600.0
+        try:
+            sock_read = max(float(str(raw_sock_read or "120")), 30.0)
+        except (TypeError, ValueError):
+            sock_read = 120.0
+        return aiohttp.ClientTimeout(total=total, sock_read=sock_read)
+
+    async def _download_file_bytes(self, file_id: str) -> Tuple[Optional[bytes], Optional[int], Optional[str]]:
+        """Download a Mattermost file using the attachment-specific timeout."""
+        if not self._session:
+            return None, None, "Mattermost session is not connected"
+        dl_url = f"{self._base_url}/api/v4/files/{file_id}"
+        async with self._session.get(
+            dl_url,
+            headers={"Authorization": f"Bearer {self._token}"},
+            timeout=self._file_download_timeout(),
+        ) as resp:
+            if resp.status >= 400:
+                return None, resp.status, None
+            return await resp.read(), resp.status, None
+
     async def _api_delete(self, path: str) -> bool:
         """DELETE /api/v4/{path}.
 
@@ -1586,31 +1631,26 @@ class MattermostAdapter(BasePlatformAdapter):
                 ext = Path(fname).suffix or ""
                 mime = file_info.get("mime_type", "application/octet-stream")
 
-                import aiohttp
-                dl_url = f"{self._base_url}/api/v4/files/{fid}"
-                async with self._session.get(
-                    dl_url,
-                    headers={"Authorization": f"Bearer {self._token}"},
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as resp:
-                    if resp.status < 400:
-                        file_data = await resp.read()
-                        from gateway.platforms.base import cache_image_from_bytes, cache_document_from_bytes
-                        if mime.startswith("image/"):
-                            local_path = cache_image_from_bytes(file_data, ext or ".png")
-                            media_urls.append(local_path)
-                            media_types.append(mime)
-                        elif mime.startswith("audio/"):
-                            from gateway.platforms.base import cache_audio_from_bytes
-                            local_path = cache_audio_from_bytes(file_data, ext or ".ogg")
-                            media_urls.append(local_path)
-                            media_types.append(mime)
-                        else:
-                            local_path = cache_document_from_bytes(file_data, fname)
-                            media_urls.append(local_path)
-                            media_types.append(mime)
+                file_data, status, error = await self._download_file_bytes(fid)
+                if file_data is not None:
+                    from gateway.platforms.base import cache_image_from_bytes, cache_document_from_bytes
+                    if mime.startswith("image/"):
+                        local_path = cache_image_from_bytes(file_data, ext or ".png")
+                        media_urls.append(local_path)
+                        media_types.append(mime)
+                    elif mime.startswith("audio/"):
+                        from gateway.platforms.base import cache_audio_from_bytes
+                        local_path = cache_audio_from_bytes(file_data, ext or ".ogg")
+                        media_urls.append(local_path)
+                        media_types.append(mime)
                     else:
-                        logger.warning("Mattermost: failed to download file %s: HTTP %s", fid, resp.status)
+                        local_path = cache_document_from_bytes(file_data, fname)
+                        media_urls.append(local_path)
+                        media_types.append(mime)
+                elif status is not None:
+                    logger.warning("Mattermost: failed to download file %s: HTTP %s", fid, status)
+                else:
+                    logger.warning("Mattermost: failed to download file %s: %s", fid, error or "unknown error")
             except Exception as exc:
                 logger.warning("Mattermost: error downloading file %s: %s", fid, exc)
 
