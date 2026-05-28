@@ -20489,27 +20489,63 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             _ids_snapshot = list(_cleanup_msg_ids)
             _chat_id_snapshot = source.chat_id
             _adapter_snapshot = _cleanup_adapter
-            _loop_snapshot = asyncio.get_running_loop()
 
-            def _cleanup_temp_bubbles() -> None:
-                async def _delete_all() -> None:
-                    for _mid in _ids_snapshot:
-                        try:
-                            await _adapter_snapshot.delete_message(
-                                _chat_id_snapshot, _mid
+            async def _cleanup_temp_bubbles() -> None:
+                logger.info(
+                    "Temp bubble cleanup starting: platform=%s chat=%s session=%s count=%d",
+                    source.platform.value if source.platform else "unknown",
+                    _chat_id_snapshot,
+                    session_key or "?",
+                    len(_ids_snapshot),
+                )
+                for _mid in _ids_snapshot:
+                    try:
+                        _deleted = await _adapter_snapshot.delete_message(
+                            _chat_id_snapshot, _mid
+                        )
+                        if _deleted:
+                            logger.debug(
+                                "Temp bubble cleanup deleted message: platform=%s chat=%s session=%s message_id=%s",
+                                source.platform.value if source.platform else "unknown",
+                                _chat_id_snapshot,
+                                session_key or "?",
+                                _mid,
                             )
-                        except Exception:
-                            pass
-                try:
-                    safe_schedule_threadsafe(
-                        _delete_all(), _loop_snapshot,
-                        logger=logger,
-                        log_message="Temp bubble cleanup scheduling error",
-                    )
-                except Exception:
-                    pass
+                        else:
+                            logger.warning(
+                                "Temp bubble cleanup delete returned false: platform=%s chat=%s session=%s message_id=%s",
+                                source.platform.value if source.platform else "unknown",
+                                _chat_id_snapshot,
+                                session_key or "?",
+                                _mid,
+                            )
+                    except Exception as _delete_err:
+                        logger.warning(
+                            "Temp bubble cleanup delete raised: platform=%s chat=%s session=%s message_id=%s error=%s",
+                            source.platform.value if source.platform else "unknown",
+                            _chat_id_snapshot,
+                            session_key or "?",
+                            _mid,
+                            _delete_err,
+                            exc_info=True,
+                        )
+                logger.info(
+                    "Temp bubble cleanup finished: platform=%s chat=%s session=%s count=%d",
+                    source.platform.value if source.platform else "unknown",
+                    _chat_id_snapshot,
+                    session_key or "?",
+                    len(_ids_snapshot),
+                )
 
             try:
+                logger.debug(
+                    "Registering temp bubble cleanup callback: platform=%s chat=%s session=%s generation=%s count=%d",
+                    source.platform.value if source.platform else "unknown",
+                    _chat_id_snapshot,
+                    session_key or "?",
+                    run_generation,
+                    len(_ids_snapshot),
+                )
                 _cleanup_adapter.register_post_delivery_callback(
                     session_key,
                     _cleanup_temp_bubbles,
