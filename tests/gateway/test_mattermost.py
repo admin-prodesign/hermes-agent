@@ -416,6 +416,32 @@ class TestMattermostSend:
 
         assert await self.adapter.delete_message("channel_1", "post_to_delete") is False
 
+    @pytest.mark.asyncio
+    async def test_delete_message_uses_transient_session_when_primary_closed(self):
+        """Progress cleanup should still delete if the long-lived connector closed."""
+        self.adapter._session.closed = True
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.text = AsyncMock(return_value="")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        transient_session = MagicMock()
+        transient_session.delete = MagicMock(return_value=mock_resp)
+
+        session_cm = AsyncMock()
+        session_cm.__aenter__ = AsyncMock(return_value=transient_session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("aiohttp.ClientSession", return_value=session_cm) as client_session:
+            result = await self.adapter.delete_message("channel_1", "post_to_delete")
+
+        assert result is True
+        client_session.assert_called_once()
+        call_args = transient_session.delete.call_args
+        assert "/api/v4/posts/post_to_delete" in call_args[0][0]
+
 
 # ---------------------------------------------------------------------------
 # WebSocket event parsing
