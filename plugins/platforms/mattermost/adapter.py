@@ -713,10 +713,24 @@ class MattermostAdapter(BasePlatformAdapter):
         except Exception:
             content = ""
         title = self._sanitize_root_heading_title(content)
+        if existing_heading_title and title:
+            source_heading = self._sanitize_root_heading_title(existing_heading_title)
+            # Enforce the product requirement that an existing source heading is not
+            # rewritten or reordered; the utility agent may only add the missing
+            # translation on the other side of a slash.
+            if title == source_heading or not (
+                title.startswith(f"{source_heading} / ")
+                or title.endswith(f" / {source_heading}")
+            ):
+                title = ""
         if title:
             return title
-        fallback = self._fallback_thread_root_heading_title(root_message, reply_message)
-        logger.info("Mattermost: using fallback auto-heading title after empty utility response")
+        fallback = (
+            self._fallback_bilingual_heading_title(existing_heading_title)
+            if existing_heading_title
+            else self._fallback_thread_root_heading_title(root_message, reply_message)
+        )
+        logger.info("Mattermost: using fallback auto-heading title after empty/invalid utility response")
         return fallback
 
     async def _maybe_auto_heading_thread_root(self, post: Dict[str, Any], channel_type_raw: str) -> None:

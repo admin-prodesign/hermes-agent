@@ -957,6 +957,47 @@ class TestMattermostAutoThreadRootHeading:
         assert self.adapter._fallback_thread_root_heading_title("Shipping delay needs review") == "討論串 / Shipping delay needs review"
 
     @pytest.mark.asyncio
+    async def test_existing_heading_utility_output_must_preserve_source_text(self):
+        class _Message:
+            content = "Rewritten Thread Title / 改寫後標題"
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        with patch("plugins.platforms.mattermost.adapter.async_call_llm", new=AsyncMock(return_value=_Response())) as llm:
+            title = await self.adapter._generate_thread_root_heading_title(
+                "## Existing Thread Title\n\nBody",
+                "reply",
+                existing_heading_title="Existing Thread Title",
+            )
+
+        assert title == "Existing Thread Title / 討論串"
+        llm.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_existing_heading_accepts_utility_translation_that_preserves_source_text(self):
+        class _Message:
+            content = "Existing Thread Title / 既有討論標題"
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        with patch("plugins.platforms.mattermost.adapter.async_call_llm", new=AsyncMock(return_value=_Response())):
+            title = await self.adapter._generate_thread_root_heading_title(
+                "## Existing Thread Title\n\nBody",
+                "reply",
+                existing_heading_title="Existing Thread Title",
+            )
+
+        assert title == "Existing Thread Title / 既有討論標題"
+
+    @pytest.mark.asyncio
     async def test_thread_reply_adds_heading_before_mention_gate(self):
         self.adapter._api_get = AsyncMock(return_value={
             "id": "root_post",
