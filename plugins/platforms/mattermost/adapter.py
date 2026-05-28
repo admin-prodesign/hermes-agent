@@ -293,6 +293,128 @@ class MattermostAdapter(BasePlatformAdapter):
             logger.error("MM API PUT %s network error: %s", path, exc)
             return {}
 
+    def _file_download_timeout(self):
+        """Return a generous timeout for Mattermost attachment downloads.
+
+        Mattermost can serve larger Office/CAD attachments slowly from the
+        production host.  A 30s total timeout is fine for JSON API calls but it
+        can silently drop valid thread attachments before the agent sees them.
+        Keep a bounded total timeout, but allow enough wall clock time for
+        multi-MB files over slow links.
+        """
+        import aiohttp
+
+        raw_total = (
+            self.config.extra.get("file_download_timeout")
+            if self.config.extra and "file_download_timeout" in self.config.extra
+            else os.getenv("MATTERMOST_FILE_DOWNLOAD_TIMEOUT", "600")
+        )
+        raw_sock_read = (
+            self.config.extra.get("file_download_sock_read_timeout")
+            if self.config.extra and "file_download_sock_read_timeout" in self.config.extra
+            else os.getenv("MATTERMOST_FILE_DOWNLOAD_SOCK_READ_TIMEOUT", "120")
+        )
+        try:
+            total = max(float(str(raw_total or "600")), 30.0)
+        except (TypeError, ValueError):
+            total = 600.0
+        try:
+            sock_read = max(float(str(raw_sock_read or "120")), 30.0)
+        except (TypeError, ValueError):
+            sock_read = 120.0
+        return aiohttp.ClientTimeout(total=total, sock_read=sock_read)
+
+    async def _download_file_bytes(self, file_id: str) -> Tuple[Optional[bytes], Optional[int], Optional[str]]:
+        """Download a Mattermost file using the attachment-specific timeout."""
+        if not self._session:
+            return None, None, "Mattermost session is not connected"
+        dl_url = f"{self._base_url}/api/v4/files/{file_id}"
+        async with self._session.get(
+            dl_url,
+            headers={"Authorization": f"Bearer {self._token}"},
+            timeout=self._file_download_timeout(),
+        ) as resp:
+            if resp.status >= 400:
+                return None, resp.status, None
+            return await resp.read(), resp.status, None
+
+    async def _api_delete(self, path: str) -> bool:
+        """DELETE /api/v4/{path}.
+
+        Normal gateway traffic uses the long-lived Mattermost aiohttp session.
+        Progress-bubble cleanup can run very late in a turn, including while a
+        gateway replacement is closing that session.  If the primary connector
+        is already closed, retry with a short-lived session so cleanup is not
+        silently lost after the final response lands.
+        """
+        import aiohttp
+        url = f"{self._base_url}/api/v4/{path.lstrip('/')}"
+
+        last_delete_error: list[BaseException | None] = [None]
+
+        async def _delete_with_session(session: Any, *, request_kwargs: Optional[Dict[str, Any]] = None) -> bool:
+            try:
+                last_delete_error[0] = None
+                async with session.delete(
+                    url,
+                    headers=self._headers(),
+                    timeout=aiohttp.ClientTimeout(total=30),
+                    **(request_kwargs or {}),
+                ) as resp:
+                    if resp.status >= 400:
+                        body = await resp.text()
+                        logger.error("MM API DELETE %s → %s: %s", path, resp.status, body[:200])
+                        return False
+                    return True
+            except (aiohttp.ClientError, RuntimeError) as exc:
+                # RuntimeError covers aiohttp's "Session is closed" path; the
+                # live logs also showed "Connector is closed" as ClientError.
+                last_delete_error[0] = exc
+                logger.error("MM API DELETE %s network error: %s", path, exc)
+                return False
+
+        session = self._session
+        session_closed = session is None or getattr(session, "closed", False) is True
+        if not session_closed:
+            ok = await _delete_with_session(session)
+            if ok:
+                return True
+            # If the underlying connector/session flipped closed during the
+            # request, fall through to a transient retry below. Normal API
+            # failures (403/404/etc.) should not be retried with a second
+            # session because the token/permission outcome will be the same.
+            session_closed = getattr(session, "closed", False) is True
+            closed_error = "closed" in str(last_delete_error[0] or "").lower()
+            if not session_closed and not closed_error:
+                return False
+            session_closed = True
+
+        if not self._base_url or not self._token:
+            logger.error("MM API DELETE %s unavailable: Mattermost URL/token not configured", path)
+            return False
+
+        try:
+            from gateway.platforms.base import resolve_proxy_url, proxy_kwargs_for_aiohttp
+
+            proxy = resolve_proxy_url(platform_env_var="MATTERMOST_PROXY")
+            session_kwargs, request_kwargs = proxy_kwargs_for_aiohttp(proxy)
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30),
+                **session_kwargs,
+            ) as transient_session:
+                logger.debug(
+                    "MM API DELETE %s using transient session after primary session closed=%s",
+                    path,
+                    session_closed,
+                )
+                return await _delete_with_session(
+                    transient_session,
+                    request_kwargs=request_kwargs,
+                )
+        except (aiohttp.ClientError, RuntimeError) as exc:
+            logger.error("MM API DELETE %s transient session error: %s", path, exc)
+            return False
+
     async def _upload_file(
         self, channel_id: str, file_data: bytes, filename: str, content_type: str = "application/octet-stream"
     ) -> Optional[str]:
@@ -1885,31 +2007,26 @@ class MattermostAdapter(BasePlatformAdapter):
                 ext = Path(fname).suffix or ""
                 mime = file_info.get("mime_type", "application/octet-stream")
 
-                import aiohttp
-                dl_url = f"{self._base_url}/api/v4/files/{fid}"
-                async with self._session.get(
-                    dl_url,
-                    headers={"Authorization": f"Bearer {self._token}"},
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as resp:
-                    if resp.status < 400:
-                        file_data = await resp.read()
-                        from gateway.platforms.base import cache_image_from_bytes, cache_document_from_bytes
-                        if mime.startswith("image/"):
-                            local_path = cache_image_from_bytes(file_data, ext or ".png")
-                            media_urls.append(local_path)
-                            media_types.append(mime)
-                        elif mime.startswith("audio/"):
-                            from gateway.platforms.base import cache_audio_from_bytes
-                            local_path = cache_audio_from_bytes(file_data, ext or ".ogg")
-                            media_urls.append(local_path)
-                            media_types.append(mime)
-                        else:
-                            local_path = cache_document_from_bytes(file_data, fname)
-                            media_urls.append(local_path)
-                            media_types.append(mime)
+                file_data, status, error = await self._download_file_bytes(fid)
+                if file_data is not None:
+                    from gateway.platforms.base import cache_image_from_bytes, cache_document_from_bytes
+                    if mime.startswith("image/"):
+                        local_path = cache_image_from_bytes(file_data, ext or ".png")
+                        media_urls.append(local_path)
+                        media_types.append(mime)
+                    elif mime.startswith("audio/"):
+                        from gateway.platforms.base import cache_audio_from_bytes
+                        local_path = cache_audio_from_bytes(file_data, ext or ".ogg")
+                        media_urls.append(local_path)
+                        media_types.append(mime)
                     else:
-                        logger.warning("Mattermost: failed to download file %s: HTTP %s", fid, resp.status)
+                        local_path = cache_document_from_bytes(file_data, fname)
+                        media_urls.append(local_path)
+                        media_types.append(mime)
+                elif status is not None:
+                    logger.warning("Mattermost: failed to download file %s: HTTP %s", fid, status)
+                else:
+                    logger.warning("Mattermost: failed to download file %s: %s", fid, error or "unknown error")
             except Exception as exc:
                 logger.warning("Mattermost: error downloading file %s: %s", fid, exc)
 

@@ -1614,6 +1614,33 @@ class TestMattermostMediaTypes:
         assert not msg.media_types[0].startswith("image/")
         assert not msg.media_types[0].startswith("audio/")
 
+    @pytest.mark.asyncio
+    async def test_attachment_download_uses_large_file_timeout(self):
+        """Slow valid Mattermost files should not be capped by the JSON API 30s timeout."""
+        self.adapter.config.extra["file_download_timeout"] = 900
+        self.adapter.config.extra["file_download_sock_read_timeout"] = 180
+        file_info = {"name": "料桶.抽料機清潔.pptx", "mime_type": "application/octet-stream"}
+        self.adapter._api_get = AsyncMock(return_value=file_info)
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.read = AsyncMock(return_value=b"PK\x03\x04 fake pptx")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+        self.adapter._session = MagicMock()
+        mock_get = MagicMock(return_value=mock_resp)
+        self.adapter._session.get = mock_get
+
+        with patch("gateway.platforms.base.cache_document_from_bytes", return_value="/tmp/cleaning.pptx"):
+            await self.adapter._handle_ws_event(self._make_event(["slow_pptx"]))
+
+        timeout = mock_get.call_args.kwargs["timeout"]
+        assert timeout.total == 900
+        assert timeout.sock_read == 180
+        msg = self.adapter.handle_message.call_args[0][0]
+        assert msg.media_urls == ["/tmp/cleaning.pptx"]
+        assert msg.media_types == ["application/octet-stream"]
+
 
 
 @pytest.mark.asyncio
