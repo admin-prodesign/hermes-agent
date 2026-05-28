@@ -12,6 +12,7 @@ Adapters without ``delete_message`` silently no-op.
 
 import asyncio
 import importlib
+import inspect
 import sys
 import time
 import types
@@ -154,6 +155,12 @@ def _make_runner(adapter):
     return runner
 
 
+async def _fire_callback(callback):
+    result = callback()
+    if inspect.isawaitable(result):
+        await result
+
+
 def _install_fakes(monkeypatch, agent_cls, *, cleanup_on: bool):
     """Wire up the module stubs every _run_agent test needs."""
     monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
@@ -215,7 +222,7 @@ async def test_cleanup_off_by_default_leaves_bubbles(monkeypatch, tmp_path):
     # delete_message calls when cleanup is off.
     cb = adapter.pop_post_delivery_callback(session_key)
     if cb is not None:
-        cb()
+        await _fire_callback(cb)
         for _ in range(10):
             await asyncio.sleep(0.01)
     assert adapter.deleted == []
@@ -248,9 +255,9 @@ async def test_cleanup_registers_callback_and_deletes_on_success(monkeypatch, tm
 
     # Fire it (base.py does this in _process_message_background's finally)
     # and let the scheduled coroutine run to completion.
-    cb()
-    # delete_message is scheduled via run_coroutine_threadsafe → give the
-    # loop a couple of ticks to drain.
+    await _fire_callback(cb)
+    # Awaited cleanup should have run inline, but keep a short drain loop for
+    # callback chains that may still schedule side work.
     for _ in range(20):
         await asyncio.sleep(0.01)
         if adapter.deleted:
@@ -287,7 +294,7 @@ async def test_cleanup_skipped_on_failed_run(monkeypatch, tmp_path):
     # the cleanup callback is skipped on failed runs.
     cb = adapter.pop_post_delivery_callback(session_key)
     if cb is not None:
-        cb()
+        await _fire_callback(cb)
         for _ in range(10):
             await asyncio.sleep(0.01)
     assert adapter.deleted == []
@@ -355,7 +362,7 @@ async def test_cleanup_chains_with_existing_callback(monkeypatch, tmp_path):
     assert result["final_response"] == "done"
     cb = adapter.pop_post_delivery_callback(session_key)
     assert callable(cb)
-    cb()
+    await _fire_callback(cb)
     for _ in range(20):
         await asyncio.sleep(0.01)
         if adapter.deleted:
