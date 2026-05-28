@@ -4038,10 +4038,8 @@ class BasePlatformAdapter(ABC):
                 async def _chained() -> None:
                     # Both _prev and _new may be sync or async. The chained
                     # wrapper itself must be async because the outer invoker
-                    # (``_handle_message`` etc.) awaits awaitable callbacks; a
-                    # sync wrapper here would call ``_prev()`` / ``_new()`` and
-                    # silently drop any returned coroutine, breaking chained
-                    # async post-delivery hooks (e.g. ``/goal`` continuations).
+                    # awaits awaitable callbacks; a sync wrapper here would
+                    # call callbacks and silently drop returned coroutines.
                     for _cb in (_prev, _new):
                         try:
                             _result = _cb()
