@@ -1961,6 +1961,13 @@ class MattermostAdapter(BasePlatformAdapter):
                 for pattern in mention_patterns
             )
 
+            if has_mention:
+                await self._maybe_append_mention_translation(
+                    post,
+                    has_mention=has_mention,
+                    channel_type_raw=channel_type_raw,
+                )
+
             if require_mention and not is_free_channel and not has_mention:
                 logger.debug(
                     "Mattermost: skipping non-DM message without @mention (channel=%s)",
