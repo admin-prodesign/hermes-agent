@@ -625,13 +625,47 @@ class MattermostAdapter(BasePlatformAdapter):
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
     @staticmethod
-    def _has_markdown_heading(message: str) -> bool:
-        for line in str(message or "").splitlines():
-            stripped = line.strip()
+    def _first_markdown_heading(message: str) -> Optional[Dict[str, Any]]:
+        """Return details for the first non-blank line if it is a Markdown heading."""
+        text = str(message or "")
+        position = 0
+        for line in text.splitlines(keepends=True):
+            line_without_break = line.rstrip("\r\n")
+            stripped = line_without_break.strip()
+            line_end = position + len(line)
             if not stripped:
+                position = line_end
                 continue
-            return re.match(r"^#{1,6}\s+\S", stripped) is not None
-        return False
+            match = re.match(r"^(?P<indent>\s*)(?P<marks>#{1,6})\s+(?P<title>\S.*?)(?P<trailing>\s*)$", line_without_break)
+            if not match:
+                return None
+            title = match.group("title").strip()
+            return {
+                "start": position,
+                "end": line_end,
+                "indent": match.group("indent") or "",
+                "marks": match.group("marks"),
+                "title": title,
+                "line_break": line[len(line_without_break):],
+            }
+        return None
+
+    @classmethod
+    def _has_markdown_heading(cls, message: str) -> bool:
+        return cls._first_markdown_heading(message) is not None
+
+    @staticmethod
+    def _heading_title_is_bilingual(title: str) -> bool:
+        text = str(title or "").strip()
+        if not text:
+            return False
+        # Treat a slash-separated Chinese + English pair as the canonical bilingual heading.
+        parts = [part.strip() for part in re.split(r"\s+/\s+", text, maxsplit=1)]
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            return False
+        has_cjk = [bool(re.search(r"[\u3400-\u9fff]", part)) for part in parts]
+        has_latin = [bool(re.search(r"[A-Za-z]", part)) for part in parts]
+        return (has_cjk[0] and has_latin[1]) or (has_latin[0] and has_cjk[1])
 
     @staticmethod
     def _sanitize_root_heading_title(raw: str) -> str:
@@ -666,22 +700,55 @@ class MattermostAdapter(BasePlatformAdapter):
             return cls._sanitize_root_heading_title(f"{candidate} / Thread Discussion")
         return cls._sanitize_root_heading_title(f"討論串 / {candidate}")
 
-    async def _generate_thread_root_heading_title(self, root_message: str, reply_message: str) -> Optional[str]:
+    @classmethod
+    def _fallback_bilingual_heading_title(cls, heading_title: str) -> str:
+        candidate = cls._sanitize_root_heading_title(heading_title)
+        if not candidate:
+            return "一般討論 / General Discussion"
+        if re.search(r"[\u3400-\u9fff]", candidate):
+            return cls._sanitize_root_heading_title(f"{candidate} / Thread Discussion")
+        return cls._sanitize_root_heading_title(f"{candidate} / 討論串")
+
+    async def _generate_thread_root_heading_title(
+        self,
+        root_message: str,
+        reply_message: str,
+        existing_heading_title: str = "",
+    ) -> Optional[str]:
         """Use the auxiliary LLM slot as the cheap/utility agent for root titles."""
-        system_prompt = (
-            "You are a low-cost utility agent that writes Mattermost thread titles. "
-            "Return one concise bilingual title only, formatted exactly as "
-            "繁體中文 / English. Put Traditional Chinese first because most users "
-            "are Chinese speakers. Keep each side short and equivalent in meaning. "
-            "Use no Markdown heading marks, no quotes, no trailing punctuation, "
-            "and no explanation."
-        )
-        user_prompt = (
-            "Create a useful bilingual Traditional Chinese + English title for this "
-            "Mattermost thread. Return exactly one line in the format: 繁體中文 / English.\n\n"
-            f"Root message:\n{(root_message or '')[:1200]}\n\n"
-            f"Latest reply that triggered titling:\n{(reply_message or '')[:600]}"
-        )
+        existing_heading_title = str(existing_heading_title or "").strip()
+        if existing_heading_title:
+            system_prompt = (
+                "You are a low-cost utility agent that bilingualizes Mattermost headings. "
+                "Return one concise bilingual heading title only. Preserve the provided "
+                "source heading text exactly as written, then add a short equivalent "
+                "translation on the other side of ` / `. Do not reorder or rewrite the "
+                "source heading text. Use no Markdown heading marks, no quotes, no trailing "
+                "punctuation, and no explanation."
+            )
+            user_prompt = (
+                "Make this Mattermost heading bilingual by preserving the source heading "
+                "text exactly and adding only the missing Traditional Chinese or English "
+                "translation. Return exactly one line as: Source heading text / Translation.\n\n"
+                f"Source heading text:\n{existing_heading_title[:300]}\n\n"
+                f"Root message context:\n{(root_message or '')[:900]}\n\n"
+                f"Latest reply that triggered titling:\n{(reply_message or '')[:500]}"
+            )
+        else:
+            system_prompt = (
+                "You are a low-cost utility agent that writes Mattermost thread titles. "
+                "Return one concise bilingual title only, formatted exactly as "
+                "繁體中文 / English. Put Traditional Chinese first because most users "
+                "are Chinese speakers. Keep each side short and equivalent in meaning. "
+                "Use no Markdown heading marks, no quotes, no trailing punctuation, "
+                "and no explanation."
+            )
+            user_prompt = (
+                "Create a useful bilingual Traditional Chinese + English title for this "
+                "Mattermost thread. Return exactly one line in the format: 繁體中文 / English.\n\n"
+                f"Root message:\n{(root_message or '')[:1200]}\n\n"
+                f"Latest reply that triggered titling:\n{(reply_message or '')[:600]}"
+            )
         try:
             response = await async_call_llm(
                 task="mattermost_thread_title",
@@ -696,7 +763,11 @@ class MattermostAdapter(BasePlatformAdapter):
         except Exception as exc:
             logger.warning("Mattermost: auto thread root heading generation failed: %s", exc)
             logger.debug("Mattermost auto-heading traceback", exc_info=True)
-            fallback = self._fallback_thread_root_heading_title(root_message, reply_message)
+            fallback = (
+                self._fallback_bilingual_heading_title(existing_heading_title)
+                if existing_heading_title
+                else self._fallback_thread_root_heading_title(root_message, reply_message)
+            )
             logger.info("Mattermost: using fallback auto-heading title")
             return fallback
         try:
@@ -713,9 +784,13 @@ class MattermostAdapter(BasePlatformAdapter):
     async def _maybe_auto_heading_thread_root(self, post: Dict[str, Any], channel_type_raw: str) -> None:
         """Best-effort: when a Mattermost thread gets a reply, title its root post.
 
-        Skips roots that already start with a Markdown heading. The edit is gated
-        by config/env and runs before mention-gating so passive thread replies can
-        improve titles without invoking the main agent.
+        Skips roots whose first Markdown heading is already bilingual. If the root
+        already starts with a non-bilingual Markdown heading, keeps that source
+        heading text unchanged and asks the utility agent to add a translation.
+        Otherwise prepends a new level-5 bilingual heading while preserving the
+        original root body. The edit is gated by config/env and runs before
+        mention-gating so passive thread replies can improve titles without
+        invoking the main agent.
         """
         if not self._auto_thread_root_heading_enabled():
             return
@@ -733,15 +808,30 @@ class MattermostAdapter(BasePlatformAdapter):
             if not root_post or root_post.get("delete_at"):
                 return
             root_message = str(root_post.get("message") or "")
-            if self._has_markdown_heading(root_message):
-                return
-            title = await self._generate_thread_root_heading_title(
-                root_message,
-                str(post.get("message") or ""),
-            )
-            if not title:
-                return
-            new_message = f"##### {title}\n\n{root_message}" if root_message.strip() else f"##### {title}"
+            heading = self._first_markdown_heading(root_message)
+            reply_message = str(post.get("message") or "")
+            if heading:
+                source_heading_title = str(heading.get("title") or "").strip()
+                if self._heading_title_is_bilingual(source_heading_title):
+                    return
+                title = await self._generate_thread_root_heading_title(
+                    root_message,
+                    reply_message,
+                    existing_heading_title=source_heading_title,
+                )
+                if not title:
+                    return
+                line_break = str(heading.get("line_break") or "\n")
+                new_heading_line = f"{heading.get('indent', '')}{heading.get('marks', '#####')} {title}{line_break}"
+                new_message = f"{root_message[:heading['start']]}{new_heading_line}{root_message[heading['end']:]}"
+            else:
+                title = await self._generate_thread_root_heading_title(
+                    root_message,
+                    reply_message,
+                )
+                if not title:
+                    return
+                new_message = f"##### {title}\n\n{root_message}" if root_message.strip() else f"##### {title}"
             data = await self._api_put(f"posts/{root_id}/patch", {"message": new_message})
             if data and data.get("id"):
                 logger.info("Mattermost: auto-added heading to thread root %s", root_id)

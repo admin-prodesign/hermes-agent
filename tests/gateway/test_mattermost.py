@@ -1168,6 +1168,12 @@ class TestMattermostAutoThreadRootHeading:
         assert self.adapter._has_markdown_heading("body without heading") is False
         assert self.adapter._has_markdown_heading("\n\n# Title") is True
 
+    def test_detects_bilingual_heading_title(self):
+        assert self.adapter._heading_title_is_bilingual("出貨延遲檢討 / Shipping Delay Review") is True
+        assert self.adapter._heading_title_is_bilingual("Shipping Delay Review / 出貨延遲檢討") is True
+        assert self.adapter._heading_title_is_bilingual("PD One 測試") is False
+        assert self.adapter._heading_title_is_bilingual("Shipping Delay Review") is False
+
     def test_fallback_thread_root_heading_title_is_bilingual(self):
         assert self.adapter._fallback_thread_root_heading_title("請幫忙確認出貨延遲") == "請幫忙確認出貨延遲 / Thread Discussion"
         assert self.adapter._fallback_thread_root_heading_title("Shipping delay needs review") == "討論串 / Shipping delay needs review"
@@ -1216,10 +1222,32 @@ class TestMattermostAutoThreadRootHeading:
         assert getattr(self.adapter.handle_message, "call_count") == 0
 
     @pytest.mark.asyncio
-    async def test_thread_reply_skips_root_that_already_has_heading(self):
+    async def test_thread_reply_updates_existing_non_bilingual_heading(self):
         self.adapter._api_get = AsyncMock(return_value={
             "id": "root_post",
             "message": "## Existing Thread Title\n\nBody",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="Existing Thread Title / 既有討論標題")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._generate_thread_root_heading_title.assert_awaited_once_with(
+            "## Existing Thread Title\n\nBody",
+            "another reply",
+            existing_heading_title="Existing Thread Title",
+        )
+        self.adapter._api_put.assert_awaited_once_with(
+            "posts/root_post/patch",
+            {"message": "## Existing Thread Title / 既有討論標題\n\nBody"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_root_that_already_has_bilingual_heading(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "## 既有討論標題 / Existing Thread Title\n\nBody",
             "delete_at": 0,
         })
         self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="Ignored Title")
