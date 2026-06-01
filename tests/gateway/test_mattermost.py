@@ -475,6 +475,116 @@ class TestMattermostSend:
 
         assert result.success is False
 
+    @pytest.mark.asyncio
+    async def test_send_typing_includes_thread_parent_id_from_metadata(self):
+        """Threaded Mattermost typing indicators should include parent_id."""
+        self.adapter._bot_user_id = "bot_user"
+        self.adapter._api_post = AsyncMock(return_value={"status": "OK"})
+
+        await self.adapter.send_typing("channel_1", metadata={"thread_id": "root_post"})
+
+        self.adapter._api_post.assert_awaited_once_with(
+            "users/bot_user/typing",
+            {"channel_id": "channel_1", "parent_id": "root_post"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_processing_reactions_success_lifecycle(self):
+        """Mattermost processing lifecycle should swap 👀 for ✅ on success."""
+        from gateway.platforms.base import MessageEvent, ProcessingOutcome
+
+        self.adapter._bot_user_id = "bot_user"
+        self.adapter._api_post = AsyncMock(return_value={"ok": True})
+        self.adapter._api_delete = AsyncMock(return_value=True)
+        event = MessageEvent(text="hello", message_id="post_1")
+
+        await self.adapter.on_processing_start(event)
+        await self.adapter.on_processing_complete(event, ProcessingOutcome.SUCCESS)
+
+        self.adapter._api_post.assert_any_await(
+            "reactions",
+            {"user_id": "bot_user", "post_id": "post_1", "emoji_name": "eyes"},
+        )
+        self.adapter._api_delete.assert_awaited_once_with(
+            "users/bot_user/posts/post_1/reactions/eyes"
+        )
+        self.adapter._api_post.assert_any_await(
+            "reactions",
+            {"user_id": "bot_user", "post_id": "post_1", "emoji_name": "white_check_mark"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_processing_reactions_failure_lifecycle(self):
+        """Mattermost processing lifecycle should swap 👀 for ❌ on failure."""
+        from gateway.platforms.base import MessageEvent, ProcessingOutcome
+
+        self.adapter._bot_user_id = "bot_user"
+        self.adapter._api_post = AsyncMock(return_value={"ok": True})
+        self.adapter._api_delete = AsyncMock(return_value=True)
+        event = MessageEvent(text="hello", message_id="post_1")
+
+        await self.adapter.on_processing_complete(event, ProcessingOutcome.FAILURE)
+
+        self.adapter._api_post.assert_awaited_once_with(
+            "reactions",
+            {"user_id": "bot_user", "post_id": "post_1", "emoji_name": "x"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_message_calls_api_delete(self):
+        """delete_message() should delete the Mattermost post by ID."""
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.text = AsyncMock(return_value="")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        self.adapter._session.delete = MagicMock(return_value=mock_resp)
+
+        result = await self.adapter.delete_message("channel_1", "post_to_delete")
+
+        assert result is True
+        call_args = self.adapter._session.delete.call_args
+        assert "/api/v4/posts/post_to_delete" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_delete_message_failure_returns_false(self):
+        mock_resp = AsyncMock()
+        mock_resp.status = 403
+        mock_resp.text = AsyncMock(return_value="Forbidden")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        self.adapter._session.delete = MagicMock(return_value=mock_resp)
+
+        assert await self.adapter.delete_message("channel_1", "post_to_delete") is False
+
+    @pytest.mark.asyncio
+    async def test_delete_message_uses_transient_session_when_primary_closed(self):
+        """Progress cleanup should still delete if the long-lived connector closed."""
+        self.adapter._session.closed = True
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.text = AsyncMock(return_value="")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        transient_session = MagicMock()
+        transient_session.delete = MagicMock(return_value=mock_resp)
+
+        session_cm = AsyncMock()
+        session_cm.__aenter__ = AsyncMock(return_value=transient_session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("aiohttp.ClientSession", return_value=session_cm) as client_session:
+            result = await self.adapter.delete_message("channel_1", "post_to_delete")
+
+        assert result is True
+        client_session.assert_called_once()
+        call_args = transient_session.delete.call_args
+        assert "/api/v4/posts/post_to_delete" in call_args[0][0]
+
 
 # ---------------------------------------------------------------------------
 # WebSocket event parsing
