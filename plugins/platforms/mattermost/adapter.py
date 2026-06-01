@@ -1157,13 +1157,69 @@ class MattermostAdapter(BasePlatformAdapter):
     # Optional overrides
     # ------------------------------------------------------------------
 
+    def _reaction_enabled(self) -> bool:
+        """Return whether Mattermost processing reactions are enabled."""
+        raw = None
+        if self.config.extra:
+            raw = self.config.extra.get("processing_reactions")
+        if raw is None:
+            raw = os.getenv("MATTERMOST_PROCESSING_REACTIONS", "true")
+        return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+    async def _add_reaction(self, post_id: Optional[str], emoji_name: str) -> bool:
+        """Best-effort add a Mattermost reaction to a post."""
+        if not post_id or not emoji_name or not self._bot_user_id:
+            return False
+        data = await self._api_post(
+            "reactions",
+            {
+                "user_id": self._bot_user_id,
+                "post_id": str(post_id),
+                "emoji_name": emoji_name,
+            },
+        )
+        return bool(data)
+
+    async def _remove_reaction(self, post_id: Optional[str], emoji_name: str) -> bool:
+        """Best-effort remove a Mattermost reaction from a post."""
+        if not post_id or not emoji_name or not self._bot_user_id:
+            return False
+        return await self._api_delete(
+            f"users/{self._bot_user_id}/posts/{post_id}/reactions/{emoji_name}"
+        )
+
+    async def on_processing_start(self, event: MessageEvent) -> None:
+        """Mark an accepted user message as seen/processing."""
+        if not self._reaction_enabled():
+            return
+        await self._add_reaction(getattr(event, "message_id", None), "eyes")
+
+    async def on_processing_complete(self, event: MessageEvent, outcome: Any) -> None:
+        """Replace the processing marker with success/failure state."""
+        if not self._reaction_enabled():
+            return
+        post_id = getattr(event, "message_id", None)
+        await self._remove_reaction(post_id, "eyes")
+        outcome_value = getattr(outcome, "value", str(outcome)).lower()
+        if outcome_value == "success":
+            await self._add_reaction(post_id, "white_check_mark")
+        elif outcome_value == "cancelled":
+            await self._add_reaction(post_id, "warning")
+        else:
+            await self._add_reaction(post_id, "x")
+
     async def send_typing(
         self, chat_id: str, metadata: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Send a typing indicator."""
+        """Send a typing indicator, scoped to the Mattermost thread when known."""
+        payload: Dict[str, Any] = {"channel_id": chat_id}
+        if metadata:
+            parent_id = metadata.get("parent_id") or metadata.get("thread_id") or metadata.get("root_id")
+            if parent_id:
+                payload["parent_id"] = str(parent_id)
         await self._api_post(
             f"users/{self._bot_user_id}/typing",
-            {"channel_id": chat_id},
+            payload,
         )
 
     async def edit_message(
