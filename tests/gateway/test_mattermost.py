@@ -610,6 +610,61 @@ class TestMattermostSend:
         assert result.success is False
 
     @pytest.mark.asyncio
+    async def test_send_typing_includes_thread_parent_id_from_metadata(self):
+        """Threaded Mattermost typing indicators should include parent_id."""
+        self.adapter._bot_user_id = "bot_user"
+        self.adapter._api_post = AsyncMock(return_value={"status": "OK"})
+
+        await self.adapter.send_typing("channel_1", metadata={"thread_id": "root_post"})
+
+        self.adapter._api_post.assert_awaited_once_with(
+            "users/bot_user/typing",
+            {"channel_id": "channel_1", "parent_id": "root_post"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_processing_reactions_success_lifecycle(self):
+        """Mattermost processing lifecycle should swap 👀 for ✅ on success."""
+        from gateway.platforms.base import MessageEvent, ProcessingOutcome
+
+        self.adapter._bot_user_id = "bot_user"
+        self.adapter._api_post = AsyncMock(return_value={"ok": True})
+        self.adapter._api_delete = AsyncMock(return_value=True)
+        event = MessageEvent(text="hello", message_id="post_1")
+
+        await self.adapter.on_processing_start(event)
+        await self.adapter.on_processing_complete(event, ProcessingOutcome.SUCCESS)
+
+        self.adapter._api_post.assert_any_await(
+            "reactions",
+            {"user_id": "bot_user", "post_id": "post_1", "emoji_name": "eyes"},
+        )
+        self.adapter._api_delete.assert_awaited_once_with(
+            "users/bot_user/posts/post_1/reactions/eyes"
+        )
+        self.adapter._api_post.assert_any_await(
+            "reactions",
+            {"user_id": "bot_user", "post_id": "post_1", "emoji_name": "white_check_mark"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_processing_reactions_failure_lifecycle(self):
+        """Mattermost processing lifecycle should swap 👀 for ❌ on failure."""
+        from gateway.platforms.base import MessageEvent, ProcessingOutcome
+
+        self.adapter._bot_user_id = "bot_user"
+        self.adapter._api_post = AsyncMock(return_value={"ok": True})
+        self.adapter._api_delete = AsyncMock(return_value=True)
+        event = MessageEvent(text="hello", message_id="post_1")
+
+        await self.adapter.on_processing_complete(event, ProcessingOutcome.FAILURE)
+
+        self.adapter._api_post.assert_awaited_once_with(
+            "reactions",
+            {"user_id": "bot_user", "post_id": "post_1", "emoji_name": "x"},
+        )
+
+    @pytest.mark.asyncio
     async def test_delete_message_calls_api_delete(self):
         """delete_message() should delete the Mattermost post by ID."""
         mock_resp = AsyncMock()
