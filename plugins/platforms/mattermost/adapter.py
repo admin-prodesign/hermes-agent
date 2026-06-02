@@ -91,6 +91,7 @@ class MattermostAdapter(BasePlatformAdapter):
         self._ws: Any = None       # aiohttp.ClientWebSocketResponse
         self._ws_task: Optional[asyncio.Task] = None
         self._reconnect_task: Optional[asyncio.Task] = None
+        self._backfill_task: Optional[asyncio.Task] = None
         self._closing = False
 
         # Bounded REST catch-up for missed WebSocket ``posted`` events.  The
@@ -133,6 +134,32 @@ class MattermostAdapter(BasePlatformAdapter):
 
         # Dedup cache (prevent reprocessing)
         self._dedup = MessageDeduplicator()
+
+    # ------------------------------------------------------------------
+    # Config helpers
+    # ------------------------------------------------------------------
+
+    def _config_bool(self, key: str, env_key: str, default: bool) -> bool:
+        raw: Any = None
+        if self.config.extra:
+            raw = self.config.extra.get(key)
+        if raw is None:
+            raw = os.getenv(env_key)
+        if raw is None:
+            return default
+        return str(raw).strip().lower() not in {"false", "0", "no", "off", ""}
+
+    def _config_float(self, key: str, env_key: str, default: float, *, minimum: float = 0.0) -> float:
+        raw: Any = None
+        if self.config.extra:
+            raw = self.config.extra.get(key)
+        if raw is None:
+            raw = os.getenv(env_key)
+        try:
+            value = float(raw) if raw is not None else float(default)
+        except (TypeError, ValueError):
+            value = float(default)
+        return max(value, minimum)
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -353,6 +380,13 @@ class MattermostAdapter(BasePlatformAdapter):
 
         if self._reconnect_task and not self._reconnect_task.done():
             self._reconnect_task.cancel()
+
+        if self._backfill_task and not self._backfill_task.done():
+            self._backfill_task.cancel()
+            try:
+                await self._backfill_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
         if self._ws:
             await self._ws.close()
