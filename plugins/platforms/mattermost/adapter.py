@@ -1729,7 +1729,24 @@ class MattermostAdapter(BasePlatformAdapter):
         #   require_mention / MATTERMOST_REQUIRE_MENTION: Require @mention in channels (default: true)
         #   free_response_channels / MATTERMOST_FREE_RESPONSE_CHANNELS: Channel IDs where bot responds without mention
         #   allowed_channels / MATTERMOST_ALLOWED_CHANNELS: If set, bot ONLY responds in these channels (whitelist)
+        #   ignored_channels / MATTERMOST_IGNORED_CHANNELS: If set, bot NEVER responds in these channels (blacklist)
         if channel_type_raw != "D":
+            ignored_raw = self.config.extra.get("ignored_channels") if self.config.extra else None
+            if ignored_raw is None:
+                ignored_raw = os.getenv("MATTERMOST_IGNORED_CHANNELS", "")
+            if isinstance(ignored_raw, list):
+                ignored_channels = {str(c).strip() for c in ignored_raw if str(c).strip()}
+            else:
+                ignored_channels = {
+                    c.strip() for c in str(ignored_raw).split(",") if c.strip()
+                }
+            if channel_id in ignored_channels:
+                logger.debug(
+                    "Mattermost: ignoring message in ignored channel: %s",
+                    channel_id,
+                )
+                return
+
             # allowed_channels check (whitelist — must pass before other gating).
             # When set, messages from channels NOT in this list are silently
             # ignored, even if @mentioned.  DMs are already excluded above.
@@ -2208,7 +2225,7 @@ def register(ctx) -> None:
         setup_fn=interactive_setup,
         # YAML→env config bridge — owns the translation of
         # ``config.yaml`` ``mattermost:`` keys (require_mention,
-        # free_response_channels, allowed_channels) into ``MATTERMOST_*``
+        # free_response_channels, allowed_channels, ignored_channels) into ``MATTERMOST_*``
         # env vars that the adapter reads via ``os.getenv()``.  Replaces
         # the hardcoded block that used to live in ``gateway/config.py``.
         # Hook contract: #24836 / #25443.
