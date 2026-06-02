@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -91,6 +92,35 @@ class MattermostAdapter(BasePlatformAdapter):
         self._ws_task: Optional[asyncio.Task] = None
         self._reconnect_task: Optional[asyncio.Task] = None
         self._closing = False
+
+        # Bounded REST catch-up for missed WebSocket ``posted`` events.  The
+        # WebSocket remains the primary path; this poller only replays recent
+        # posts whose IDs are not already in the dedup cache.  It is deliberately
+        # small-window/low-rate so a reconnect gap cannot silently drop a bot
+        # mention, but the gateway does not continuously trawl Mattermost history.
+        self._backfill_enabled = self._config_bool(
+            "backfill_missed_mentions", "MATTERMOST_BACKFILL_MISSED_MENTIONS", True
+        )
+        self._backfill_interval_seconds = self._config_float(
+            "backfill_interval_seconds", "MATTERMOST_BACKFILL_INTERVAL_SECONDS", 30.0, minimum=5.0
+        )
+        self._backfill_overlap_seconds = self._config_float(
+            "backfill_overlap_seconds", "MATTERMOST_BACKFILL_OVERLAP_SECONDS", 600.0, minimum=5.0
+        )
+        self._backfill_initial_lookback_seconds = self._config_float(
+            "backfill_initial_lookback_seconds", "MATTERMOST_BACKFILL_INITIAL_LOOKBACK_SECONDS", 90.0, minimum=0.0
+        )
+        self._backfill_per_page = int(self._config_float(
+            "backfill_per_page", "MATTERMOST_BACKFILL_PER_PAGE", 100.0, minimum=1.0
+        ))
+        self._backfill_seen_ttl_seconds = self._config_float(
+            "backfill_seen_ttl_seconds", "MATTERMOST_BACKFILL_SEEN_TTL_SECONDS", 3600.0, minimum=60.0
+        )
+        self._backfill_unreplied_lookback_seconds = self._config_float(
+            "backfill_unreplied_lookback_seconds", "MATTERMOST_BACKFILL_UNREPLIED_LOOKBACK_SECONDS", 21600.0, minimum=0.0
+        )
+        self._backfill_watermark_ms = 0
+        self._backfill_seen_post_ids: Dict[str, float] = {}
 
         # Reply mode: "thread" to nest replies, "off" for flat messages.
         self._reply_mode: str = (
@@ -296,6 +326,17 @@ class MattermostAdapter(BasePlatformAdapter):
 
         # Start WebSocket in background.
         self._ws_task = asyncio.create_task(self._ws_loop())
+        if self._backfill_enabled:
+            now_ms = int(time.time() * 1000)
+            self._backfill_watermark_ms = max(0, now_ms - int(self._backfill_initial_lookback_seconds * 1000))
+            self._backfill_task = asyncio.create_task(self._backfill_loop())
+            logger.info(
+                "Mattermost: missed-mention REST backfill enabled (interval=%.0fs overlap=%.0fs initial_lookback=%.0fs unreplied_lookback=%.0fs)",
+                self._backfill_interval_seconds,
+                self._backfill_overlap_seconds,
+                self._backfill_initial_lookback_seconds,
+                self._backfill_unreplied_lookback_seconds,
+            )
         self._mark_connected()
         return True
 
@@ -1444,8 +1485,11 @@ class MattermostAdapter(BasePlatformAdapter):
                 if not isinstance(post, dict):
                     continue
                 created_ms = int(post.get("create_at") or 0)
-                if created_ms <= since_ms and created_ms <= unreplied_since_ms:
-                    continue
+                if created_ms <= since_ms:
+                    if created_ms <= unreplied_since_ms:
+                        continue
+                    if await self._thread_has_bot_reply_after(post):
+                        continue
                 if post_id in self._backfill_seen_post_ids:
                     continue
                 # Idempotency must be based on source-of-truth thread state,
@@ -1779,6 +1823,15 @@ class MattermostAdapter(BasePlatformAdapter):
             thread_id=thread_id,
             message_id=post_id,
         )
+        from gateway.session import build_session_key
+        session_key = build_session_key(source)
+        thread_context: Optional[str] = None
+        if thread_id:
+            thread_context, _thread_file_ids = await self._fetch_thread_context(
+                thread_id,
+                post_id,
+                session_key=session_key,
+            )
 
         # Per-channel ephemeral prompt
         from gateway.platforms.base import resolve_channel_prompt
