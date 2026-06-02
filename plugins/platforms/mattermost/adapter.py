@@ -117,6 +117,9 @@ class MattermostAdapter(BasePlatformAdapter):
         self._backfill_seen_ttl_seconds = self._config_float(
             "backfill_seen_ttl_seconds", "MATTERMOST_BACKFILL_SEEN_TTL_SECONDS", 3600.0, minimum=60.0
         )
+        self._backfill_unreplied_lookback_seconds = self._config_float(
+            "backfill_unreplied_lookback_seconds", "MATTERMOST_BACKFILL_UNREPLIED_LOOKBACK_SECONDS", 21600.0, minimum=0.0
+        )
         self._backfill_watermark_ms = 0
         self._backfill_seen_post_ids: Dict[str, float] = {}
 
@@ -416,10 +419,11 @@ class MattermostAdapter(BasePlatformAdapter):
             self._backfill_watermark_ms = max(0, now_ms - int(self._backfill_initial_lookback_seconds * 1000))
             self._backfill_task = asyncio.create_task(self._backfill_loop())
             logger.info(
-                "Mattermost: missed-mention REST backfill enabled (interval=%.0fs overlap=%.0fs initial_lookback=%.0fs)",
+                "Mattermost: missed-mention REST backfill enabled (interval=%.0fs overlap=%.0fs initial_lookback=%.0fs unreplied_lookback=%.0fs)",
                 self._backfill_interval_seconds,
                 self._backfill_overlap_seconds,
                 self._backfill_initial_lookback_seconds,
+                self._backfill_unreplied_lookback_seconds,
             )
         self._mark_connected()
         return True
@@ -1543,6 +1547,7 @@ class MattermostAdapter(BasePlatformAdapter):
 
         self._prune_backfill_seen()
         since_ms = max(0, self._backfill_watermark_ms - int(self._backfill_overlap_seconds * 1000))
+        unreplied_since_ms = max(0, int(time.time() * 1000) - int(self._backfill_unreplied_lookback_seconds * 1000))
         terms = f"@{self._bot_username}"
         posts_by_id: Dict[str, Dict[str, Any]] = {}
         order: List[str] = []
@@ -1572,7 +1577,10 @@ class MattermostAdapter(BasePlatformAdapter):
                     continue
                 created_ms = int(post.get("create_at") or 0)
                 if created_ms <= since_ms:
-                    continue
+                    if created_ms <= unreplied_since_ms:
+                        continue
+                    if await self._thread_has_bot_reply_after(post):
+                        continue
                 if post_id in self._backfill_seen_post_ids:
                     continue
                 if post_id not in posts_by_id:
@@ -1603,6 +1611,29 @@ class MattermostAdapter(BasePlatformAdapter):
         if replayed:
             logger.info("Mattermost: replayed %d missed mention candidate(s) via REST backfill", replayed)
         return replayed
+
+    async def _thread_has_bot_reply_after(self, post: Dict[str, Any]) -> bool:
+        """Return True if the bot has already replied after this post in its thread."""
+        root_id = str(post.get("root_id") or post.get("id") or "")
+        if not root_id or not self._bot_user_id:
+            return False
+        try:
+            thread = await self._api_get(f"posts/{root_id}/thread")
+        except Exception:
+            return False
+        if not isinstance(thread, dict):
+            return False
+        created_ms = int(post.get("create_at") or 0)
+        for thread_post in (thread.get("posts") or {}).values():
+            if not isinstance(thread_post, dict):
+                continue
+            if thread_post.get("user_id") != self._bot_user_id:
+                continue
+            if thread_post.get("delete_at"):
+                continue
+            if int(thread_post.get("create_at") or 0) > created_ms:
+                return True
+        return False
 
     def _prune_backfill_seen(self) -> None:
         if not self._backfill_seen_post_ids:

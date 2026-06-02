@@ -867,6 +867,7 @@ class TestMattermostMissedMentionBackfill:
         self.adapter._backfill_watermark_ms = 1000
         self.adapter._backfill_overlap_seconds = 0
         self.adapter._backfill_seen_ttl_seconds = 3600
+        self.adapter._backfill_unreplied_lookback_seconds = 21600
 
     @pytest.mark.asyncio
     async def test_backfill_replays_recent_mention_through_normal_parser(self):
@@ -944,6 +945,71 @@ class TestMattermostMissedMentionBackfill:
         self.adapter._api_post = AsyncMock(return_value={"order": ["old_post"], "posts": {"old_post": old_post}})
 
         replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 0
+        assert not self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
+    async def test_backfill_replays_older_unreplied_mention_within_unreplied_lookback(self):
+        old_unreplied_post = {
+            "id": "old_unreplied_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot still needs a reply",
+            "create_at": 500,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "posts/old_unreplied_post/thread":
+                return {"order": ["old_unreplied_post"], "posts": {"old_unreplied_post": old_unreplied_post}}
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["old_unreplied_post"], "posts": {"old_unreplied_post": old_unreplied_post}})
+
+        with patch("plugins.platforms.mattermost.adapter.time.time", return_value=7.0):
+            replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 1
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "old_unreplied_post"
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_older_mention_when_bot_already_replied_in_thread(self):
+        old_replied_post = {
+            "id": "old_replied_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot already handled",
+            "create_at": 500,
+        }
+        bot_reply = {
+            "id": "bot_reply",
+            "user_id": "bot_user_id",
+            "channel_id": "chan_456",
+            "message": "Handled",
+            "create_at": 750,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "posts/old_replied_post/thread":
+                return {
+                    "order": ["old_replied_post", "bot_reply"],
+                    "posts": {"old_replied_post": old_replied_post, "bot_reply": bot_reply},
+                }
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["old_replied_post"], "posts": {"old_replied_post": old_replied_post}})
+
+        with patch("plugins.platforms.mattermost.adapter.time.time", return_value=7.0):
+            replayed = await self.adapter._run_backfill_once()
 
         assert replayed == 0
         assert not self.adapter.handle_message.called
