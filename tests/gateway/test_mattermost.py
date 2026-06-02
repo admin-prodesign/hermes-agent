@@ -514,6 +514,31 @@ class TestMattermostWebSocketParsing:
         assert msg_event.text == "Hello from Matrix!"
         assert msg_event.message_id == "post_abc"
 
+
+    @pytest.mark.asyncio
+    async def test_ignored_channel_is_silently_skipped_before_mention_processing(self):
+        self.adapter.config.extra["ignored_channels"] = ["chan_ignored"]
+        self.adapter._maybe_append_mention_translation = AsyncMock()
+        post_data = {
+            "id": "post_ignored",
+            "user_id": "user_123",
+            "channel_id": "chan_ignored",
+            "message": "@hermes-bot should be owned by another runtime",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        assert not self.adapter.handle_message.called
+        self.adapter._maybe_append_mention_translation.assert_not_awaited()
+
     @pytest.mark.asyncio
     async def test_ignore_own_messages(self):
         """Messages from the bot's own user_id should be ignored."""
