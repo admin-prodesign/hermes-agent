@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -90,7 +91,27 @@ class MattermostAdapter(BasePlatformAdapter):
         self._ws: Any = None       # aiohttp.ClientWebSocketResponse
         self._ws_task: Optional[asyncio.Task] = None
         self._reconnect_task: Optional[asyncio.Task] = None
+        self._backfill_task: Optional[asyncio.Task] = None
         self._closing = False
+
+        # Bounded REST catch-up for missed WebSocket ``posted`` events.  The
+        # WebSocket remains the primary path; this poller only replays recent
+        # posts whose IDs are not already in the dedup cache.  It is deliberately
+        # small-window/low-rate so a reconnect gap cannot silently drop a bot
+        # mention, but the gateway does not continuously trawl Mattermost history.
+        self._backfill_enabled = self._config_bool(
+            "backfill_missed_mentions", "MATTERMOST_BACKFILL_MISSED_MENTIONS", True
+        )
+        self._backfill_interval_seconds = self._config_float(
+            "backfill_interval_seconds", "MATTERMOST_BACKFILL_INTERVAL_SECONDS", 30.0, minimum=5.0
+        )
+        self._backfill_overlap_seconds = self._config_float(
+            "backfill_overlap_seconds", "MATTERMOST_BACKFILL_OVERLAP_SECONDS", 90.0, minimum=5.0
+        )
+        self._backfill_per_page = int(self._config_float(
+            "backfill_per_page", "MATTERMOST_BACKFILL_PER_PAGE", 60.0, minimum=1.0
+        ))
+        self._backfill_watermark_ms = 0
 
         # Reply mode: "thread" to nest replies, "off" for flat messages.
         self._reply_mode: str = (
@@ -113,6 +134,32 @@ class MattermostAdapter(BasePlatformAdapter):
         # the same Mattermost root post. The root message itself remains the
         # source of truth, so a gateway restart safely rechecks headings.
         self._auto_heading_roots_inflight: set[str] = set()
+
+    # ------------------------------------------------------------------
+    # Config helpers
+    # ------------------------------------------------------------------
+
+    def _config_bool(self, key: str, env_key: str, default: bool) -> bool:
+        raw: Any = None
+        if self.config.extra:
+            raw = self.config.extra.get(key)
+        if raw is None:
+            raw = os.getenv(env_key)
+        if raw is None:
+            return default
+        return str(raw).strip().lower() not in {"false", "0", "no", "off", ""}
+
+    def _config_float(self, key: str, env_key: str, default: float, *, minimum: float = 0.0) -> float:
+        raw: Any = None
+        if self.config.extra:
+            raw = self.config.extra.get(key)
+        if raw is None:
+            raw = os.getenv(env_key)
+        try:
+            value = float(raw) if raw is not None else float(default)
+        except (TypeError, ValueError):
+            value = float(default)
+        return max(value, minimum)
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -419,6 +466,15 @@ class MattermostAdapter(BasePlatformAdapter):
 
         # Start WebSocket in background.
         self._ws_task = asyncio.create_task(self._ws_loop())
+        if self._backfill_enabled:
+            now_ms = int(time.time() * 1000)
+            self._backfill_watermark_ms = max(0, now_ms - int(self._backfill_overlap_seconds * 1000))
+            self._backfill_task = asyncio.create_task(self._backfill_loop())
+            logger.info(
+                "Mattermost: missed-mention REST backfill enabled (interval=%.0fs overlap=%.0fs)",
+                self._backfill_interval_seconds,
+                self._backfill_overlap_seconds,
+            )
         self._mark_connected()
         return True
 
@@ -435,6 +491,13 @@ class MattermostAdapter(BasePlatformAdapter):
 
         if self._reconnect_task and not self._reconnect_task.done():
             self._reconnect_task.cancel()
+
+        if self._backfill_task and not self._backfill_task.done():
+            self._backfill_task.cancel()
+            try:
+                await self._backfill_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
         if self._ws:
             await self._ws.close()
@@ -1497,6 +1560,99 @@ class MattermostAdapter(BasePlatformAdapter):
                     chunk_idx + 1, len(chunks), e, exc_info=True,
                 )
                 await super().send_multiple_images(chat_id, chunk, metadata, human_delay=human_delay)
+
+    # ------------------------------------------------------------------
+    # Missed WebSocket event REST backfill
+    # ------------------------------------------------------------------
+
+    async def _backfill_loop(self) -> None:
+        """Periodically replay recent @bot posts that the WebSocket missed."""
+        while not self._closing:
+            try:
+                await asyncio.sleep(self._backfill_interval_seconds)
+                if self._closing:
+                    return
+                await self._run_backfill_once()
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:
+                logger.warning("Mattermost: missed-mention backfill failed: %s", exc, exc_info=True)
+
+    async def _run_backfill_once(self) -> int:
+        """Search recent Mattermost posts for @bot mentions and replay new ones.
+
+        Returns the number of candidate posts handed to the normal posted-event
+        parser.  The parser's existing self-message, channel, mention, policy,
+        and dedup gates remain authoritative.
+        """
+        if not self._bot_username:
+            return 0
+
+        since_ms = max(0, self._backfill_watermark_ms - int(self._backfill_overlap_seconds * 1000))
+        terms = f"@{self._bot_username}"
+        posts_by_id: Dict[str, Dict[str, Any]] = {}
+        order: List[str] = []
+
+        teams = await self._api_get("users/me/teams")
+        if not isinstance(teams, list):
+            teams = []
+        for team in teams:
+            team_id = str(team.get("id") or "") if isinstance(team, dict) else ""
+            if not team_id:
+                continue
+            result = await self._api_post(
+                f"teams/{team_id}/posts/search",
+                {
+                    "terms": terms,
+                    "is_or_search": False,
+                    "include_deleted_channels": False,
+                    "page": 0,
+                    "per_page": self._backfill_per_page,
+                },
+            )
+            if not result:
+                continue
+            for post_id in result.get("order") or []:
+                post = (result.get("posts") or {}).get(post_id)
+                if not isinstance(post, dict):
+                    continue
+                created_ms = int(post.get("create_at") or 0)
+                if created_ms <= since_ms:
+                    continue
+                if post_id not in posts_by_id:
+                    order.append(post_id)
+                posts_by_id[post_id] = post
+
+        replayed = 0
+        newest_ms = self._backfill_watermark_ms
+        for post_id in sorted(order, key=lambda pid: int(posts_by_id[pid].get("create_at") or 0)):
+            post = posts_by_id[post_id]
+            newest_ms = max(newest_ms, int(post.get("create_at") or 0))
+            if post.get("delete_at") or post.get("type"):
+                continue
+            channel_type = await self._channel_type_for_post(post)
+            await self._handle_ws_event({
+                "event": "posted",
+                "data": {
+                    "post": json.dumps(post),
+                    "channel_type": channel_type,
+                    "sender_name": post.get("user_id", ""),
+                },
+            })
+            replayed += 1
+
+        if newest_ms > self._backfill_watermark_ms:
+            self._backfill_watermark_ms = newest_ms
+        if replayed:
+            logger.info("Mattermost: replayed %d missed mention candidate(s) via REST backfill", replayed)
+        return replayed
+
+    async def _channel_type_for_post(self, post: Dict[str, Any]) -> str:
+        channel_id = str(post.get("channel_id") or "")
+        if not channel_id:
+            return "O"
+        channel = await self._api_get(f"channels/{channel_id}")
+        return str(channel.get("type") or "O") if isinstance(channel, dict) else "O"
 
     # ------------------------------------------------------------------
     # WebSocket

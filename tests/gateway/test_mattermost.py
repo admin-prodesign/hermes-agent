@@ -1080,6 +1080,96 @@ class TestMattermostWebSocketParsing:
         assert not self.adapter.handle_message.called
 
 
+class TestMattermostMissedMentionBackfill:
+    def setup_method(self):
+        self.adapter = _make_adapter()
+        self.adapter._bot_user_id = "bot_user_id"
+        self.adapter._bot_username = "pd_one_bot"
+        self.adapter.handle_message = AsyncMock()
+        self.adapter._backfill_watermark_ms = 1000
+        self.adapter._backfill_overlap_seconds = 0
+
+    @pytest.mark.asyncio
+    async def test_backfill_replays_recent_mention_through_normal_parser(self):
+        post = {
+            "id": "missed_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot Confirmed, apply it",
+            "create_at": 2000,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        async def fake_post(path, payload):
+            assert path == "teams/team_1/posts/search"
+            assert payload["terms"] == "@pd_one_bot"
+            return {"order": ["missed_post"], "posts": {"missed_post": post}}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(side_effect=fake_post)
+
+        replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 1
+        assert self.adapter._backfill_watermark_ms == 2000
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "missed_post"
+        assert msg_event.text == "Confirmed, apply it"
+        assert msg_event.source.thread_id == "missed_post"
+
+    @pytest.mark.asyncio
+    async def test_backfill_preserves_thread_root_for_missed_reply(self):
+        post = {
+            "id": "missed_reply",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot continue",
+            "root_id": "thread_root",
+            "create_at": 3000,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            if path == "posts/thread_root/thread":
+                return {"order": ["thread_root", "missed_reply"], "posts": {"missed_reply": post}}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["missed_reply"], "posts": {"missed_reply": post}})
+
+        await self.adapter._run_backfill_once()
+
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "missed_reply"
+        assert msg_event.source.thread_id == "thread_root"
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_posts_older_than_overlap_window(self):
+        old_post = {
+            "id": "old_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot old",
+            "create_at": 999,
+        }
+        self.adapter._api_get = AsyncMock(return_value=[{"id": "team_1"}])
+        self.adapter._api_post = AsyncMock(return_value={"order": ["old_post"], "posts": {"old_post": old_post}})
+
+        replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 0
+        assert not self.adapter.handle_message.called
+
+
 # ---------------------------------------------------------------------------
 # Mention behavior (require_mention + free_response_channels)
 # ---------------------------------------------------------------------------
