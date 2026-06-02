@@ -106,12 +106,19 @@ class MattermostAdapter(BasePlatformAdapter):
             "backfill_interval_seconds", "MATTERMOST_BACKFILL_INTERVAL_SECONDS", 30.0, minimum=5.0
         )
         self._backfill_overlap_seconds = self._config_float(
-            "backfill_overlap_seconds", "MATTERMOST_BACKFILL_OVERLAP_SECONDS", 90.0, minimum=5.0
+            "backfill_overlap_seconds", "MATTERMOST_BACKFILL_OVERLAP_SECONDS", 600.0, minimum=5.0
+        )
+        self._backfill_initial_lookback_seconds = self._config_float(
+            "backfill_initial_lookback_seconds", "MATTERMOST_BACKFILL_INITIAL_LOOKBACK_SECONDS", 90.0, minimum=0.0
         )
         self._backfill_per_page = int(self._config_float(
-            "backfill_per_page", "MATTERMOST_BACKFILL_PER_PAGE", 60.0, minimum=1.0
+            "backfill_per_page", "MATTERMOST_BACKFILL_PER_PAGE", 100.0, minimum=1.0
         ))
+        self._backfill_seen_ttl_seconds = self._config_float(
+            "backfill_seen_ttl_seconds", "MATTERMOST_BACKFILL_SEEN_TTL_SECONDS", 3600.0, minimum=60.0
+        )
         self._backfill_watermark_ms = 0
+        self._backfill_seen_post_ids: Dict[str, float] = {}
 
         # Reply mode: "thread" to nest replies, "off" for flat messages.
         self._reply_mode: str = (
@@ -468,12 +475,13 @@ class MattermostAdapter(BasePlatformAdapter):
         self._ws_task = asyncio.create_task(self._ws_loop())
         if self._backfill_enabled:
             now_ms = int(time.time() * 1000)
-            self._backfill_watermark_ms = max(0, now_ms - int(self._backfill_overlap_seconds * 1000))
+            self._backfill_watermark_ms = max(0, now_ms - int(self._backfill_initial_lookback_seconds * 1000))
             self._backfill_task = asyncio.create_task(self._backfill_loop())
             logger.info(
-                "Mattermost: missed-mention REST backfill enabled (interval=%.0fs overlap=%.0fs)",
+                "Mattermost: missed-mention REST backfill enabled (interval=%.0fs overlap=%.0fs initial_lookback=%.0fs)",
                 self._backfill_interval_seconds,
                 self._backfill_overlap_seconds,
+                self._backfill_initial_lookback_seconds,
             )
         self._mark_connected()
         return True
@@ -1588,6 +1596,7 @@ class MattermostAdapter(BasePlatformAdapter):
         if not self._bot_username:
             return 0
 
+        self._prune_backfill_seen()
         since_ms = max(0, self._backfill_watermark_ms - int(self._backfill_overlap_seconds * 1000))
         terms = f"@{self._bot_username}"
         posts_by_id: Dict[str, Dict[str, Any]] = {}
@@ -1619,6 +1628,8 @@ class MattermostAdapter(BasePlatformAdapter):
                 created_ms = int(post.get("create_at") or 0)
                 if created_ms <= since_ms:
                     continue
+                if post_id in self._backfill_seen_post_ids:
+                    continue
                 if post_id not in posts_by_id:
                     order.append(post_id)
                 posts_by_id[post_id] = post
@@ -1628,6 +1639,7 @@ class MattermostAdapter(BasePlatformAdapter):
         for post_id in sorted(order, key=lambda pid: int(posts_by_id[pid].get("create_at") or 0)):
             post = posts_by_id[post_id]
             newest_ms = max(newest_ms, int(post.get("create_at") or 0))
+            self._backfill_seen_post_ids[post_id] = time.time()
             if post.get("delete_at") or post.get("type"):
                 continue
             channel_type = await self._channel_type_for_post(post)
@@ -1646,6 +1658,16 @@ class MattermostAdapter(BasePlatformAdapter):
         if replayed:
             logger.info("Mattermost: replayed %d missed mention candidate(s) via REST backfill", replayed)
         return replayed
+
+    def _prune_backfill_seen(self) -> None:
+        if not self._backfill_seen_post_ids:
+            return
+        cutoff = time.time() - self._backfill_seen_ttl_seconds
+        self._backfill_seen_post_ids = {
+            post_id: seen_at
+            for post_id, seen_at in self._backfill_seen_post_ids.items()
+            if seen_at >= cutoff
+        }
 
     async def _channel_type_for_post(self, post: Dict[str, Any]) -> str:
         channel_id = str(post.get("channel_id") or "")

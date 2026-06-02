@@ -1088,6 +1088,7 @@ class TestMattermostMissedMentionBackfill:
         self.adapter.handle_message = AsyncMock()
         self.adapter._backfill_watermark_ms = 1000
         self.adapter._backfill_overlap_seconds = 0
+        self.adapter._backfill_seen_ttl_seconds = 3600
 
     @pytest.mark.asyncio
     async def test_backfill_replays_recent_mention_through_normal_parser(self):
@@ -1168,6 +1169,58 @@ class TestMattermostMissedMentionBackfill:
 
         assert replayed == 0
         assert not self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
+    async def test_backfill_long_overlap_catches_multi_minute_late_mentions(self):
+        delayed_post = {
+            "id": "delayed_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot delayed by minutes",
+            "create_at": 5000,
+        }
+        self.adapter._backfill_watermark_ms = 600_000
+        self.adapter._backfill_overlap_seconds = 600
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["delayed_post"], "posts": {"delayed_post": delayed_post}})
+
+        replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 1
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "delayed_post"
+
+    @pytest.mark.asyncio
+    async def test_backfill_seen_cache_prevents_replay_inside_long_overlap(self):
+        post = {
+            "id": "repeat_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot only once",
+            "create_at": 2000,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["repeat_post"], "posts": {"repeat_post": post}})
+
+        assert await self.adapter._run_backfill_once() == 1
+        assert await self.adapter._run_backfill_once() == 0
+        assert self.adapter.handle_message.await_count == 1
 
 
 # ---------------------------------------------------------------------------
