@@ -1504,6 +1504,8 @@ class MattermostAdapter(BasePlatformAdapter):
                 if await self._thread_has_bot_reply_after(post):
                     self._backfill_seen_post_ids[post_id] = time.time()
                     continue
+                if post_id in self._backfill_seen_post_ids:
+                    continue
                 if post_id not in posts_by_id:
                     order.append(post_id)
                 posts_by_id[post_id] = post
