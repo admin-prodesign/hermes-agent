@@ -11372,6 +11372,27 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Only inject on NEW sessions — ongoing conversations already have the
         # skill content in their conversation history from the first message.
         _auto = getattr(event, "auto_skill", None)
+        if _is_new_session:
+            try:
+                _pd_one_cfg = _load_gateway_config()
+                _pd_one_platform_key = _platform_config_key(source.platform)
+                from gateway.pd_one_channel_scopes import resolve_pd_one_channel_scope, scoped_skills
+                _pd_one_scope_for_skills = resolve_pd_one_channel_scope(
+                    _pd_one_cfg,
+                    _pd_one_platform_key,
+                    source.chat_id,
+                    user_id=getattr(source, "user_id", None),
+                    text=getattr(event, "text", None),
+                )
+                _scope_skills = scoped_skills(_pd_one_scope_for_skills)
+                if _scope_skills:
+                    if _auto:
+                        _existing = [_auto] if isinstance(_auto, str) else list(_auto)
+                        _auto = _existing + _scope_skills
+                    else:
+                        _auto = _scope_skills
+            except Exception as e:
+                logger.debug("[Gateway] PD One scope skill resolution failed (non-fatal): %s", e)
         if _is_new_session and _auto:
             _skill_names = [_auto] if isinstance(_auto, str) else list(_auto)
             try:

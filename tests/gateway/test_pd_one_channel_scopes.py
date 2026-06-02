@@ -4,6 +4,7 @@ from gateway.config import Platform
 from gateway.pd_one_channel_scopes import (
     build_scope_prompt,
     resolve_pd_one_channel_scope,
+    scoped_skills,
     scoped_toolsets,
     scope_signature_fragment,
 )
@@ -236,6 +237,12 @@ platforms:
     scopes = cfg.platforms[Platform.MATTERMOST].extra["pd_one_channel_scopes"]
     assert scopes["finance-channel"]["agent_id"] == "finance"
 
+
+
+def test_scoped_skills_accepts_string_list_and_dedupes():
+    assert scoped_skills({"skills": "google-docs-work-manual"}) == ["google-docs-work-manual"]
+    assert scoped_skills({"skills": ["a", "b", "a", ""]}) == ["a", "b"]
+    assert scoped_skills({"agent_id": "work-manual"}) == []
 
 def test_scoped_toolsets_replace_platform_toolsets_and_preserve_order():
     scope = {"allowed_toolsets": ["skills", "file", "skills", "clarify"]}
