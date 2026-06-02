@@ -88,6 +88,19 @@ def scoped_toolsets(platform_toolsets: Iterable[Any], scope: dict[str, Any] | No
     return _dedupe_strings(allowed)
 
 
+def scoped_skills(scope: dict[str, Any] | None) -> list[str]:
+    """Return ordered skills configured for a PD One channel scope."""
+
+    if not isinstance(scope, dict):
+        return []
+    skills = scope.get("skills")
+    if isinstance(skills, str):
+        skills = [skills]
+    if not isinstance(skills, list):
+        return []
+    return _dedupe_strings(skills)
+
+
 def build_scope_prompt(scope: dict[str, Any] | None, *, channel_id: str | None = None) -> str:
     """Build the ephemeral system prompt for a resolved PD One channel scope."""
 
@@ -98,7 +111,7 @@ def build_scope_prompt(scope: dict[str, Any] | None, *, channel_id: str | None =
     resolved_channel = str(channel_id or scope.get("channel_id") or "unknown")
     workspace = str(scope.get("workspace") or "")
     toolsets = _dedupe_strings(scope.get("allowed_toolsets") or [])
-    skills = _dedupe_strings(scope.get("skills") or [])
+    skills = scoped_skills(scope)
     custom_prompt = str(scope.get("prompt") or "").strip()
 
     lines = [
@@ -134,7 +147,7 @@ def scope_signature_fragment(scope: dict[str, Any] | None) -> str:
         "agent_id": scope.get("agent_id"),
         "workspace": scope.get("workspace"),
         "allowed_toolsets": _dedupe_strings(scope.get("allowed_toolsets") or []),
-        "skills": _dedupe_strings(scope.get("skills") or []),
+        "skills": scoped_skills(scope),
         "prompt": scope.get("prompt"),
     }
     return json.dumps(relevant, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
