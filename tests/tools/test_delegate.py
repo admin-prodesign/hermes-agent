@@ -31,6 +31,7 @@ from tools.delegate_tool import (
     _build_child_system_prompt,
     _strip_blocked_tools,
     _resolve_child_credential_pool,
+    _apply_model_override_to_delegation_config,
     _resolve_delegation_credentials,
 )
 
@@ -69,6 +70,8 @@ class TestDelegateRequirements(unittest.TestCase):
         self.assertIn("tasks", props)
         self.assertIn("context", props)
         self.assertIn("toolsets", props)
+        self.assertIn("model", props)
+        self.assertIn("model", props["tasks"]["items"]["properties"])
         # max_iterations is intentionally NOT exposed to the model — it's
         # config-authoritative via delegation.max_iterations so users get
         # predictable budgets.
@@ -873,6 +876,61 @@ class TestDelegationCredentialResolution(unittest.TestCase):
         self.assertIsNone(creds["base_url"])
         self.assertIsNone(creds["api_key"])
 
+    def test_string_model_override_keeps_config_provider(self):
+        parent = _make_mock_parent(depth=0)
+        cfg = {"model": "old-model", "provider": "openrouter"}
+        with patch("hermes_cli.runtime_provider.resolve_runtime_provider") as mock_resolve:
+            mock_resolve.return_value = {
+                "provider": "openrouter",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key": "sk-or-key",
+                "api_mode": "chat_completions",
+            }
+            creds = _resolve_delegation_credentials(cfg, parent, "new-model")
+
+        self.assertEqual(creds["model"], "new-model")
+        mock_resolve.assert_called_once_with(requested="openrouter", target_model="new-model")
+
+    def test_object_model_override_replaces_provider_and_model(self):
+        parent = _make_mock_parent(depth=0)
+        cfg = {"model": "old-model", "provider": "nous"}
+        override = {"provider": "openrouter", "model": "google/gemini-3-flash-preview"}
+        with patch("hermes_cli.runtime_provider.resolve_runtime_provider") as mock_resolve:
+            mock_resolve.return_value = {
+                "provider": "openrouter",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key": "sk-or-key",
+                "api_mode": "chat_completions",
+            }
+            creds = _resolve_delegation_credentials(cfg, parent, override)
+
+        self.assertEqual(creds["provider"], "openrouter")
+        self.assertEqual(creds["model"], "google/gemini-3-flash-preview")
+        mock_resolve.assert_called_once_with(
+            requested="openrouter", target_model="google/gemini-3-flash-preview"
+        )
+
+    def test_model_override_rejects_unknown_keys(self):
+        with self.assertRaises(ValueError) as ctx:
+            _apply_model_override_to_delegation_config(
+                {}, {"model": "x", "api_key": "do-not-put-secrets-in-tool-calls"}
+            )
+        self.assertIn("unsupported key", str(ctx.exception))
+
+    def test_provider_model_override_clears_configured_direct_endpoint(self):
+        cfg = {
+            "model": "old-model",
+            "base_url": "http://localhost:1234/v1",
+            "api_key": "local-key",
+        }
+        merged = _apply_model_override_to_delegation_config(
+            cfg, {"provider": "openrouter", "model": "new-model"}
+        )
+        self.assertEqual(merged["provider"], "openrouter")
+        self.assertEqual(merged["model"], "new-model")
+        self.assertNotIn("base_url", merged)
+        self.assertNotIn("api_key", merged)
+
 
 
     def test_direct_endpoint_uses_configured_base_url_and_api_key(self):
@@ -1136,6 +1194,61 @@ class TestDelegationProviderIntegration(unittest.TestCase):
             self.assertEqual(kwargs["model"], parent.model)
             self.assertEqual(kwargs["provider"], parent.provider)
             self.assertEqual(kwargs["base_url"], parent.base_url)
+
+    @patch("tools.delegate_tool._load_config")
+    def test_top_level_model_override_reaches_child_agent(self, mock_cfg):
+        mock_cfg.return_value = {"max_iterations": 45}
+        parent = _make_mock_parent(depth=0)
+
+        with patch("run_agent.AIAgent") as MockAgent:
+            mock_child = MagicMock()
+            mock_child.run_conversation.return_value = {
+                "final_response": "done", "completed": True, "api_calls": 1
+            }
+            MockAgent.return_value = mock_child
+
+            delegate_task(
+                goal="Use another model",
+                model="google/gemini-3-flash-preview",
+                parent_agent=parent,
+            )
+
+            _, kwargs = MockAgent.call_args
+            self.assertEqual(kwargs["model"], "google/gemini-3-flash-preview")
+            # Model-only override inherits the parent's transport/credentials.
+            self.assertEqual(kwargs["provider"], parent.provider)
+            self.assertEqual(kwargs["base_url"], parent.base_url)
+
+    @patch("tools.delegate_tool._load_config")
+    @patch("tools.delegate_tool._resolve_delegation_credentials")
+    def test_batch_per_task_model_overrides_beat_top_level(self, mock_creds, mock_cfg):
+        mock_cfg.return_value = {"max_iterations": 45}
+        mock_creds.side_effect = [
+            {"model": "top-model", "provider": None, "base_url": None, "api_key": None, "api_mode": None},
+            {"model": "task-model", "provider": None, "base_url": None, "api_key": None, "api_mode": None},
+        ]
+        parent = _make_mock_parent(depth=0)
+
+        with patch("tools.delegate_tool._build_child_agent") as mock_build, \
+             patch("tools.delegate_tool._run_single_child") as mock_run:
+            mock_child_a = MagicMock()
+            mock_child_b = MagicMock()
+            mock_build.side_effect = [mock_child_a, mock_child_b]
+            mock_run.side_effect = [
+                {"task_index": 0, "status": "completed", "summary": "A", "api_calls": 1, "duration_seconds": 1.0},
+                {"task_index": 1, "status": "completed", "summary": "B", "api_calls": 1, "duration_seconds": 1.0},
+            ]
+
+            delegate_task(
+                tasks=[{"goal": "A"}, {"goal": "B", "model": "task-model"}],
+                model="top-model",
+                parent_agent=parent,
+            )
+
+        self.assertEqual(mock_creds.call_args_list[0].args[2], "top-model")
+        self.assertEqual(mock_creds.call_args_list[1].args[2], "task-model")
+        self.assertEqual(mock_build.call_args_list[0].kwargs["model"], "top-model")
+        self.assertEqual(mock_build.call_args_list[1].kwargs["model"], "task-model")
 
     @patch("tools.delegate_tool._load_config")
     @patch("tools.delegate_tool._resolve_delegation_credentials")

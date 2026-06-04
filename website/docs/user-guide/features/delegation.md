@@ -131,7 +131,7 @@ Single-task delegation runs directly without thread pool overhead.
 
 ## Model Override
 
-You can configure a different model for subagents via `config.yaml` — useful for delegating simple tasks to cheaper/faster models:
+You can configure a default model for all subagents via `config.yaml` — useful for delegating simple tasks to cheaper/faster models:
 
 ```yaml
 # In ~/.hermes/config.yaml
@@ -141,6 +141,33 @@ delegation:
 ```
 
 If omitted, subagents use the same model as the parent.
+
+You can also override the model for a single `delegate_task` call without changing config:
+
+```python
+delegate_task(
+    goal="Review this implementation plan",
+    model={"provider": "openrouter", "model": "google/gemini-3-flash-preview"},
+)
+```
+
+In batch mode, each task can choose its own model. Per-task `model` beats the top-level `model`:
+
+```python
+delegate_task(
+    tasks=[
+        {"goal": "Quick docs scan", "toolsets": ["web"]},
+        {
+            "goal": "Deep code review",
+            "toolsets": ["terminal", "file"],
+            "model": {"provider": "openrouter", "model": "anthropic/claude-sonnet-4"},
+        },
+    ],
+    model={"provider": "openrouter", "model": "google/gemini-3-flash-preview"},
+)
+```
+
+Omit `provider` in the model object to keep the current/configured provider credentials and only change the model name. API keys are still resolved from provider config or environment; do not put secrets in `delegate_task` calls.
 
 ## Toolset Selection Tips
 
