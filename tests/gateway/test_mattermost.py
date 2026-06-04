@@ -1003,7 +1003,7 @@ class TestMattermostWebSocketParsing:
         }), encoding="utf-8")
         self.adapter.config.extra.update({
             "pd_one_policy_bridge": True,
-            "pd_one_openclaw_workspace": "/openclaw/workspace",
+            "pd_one_hermes_policy_root": "/hermes/profiles/pdone",
             "pd_one_policy_cache_users": str(cache),
         })
         post_data = {
@@ -1040,7 +1040,7 @@ class TestMattermostWebSocketParsing:
         cache.mkdir()
         self.adapter.config.extra.update({
             "pd_one_policy_bridge": True,
-            "pd_one_openclaw_workspace": "/openclaw/workspace",
+            "pd_one_hermes_policy_root": "/hermes/profiles/pdone",
             "pd_one_policy_cache_users": str(cache),
         })
         post_data = {
