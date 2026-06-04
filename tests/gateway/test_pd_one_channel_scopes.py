@@ -95,7 +95,7 @@ def test_admin_prefix_escalation_uses_raw_text_not_prepared_context():
             },
         }
     }
-    prepared_message = """[PD One OpenClaw permission bridge]
+    prepared_message = """[PD One Hermes permission bridge]
 Policy context...
 
 [Mattermost thread context]

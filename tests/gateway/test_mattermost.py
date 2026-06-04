@@ -983,8 +983,8 @@ class TestMattermostWebSocketParsing:
         assert msg_event.channel_context is None
 
     @pytest.mark.asyncio
-    async def test_pd_one_policy_bridge_injects_openclaw_policy_context(self, tmp_path):
-        """PD One profile can inject OpenClaw sender policy cache into context."""
+    async def test_pd_one_policy_bridge_injects_hermes_policy_context(self, tmp_path):
+        """PD One profile can inject Hermes sender policy cache into context."""
         cache = tmp_path / "users"
         cache.mkdir()
         (cache / "user_123.json").write_text(json.dumps({
@@ -1003,7 +1003,7 @@ class TestMattermostWebSocketParsing:
         }), encoding="utf-8")
         self.adapter.config.extra.update({
             "pd_one_policy_bridge": True,
-            "pd_one_openclaw_workspace": "/openclaw/workspace",
+            "pd_one_hermes_policy_root": "/hermes/profiles/pdone",
             "pd_one_policy_cache_users": str(cache),
         })
         post_data = {
@@ -1024,7 +1024,7 @@ class TestMattermostWebSocketParsing:
         await self.adapter._handle_ws_event(event)
 
         msg_event = self.adapter.handle_message.call_args[0][0]
-        assert "PD One OpenClaw permission bridge" in msg_event.channel_context
+        assert "PD One Hermes permission bridge" in msg_event.channel_context
         assert '"requesterMattermostUserId":"user_123"' in msg_event.channel_context
         assert '"roles":["facilities"]' in msg_event.channel_context
         assert '"dataAccessSummary"' in msg_event.channel_context
@@ -1035,12 +1035,12 @@ class TestMattermostWebSocketParsing:
 
     @pytest.mark.asyncio
     async def test_pd_one_policy_bridge_missing_cache_marks_lookup_failure(self, tmp_path):
-        """Missing OpenClaw policy cache entries are explicit, not silent allows."""
+        """Missing Hermes policy cache entries are explicit, not silent allows."""
         cache = tmp_path / "users"
         cache.mkdir()
         self.adapter.config.extra.update({
             "pd_one_policy_bridge": True,
-            "pd_one_openclaw_workspace": "/openclaw/workspace",
+            "pd_one_hermes_policy_root": "/hermes/profiles/pdone",
             "pd_one_policy_cache_users": str(cache),
         })
         post_data = {
@@ -1061,7 +1061,7 @@ class TestMattermostWebSocketParsing:
         await self.adapter._handle_ws_event(event)
 
         msg_event = self.adapter.handle_message.call_args[0][0]
-        assert "PD One OpenClaw permission bridge" in msg_event.channel_context
+        assert "PD One Hermes permission bridge" in msg_event.channel_context
         assert '"found":false' in msg_event.channel_context
         assert "stop scoped work" in msg_event.channel_context
 
