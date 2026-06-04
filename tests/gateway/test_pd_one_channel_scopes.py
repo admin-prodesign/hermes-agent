@@ -50,6 +50,133 @@ def test_resolve_scope_supports_default_fallback_for_unknown_channel():
     assert scope["agent_id"] == "employee-assistant"
 
 
+def test_authorized_admin_prefix_overrides_employee_channel_scope():
+    cfg = {
+        "mattermost": {
+            "pd_one_admin_prefix": {"allow_from": ["5nak6m7nmf8kudbrwbtccazbgc"]},
+            "pd_one_channel_scopes": {
+                "admin-channel": {
+                    "agent_id": "admin",
+                    "allowed_toolsets": ["terminal", "file"],
+                    "prompt": "Admin scope.",
+                },
+                "employee-channel": {
+                    "agent_id": "employee-assistant",
+                    "allowed_toolsets": ["skills", "clarify"],
+                    "prompt": "Employee scope.",
+                },
+            },
+        }
+    }
+
+    scope = resolve_pd_one_channel_scope(
+        cfg,
+        "mattermost",
+        "employee-channel",
+        user_id="5nak6m7nmf8kudbrwbtccazbgc",
+        text="admin: fix the capability",
+    )
+
+    assert scope is not None
+    assert scope["agent_id"] == "admin"
+    assert scope["admin_prefix_invoked"] is True
+    assert scope["original_channel_scope"]["agent_id"] == "employee-assistant"
+    assert scoped_toolsets(["skills"], scope) == ["terminal", "file"]
+
+
+def test_admin_prefix_escalation_uses_raw_text_not_prepared_context():
+    cfg = {
+        "mattermost": {
+            "pd_one_admin_prefix": {"allow_from": ["admin-user"]},
+            "pd_one_channel_scopes": {
+                "admin-channel": {"agent_id": "admin", "allowed_toolsets": ["terminal"]},
+                "employee-channel": {"agent_id": "employee-assistant", "allowed_toolsets": ["skills"]},
+            },
+        }
+    }
+    prepared_message = """[PD One Hermes permission bridge]
+Policy context...
+
+[Mattermost thread context]
+[New message]
+[andy.lin] admin: show current PD One scope only"""
+
+    hidden_scope = resolve_pd_one_channel_scope(
+        cfg,
+        "mattermost",
+        "employee-channel",
+        user_id="admin-user",
+        text=prepared_message,
+    )
+    raw_scope = resolve_pd_one_channel_scope(
+        cfg,
+        "mattermost",
+        "employee-channel",
+        user_id="admin-user",
+        text="admin: show current PD One scope only",
+    )
+
+    assert hidden_scope is not None
+    assert hidden_scope["agent_id"] == "employee-assistant"
+    assert raw_scope is not None
+    assert raw_scope["agent_id"] == "admin"
+    assert raw_scope["admin_prefix_invoked"] is True
+    assert scope_signature_fragment(hidden_scope) != scope_signature_fragment(raw_scope)
+
+
+def test_unauthorized_admin_prefix_keeps_channel_scope():
+    cfg = {
+        "mattermost": {
+            "pd_one_admin_prefix": {"allow_from": ["admin-user"]},
+            "pd_one_channel_scopes": {
+                "admin-channel": {"agent_id": "admin", "allowed_toolsets": ["terminal"]},
+                "employee-channel": {"agent_id": "employee-assistant", "allowed_toolsets": ["skills"]},
+            },
+        }
+    }
+
+    scope = resolve_pd_one_channel_scope(
+        cfg,
+        "mattermost",
+        "employee-channel",
+        user_id="regular-user",
+        text="admin: fix the capability",
+    )
+
+    assert scope is not None
+    assert scope["agent_id"] == "employee-assistant"
+    assert "admin_prefix_invoked" not in scope
+
+
+def test_admin_prefix_authorization_can_use_policy_cache_roles(tmp_path):
+    policy_dir = tmp_path / "users"
+    policy_dir.mkdir()
+    (policy_dir / "andy.json").write_text(
+        '{"found": true, "active": true, "roles": ["admin"]}',
+        encoding="utf-8",
+    )
+    cfg = {
+        "mattermost": {
+            "pd_one_policy_cache_users": str(policy_dir),
+            "pd_one_channel_scopes": {
+                "admin-channel": {"agent_id": "admin", "allowed_toolsets": ["terminal"]},
+                "employee-channel": {"agent_id": "employee-assistant", "allowed_toolsets": ["skills"]},
+            },
+        }
+    }
+
+    scope = resolve_pd_one_channel_scope(
+        cfg,
+        "mattermost",
+        "employee-channel",
+        user_id="andy",
+        text="admin: fix the capability",
+    )
+
+    assert scope is not None
+    assert scope["agent_id"] == "admin"
+
+
 def test_resolve_scope_disabled_for_non_mattermost_platform():
     cfg = {
         "mattermost": {
