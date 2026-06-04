@@ -602,19 +602,24 @@ class MattermostAdapter(BasePlatformAdapter):
         return None
 
     def _build_pd_one_policy_context(self, user_id: str, channel_id: str, chat_type: str) -> Optional[str]:
-        """Build compact policy context from OpenClaw's PD One workspace.
+        """Build compact policy context from the Hermes PD One profile.
 
-        The full policy files remain the source of truth; this injects enough
-        per-turn context to force exact sender-id authorization and gives the
-        agent deterministic paths to consult before acting.
+        The Hermes PD One profile policy files remain the source of truth; this
+        injects enough per-turn context to force exact sender-id authorization
+        and gives the agent deterministic paths to consult before acting.
+        Legacy OpenClaw key/env names remain accepted as compatibility aliases.
         """
         enabled = self.config.extra.get("pd_one_policy_bridge") if "pd_one_policy_bridge" in self.config.extra else os.getenv("PD_ONE_POLICY_BRIDGE")
         if str(enabled).lower() not in {"1", "true", "yes", "on"}:
             return None
         workspace = str(
-            self.config.extra.get("pd_one_openclaw_workspace")
+            self.config.extra.get("pd_one_hermes_policy_root")
+            or self.config.extra.get("pd_one_policy_root")
+            or self.config.extra.get("pd_one_openclaw_workspace")
+            or os.getenv("PD_ONE_HERMES_POLICY_ROOT")
+            or os.getenv("PD_ONE_POLICY_ROOT")
             or os.getenv("PD_ONE_OPENCLAW_WORKSPACE")
-            or "/home/prodesign/.openclaw/workspace"
+            or "/home/prodesign/.hermes/profiles/pdone"
         )
         policy = self._load_pd_one_user_policy(user_id) or {"found": False, "mattermostUserId": user_id}
         def _summarize_data_access(data_access: Any) -> Dict[str, Any]:
@@ -718,7 +723,7 @@ class MattermostAdapter(BasePlatformAdapter):
         compact.update({"requesterMattermostUserId": user_id, "currentChannelId": channel_id, "currentChatType": chat_type})
         payload = json.dumps(compact, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return (
-            "[PD One OpenClaw permission bridge]\n"
+            "[PD One Hermes permission bridge]\n"
             "Authorize by exact sender id only; never name/fuzzy/prior-session identity. "
             "If found=false, lookup failed, inactive, or not allowed, use setup/lookup-failure response and stop scoped work. "
             "Mattermost channel/group replies must be bilingual English + Traditional Chinese. "
