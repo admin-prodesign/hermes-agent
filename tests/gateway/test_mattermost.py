@@ -627,6 +627,325 @@ class TestMattermostWebSocketParsing:
         assert not self.adapter.handle_message.called
 
 
+class TestMattermostMissedMentionBackfill:
+    def setup_method(self):
+        self.adapter = _make_adapter()
+        self.adapter._bot_user_id = "bot_user_id"
+        self.adapter._bot_username = "pd_one_bot"
+        self.adapter.handle_message = AsyncMock()
+        self.adapter._backfill_watermark_ms = 1000
+        self.adapter._backfill_overlap_seconds = 0
+        self.adapter._backfill_seen_ttl_seconds = 3600
+        self.adapter._backfill_unreplied_lookback_seconds = 21600
+
+    @pytest.mark.asyncio
+    async def test_backfill_replays_recent_mention_through_normal_parser(self):
+        post = {
+            "id": "missed_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot Confirmed, apply it",
+            "create_at": 2000,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        async def fake_post(path, payload):
+            assert path == "teams/team_1/posts/search"
+            assert payload["terms"] == "@pd_one_bot"
+            return {"order": ["missed_post"], "posts": {"missed_post": post}}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(side_effect=fake_post)
+
+        replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 1
+        assert self.adapter._backfill_watermark_ms == 2000
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "missed_post"
+        assert msg_event.text == "Confirmed, apply it"
+        assert msg_event.source.thread_id == "missed_post"
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_recent_mention_when_bot_already_replied_in_thread(self):
+        post = {
+            "id": "recent_replied_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot how are reminders generated?",
+            "root_id": "thread_root",
+            "create_at": 2000,
+        }
+        bot_reply = {
+            "id": "bot_reply_after",
+            "user_id": "bot_user_id",
+            "channel_id": "chan_456",
+            "message": "Handled",
+            "root_id": "thread_root",
+            "create_at": 2500,
+        }
+        self.adapter._backfill_watermark_ms = 2000
+        self.adapter._backfill_overlap_seconds = 600
+        self.adapter._backfill_seen_post_ids = {}
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "posts/thread_root/thread":
+                return {
+                    "order": ["recent_replied_post", "bot_reply_after"],
+                    "posts": {"recent_replied_post": post, "bot_reply_after": bot_reply},
+                }
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["recent_replied_post"], "posts": {"recent_replied_post": post}})
+
+        replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 0
+        assert not self.adapter.handle_message.called
+        assert "recent_replied_post" in self.adapter._backfill_seen_post_ids
+
+    @pytest.mark.asyncio
+    async def test_backfill_bot_replied_skip_uses_seen_cache_on_repeated_poll(self):
+        post = {
+            "id": "recent_replied_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot how are reminders generated?",
+            "root_id": "thread_root",
+            "create_at": 2000,
+        }
+        bot_reply = {
+            "id": "bot_reply_after",
+            "user_id": "bot_user_id",
+            "channel_id": "chan_456",
+            "message": "Handled",
+            "root_id": "thread_root",
+            "create_at": 2500,
+        }
+        self.adapter._backfill_watermark_ms = 2000
+        self.adapter._backfill_overlap_seconds = 600
+        self.adapter._backfill_seen_post_ids = {}
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "posts/thread_root/thread":
+                return {
+                    "order": ["recent_replied_post", "bot_reply_after"],
+                    "posts": {"recent_replied_post": post, "bot_reply_after": bot_reply},
+                }
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["recent_replied_post"], "posts": {"recent_replied_post": post}})
+
+        assert await self.adapter._run_backfill_once() == 0
+        assert await self.adapter._run_backfill_once() == 0
+        thread_fetches = [call.args[0] for call in self.adapter._api_get.await_args_list if call.args[0] == "posts/thread_root/thread"]
+        assert thread_fetches == ["posts/thread_root/thread"]
+        assert not self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
+    async def test_backfill_preserves_thread_root_for_missed_reply(self):
+        post = {
+            "id": "missed_reply",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot continue",
+            "root_id": "thread_root",
+            "create_at": 3000,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            if path == "posts/thread_root/thread":
+                return {"order": ["thread_root", "missed_reply"], "posts": {"missed_reply": post}}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["missed_reply"], "posts": {"missed_reply": post}})
+
+        await self.adapter._run_backfill_once()
+
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "missed_reply"
+        assert msg_event.source.thread_id == "thread_root"
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_posts_older_than_overlap_window(self):
+        old_post = {
+            "id": "old_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot old",
+            "create_at": 999,
+        }
+        self.adapter._api_get = AsyncMock(return_value=[{"id": "team_1"}])
+        self.adapter._api_post = AsyncMock(return_value={"order": ["old_post"], "posts": {"old_post": old_post}})
+
+        replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 0
+        assert not self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
+    async def test_backfill_replays_older_unreplied_mention_within_unreplied_lookback(self):
+        old_unreplied_post = {
+            "id": "old_unreplied_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot still needs a reply",
+            "create_at": 500,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "posts/old_unreplied_post/thread":
+                return {"order": ["old_unreplied_post"], "posts": {"old_unreplied_post": old_unreplied_post}}
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["old_unreplied_post"], "posts": {"old_unreplied_post": old_unreplied_post}})
+
+        with patch("plugins.platforms.mattermost.adapter.time.time", return_value=7.0):
+            replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 1
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "old_unreplied_post"
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_older_mention_when_bot_already_replied_in_thread(self):
+        old_replied_post = {
+            "id": "old_replied_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot already handled",
+            "create_at": 500,
+        }
+        bot_reply = {
+            "id": "bot_reply",
+            "user_id": "bot_user_id",
+            "channel_id": "chan_456",
+            "message": "Handled",
+            "create_at": 750,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "posts/old_replied_post/thread":
+                return {
+                    "order": ["old_replied_post", "bot_reply"],
+                    "posts": {"old_replied_post": old_replied_post, "bot_reply": bot_reply},
+                }
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["old_replied_post"], "posts": {"old_replied_post": old_replied_post}})
+
+        with patch("plugins.platforms.mattermost.adapter.time.time", return_value=7.0):
+            replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 0
+        assert not self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
+    async def test_backfill_long_overlap_catches_multi_minute_late_mentions(self):
+        delayed_post = {
+            "id": "delayed_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot delayed by minutes",
+            "create_at": 5000,
+        }
+        self.adapter._backfill_watermark_ms = 600_000
+        self.adapter._backfill_overlap_seconds = 600
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["delayed_post"], "posts": {"delayed_post": delayed_post}})
+
+        replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 1
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "delayed_post"
+
+    @pytest.mark.asyncio
+    async def test_backfill_seen_cache_prevents_replay_inside_long_overlap(self):
+        post = {
+            "id": "repeat_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot only once",
+            "create_at": 2000,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["repeat_post"], "posts": {"repeat_post": post}})
+
+        assert await self.adapter._run_backfill_once() == 1
+        assert await self.adapter._run_backfill_once() == 0
+        assert self.adapter.handle_message.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_expired_posts_before_thread_lookup(self):
+        expired_post = {
+            "id": "expired_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot expired",
+            "create_at": 500,
+        }
+        self.adapter._backfill_watermark_ms = 10_000
+        self.adapter._backfill_overlap_seconds = 1
+        self.adapter._backfill_unreplied_lookback_seconds = 1
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            raise AssertionError(f"expired post should not fetch thread/channel: {path}")
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["expired_post"], "posts": {"expired_post": expired_post}})
+
+        with patch("plugins.platforms.mattermost.adapter.time.time", return_value=10.0):
+            replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 0
+        assert not self.adapter.handle_message.called
+        assert [call.args[0] for call in self.adapter._api_get.await_args_list] == ["users/me/teams"]
+
+
 # ---------------------------------------------------------------------------
 # Mention behavior (require_mention + free_response_channels)
 # ---------------------------------------------------------------------------
