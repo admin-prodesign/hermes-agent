@@ -324,13 +324,22 @@ class HonchoMemoryProvider(MemoryProvider):
             # ----- B5: cost-awareness config -----
             try:
                 raw = cfg.raw or {}
-                self._injection_frequency = raw.get("injectionFrequency", "every-turn")
-                self._context_cadence = int(raw.get("contextCadence", 1))
+                hosts = raw.get("hosts") if isinstance(raw.get("hosts"), dict) else {}
+                host_block = hosts.get(cfg.host, {}) if isinstance(hosts, dict) else {}
+                if not host_block and str(cfg.host).startswith("hermes_"):
+                    legacy_host = f"hermes.{str(cfg.host)[len('hermes_'):]}"
+                    host_block = hosts.get(legacy_host, {}) if isinstance(hosts, dict) else {}
+                if not isinstance(host_block, dict):
+                    host_block = {}
+                self._injection_frequency = host_block.get(
+                    "injectionFrequency", raw.get("injectionFrequency", "every-turn")
+                )
+                self._context_cadence = int(host_block.get("contextCadence", raw.get("contextCadence", 1)))
                 # Backwards-compat: unset dialecticCadence falls back to 1
                 # (every turn) so existing honcho.json configs without the key
                 # behave as they did before. New setups via `hermes honcho setup`
                 # get dialecticCadence=2 written explicitly by the wizard.
-                self._dialectic_cadence = int(raw.get("dialecticCadence", 1))
+                self._dialectic_cadence = int(host_block.get("dialecticCadence", raw.get("dialecticCadence", 1)))
                 self._dialectic_depth = max(1, min(cfg.dialectic_depth, 3))
                 self._dialectic_depth_levels = cfg.dialectic_depth_levels
                 self._reasoning_heuristic = cfg.reasoning_heuristic
@@ -439,6 +448,7 @@ class HonchoMemoryProvider(MemoryProvider):
             context_tokens=cfg.context_tokens,
             runtime_user_peer_name=kwargs.get("user_id") or None,
             runtime_user_peer_name_alt=kwargs.get("user_id_alt") or None,
+            runtime_platform=kwargs.get("platform") or None,
         )
 
         # ----- B3: resolve_session_name -----
