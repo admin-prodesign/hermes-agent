@@ -1164,6 +1164,48 @@ class TestMattermostMissedMentionBackfill:
 
         assert replayed == 0
         assert not self.adapter.handle_message.called
+        assert "recent_replied_post" in self.adapter._backfill_seen_post_ids
+
+    @pytest.mark.asyncio
+    async def test_backfill_bot_replied_skip_uses_seen_cache_on_repeated_poll(self):
+        post = {
+            "id": "recent_replied_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot how are reminders generated?",
+            "root_id": "thread_root",
+            "create_at": 2000,
+        }
+        bot_reply = {
+            "id": "bot_reply_after",
+            "user_id": "bot_user_id",
+            "channel_id": "chan_456",
+            "message": "Handled",
+            "root_id": "thread_root",
+            "create_at": 2500,
+        }
+        self.adapter._backfill_watermark_ms = 2000
+        self.adapter._backfill_overlap_seconds = 600
+        self.adapter._backfill_seen_post_ids = {}
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "posts/thread_root/thread":
+                return {
+                    "order": ["recent_replied_post", "bot_reply_after"],
+                    "posts": {"recent_replied_post": post, "bot_reply_after": bot_reply},
+                }
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["recent_replied_post"], "posts": {"recent_replied_post": post}})
+
+        assert await self.adapter._run_backfill_once() == 0
+        assert await self.adapter._run_backfill_once() == 0
+        thread_fetches = [call.args[0] for call in self.adapter._api_get.await_args_list if call.args[0] == "posts/thread_root/thread"]
+        assert thread_fetches == ["posts/thread_root/thread"]
+        assert not self.adapter.handle_message.called
 
     @pytest.mark.asyncio
     async def test_backfill_preserves_thread_root_for_missed_reply(self):
@@ -1327,6 +1369,34 @@ class TestMattermostMissedMentionBackfill:
         assert await self.adapter._run_backfill_once() == 1
         assert await self.adapter._run_backfill_once() == 0
         assert self.adapter.handle_message.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_expired_posts_before_thread_lookup(self):
+        expired_post = {
+            "id": "expired_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot expired",
+            "create_at": 500,
+        }
+        self.adapter._backfill_watermark_ms = 10_000
+        self.adapter._backfill_overlap_seconds = 1
+        self.adapter._backfill_unreplied_lookback_seconds = 1
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            raise AssertionError(f"expired post should not fetch thread/channel: {path}")
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["expired_post"], "posts": {"expired_post": expired_post}})
+
+        with patch("plugins.platforms.mattermost.adapter.time.time", return_value=10.0):
+            replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 0
+        assert not self.adapter.handle_message.called
+        assert [call.args[0] for call in self.adapter._api_get.await_args_list] == ["users/me/teams"]
 
 
 # ---------------------------------------------------------------------------
