@@ -1581,18 +1581,21 @@ class MattermostAdapter(BasePlatformAdapter):
                 if not isinstance(post, dict):
                     continue
                 created_ms = int(post.get("create_at") or 0)
+                if created_ms <= since_ms and created_ms <= unreplied_since_ms:
+                    continue
+                if post_id in self._backfill_seen_post_ids:
+                    continue
                 # Idempotency must be based on source-of-truth thread state,
                 # not only the in-memory seen cache.  The rolling watermark is
                 # intentionally anchored to the newest mention found by search;
                 # when no newer mentions arrive, the same recent mention can
                 # remain inside the overlap indefinitely.  After the seen-cache
                 # TTL expires, replaying without checking the thread would
-                # duplicate a request that already has a bot reply.
+                # duplicate a request that already has a bot reply.  Do this
+                # expensive thread lookup only after cheap age/cache gates; the
+                # search endpoint can return hundreds of historical mentions.
                 if await self._thread_has_bot_reply_after(post):
-                    continue
-                if created_ms <= since_ms and created_ms <= unreplied_since_ms:
-                    continue
-                if post_id in self._backfill_seen_post_ids:
+                    self._backfill_seen_post_ids[post_id] = time.time()
                     continue
                 if post_id not in posts_by_id:
                     order.append(post_id)
