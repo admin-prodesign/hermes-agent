@@ -1387,6 +1387,149 @@ class MattermostAdapter(BasePlatformAdapter):
                 await super().send_multiple_images(chat_id, chunk, metadata, human_delay=human_delay)
 
     # ------------------------------------------------------------------
+    # Missed WebSocket event REST backfill
+    # ------------------------------------------------------------------
+
+    async def _backfill_loop(self) -> None:
+        """Periodically replay recent @bot posts that the WebSocket missed."""
+        while not self._closing:
+            try:
+                await asyncio.sleep(self._backfill_interval_seconds)
+                if self._closing:
+                    return
+                await self._run_backfill_once()
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:
+                logger.warning("Mattermost: missed-mention backfill failed: %s", exc, exc_info=True)
+
+    async def _run_backfill_once(self) -> int:
+        """Search recent Mattermost posts for @bot mentions and replay new ones.
+
+        Returns the number of candidate posts handed to the normal posted-event
+        parser.  The parser's existing self-message, channel, mention, policy,
+        and dedup gates remain authoritative.
+        """
+        if not self._bot_username:
+            return 0
+
+        self._prune_backfill_seen()
+        since_ms = max(0, self._backfill_watermark_ms - int(self._backfill_overlap_seconds * 1000))
+        unreplied_since_ms = max(0, int(time.time() * 1000) - int(self._backfill_unreplied_lookback_seconds * 1000))
+        terms = f"@{self._bot_username}"
+        posts_by_id: Dict[str, Dict[str, Any]] = {}
+        order: List[str] = []
+
+        teams = await self._api_get("users/me/teams")
+        if not isinstance(teams, list):
+            teams = []
+        for team in teams:
+            team_id = str(team.get("id") or "") if isinstance(team, dict) else ""
+            if not team_id:
+                continue
+            result = await self._api_post(
+                f"teams/{team_id}/posts/search",
+                {
+                    "terms": terms,
+                    "is_or_search": False,
+                    "include_deleted_channels": False,
+                    "page": 0,
+                    "per_page": self._backfill_per_page,
+                },
+            )
+            if not result:
+                continue
+            for post_id in result.get("order") or []:
+                post = (result.get("posts") or {}).get(post_id)
+                if not isinstance(post, dict):
+                    continue
+                created_ms = int(post.get("create_at") or 0)
+                if created_ms <= since_ms and created_ms <= unreplied_since_ms:
+                    continue
+                if post_id in self._backfill_seen_post_ids:
+                    continue
+                # Idempotency must be based on source-of-truth thread state,
+                # not only the in-memory seen cache.  The rolling watermark is
+                # intentionally anchored to the newest mention found by search;
+                # when no newer mentions arrive, the same recent mention can
+                # remain inside the overlap indefinitely.  After the seen-cache
+                # TTL expires, replaying without checking the thread would
+                # duplicate a request that already has a bot reply.  Do this
+                # expensive thread lookup only after cheap age/cache gates; the
+                # search endpoint can return hundreds of historical mentions.
+                if await self._thread_has_bot_reply_after(post):
+                    self._backfill_seen_post_ids[post_id] = time.time()
+                    continue
+                if post_id not in posts_by_id:
+                    order.append(post_id)
+                posts_by_id[post_id] = post
+
+        replayed = 0
+        newest_ms = self._backfill_watermark_ms
+        for post_id in sorted(order, key=lambda pid: int(posts_by_id[pid].get("create_at") or 0)):
+            post = posts_by_id[post_id]
+            newest_ms = max(newest_ms, int(post.get("create_at") or 0))
+            self._backfill_seen_post_ids[post_id] = time.time()
+            if post.get("delete_at") or post.get("type"):
+                continue
+            channel_type = await self._channel_type_for_post(post)
+            await self._handle_ws_event({
+                "event": "posted",
+                "data": {
+                    "post": json.dumps(post),
+                    "channel_type": channel_type,
+                    "sender_name": post.get("user_id", ""),
+                },
+            })
+            replayed += 1
+
+        if newest_ms > self._backfill_watermark_ms:
+            self._backfill_watermark_ms = newest_ms
+        if replayed:
+            logger.info("Mattermost: replayed %d missed mention candidate(s) via REST backfill", replayed)
+        return replayed
+
+    async def _thread_has_bot_reply_after(self, post: Dict[str, Any]) -> bool:
+        """Return True if the bot has already replied after this post in its thread."""
+        root_id = str(post.get("root_id") or post.get("id") or "")
+        if not root_id or not self._bot_user_id:
+            return False
+        try:
+            thread = await self._api_get(f"posts/{root_id}/thread")
+        except Exception:
+            return False
+        if not isinstance(thread, dict):
+            return False
+        created_ms = int(post.get("create_at") or 0)
+        for thread_post in (thread.get("posts") or {}).values():
+            if not isinstance(thread_post, dict):
+                continue
+            if thread_post.get("user_id") != self._bot_user_id:
+                continue
+            if thread_post.get("delete_at"):
+                continue
+            if int(thread_post.get("create_at") or 0) > created_ms:
+                return True
+        return False
+
+    def _prune_backfill_seen(self) -> None:
+        if not self._backfill_seen_post_ids:
+            return
+        cutoff = time.time() - self._backfill_seen_ttl_seconds
+        self._backfill_seen_post_ids = {
+            post_id: seen_at
+            for post_id, seen_at in self._backfill_seen_post_ids.items()
+            if seen_at >= cutoff
+        }
+
+    async def _channel_type_for_post(self, post: Dict[str, Any]) -> str:
+        channel_id = str(post.get("channel_id") or "")
+        if not channel_id:
+            return "O"
+        channel = await self._api_get(f"channels/{channel_id}")
+        return str(channel.get("type") or "O") if isinstance(channel, dict) else "O"
+
+    # ------------------------------------------------------------------
     # WebSocket
     # ------------------------------------------------------------------
 
