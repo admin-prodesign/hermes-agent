@@ -1513,6 +1513,17 @@ class TestMattermostAutoThreadRootHeading:
         self.adapter._api_get.assert_not_awaited()
         self.adapter._api_put.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_configured_disabled_channel(self):
+        self.adapter.config.extra["auto_thread_root_heading_disabled_channels"] = ["chan_456"]
+        self.adapter._api_get = AsyncMock(return_value={"message": "Root"})
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._api_get.assert_not_awaited()
+        self.adapter._api_put.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # Dedup cache
