@@ -789,6 +789,24 @@ class MattermostAdapter(BasePlatformAdapter):
             raw = os.getenv("MATTERMOST_AUTO_THREAD_ROOT_HEADING", "false")
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
+    def _auto_thread_root_heading_channel_disabled(self, channel_id: str) -> bool:
+        """Return True when passive root-heading edits are disabled for a channel."""
+        channel_id = str(channel_id or "").strip()
+        if not channel_id:
+            return False
+        raw: Any = None
+        if self.config.extra:
+            raw = self.config.extra.get("auto_thread_root_heading_disabled_channels")
+        if raw is None:
+            raw = os.getenv("MATTERMOST_AUTO_THREAD_ROOT_HEADING_DISABLED_CHANNELS", "")
+        if isinstance(raw, str):
+            disabled = {part.strip() for part in re.split(r"[,\s]+", raw) if part.strip()}
+        elif isinstance(raw, (list, tuple, set)):
+            disabled = {str(part).strip() for part in raw if str(part).strip()}
+        else:
+            disabled = set()
+        return channel_id in disabled
+
     @staticmethod
     def _first_markdown_heading(message: str) -> Optional[Dict[str, Any]]:
         """Return details for the first non-blank line if it is a Markdown heading."""
@@ -1078,6 +1096,9 @@ class MattermostAdapter(BasePlatformAdapter):
         if not self._auto_thread_root_heading_enabled():
             return
         if channel_type_raw == "D":
+            return
+        channel_id = str(post.get("channel_id") or "").strip()
+        if self._auto_thread_root_heading_channel_disabled(channel_id):
             return
         root_id = str(post.get("root_id") or "").strip()
         if not root_id:
