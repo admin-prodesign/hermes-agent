@@ -1642,6 +1642,9 @@ class MattermostAdapter(BasePlatformAdapter):
         _channel_prompt = resolve_channel_prompt(
             self.config.extra, channel_id, None,
         )
+        policy_context = self._build_pd_one_policy_context(sender_id, channel_id, chat_type)
+        workflow_context = self._build_pd_one_outbound_dm_workflow_context(sender_id, channel_id, chat_type, message_text, post)
+        channel_context = self._combine_channel_context(policy_context, workflow_context, thread_context)
 
         msg_event = MessageEvent(
             text=message_text,
@@ -1652,6 +1655,7 @@ class MattermostAdapter(BasePlatformAdapter):
             media_urls=media_urls if media_urls else None,
             media_types=media_types if media_types else None,
             channel_prompt=_channel_prompt,
+            channel_context=channel_context,
         )
 
         await self.handle_message(msg_event)
