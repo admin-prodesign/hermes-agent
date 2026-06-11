@@ -732,6 +732,50 @@ class MattermostAdapter(BasePlatformAdapter):
             f"Policy JSON ({mode}): {payload}"
         )
 
+    def _build_pd_one_outbound_dm_workflow_context(self, user_id: str, channel_id: str, chat_type: str, message_text: str, post: Dict[str, Any]) -> Optional[str]:
+        """Build outbound-DM workflow context only after conservative routing.
+
+        Open workflow rows are candidates only.  The deterministic router injects
+        full context only on tracker-code or platform thread linkage; probable
+        matches receive a small disambiguation packet, and unrelated DMs receive
+        no workflow context.
+        """
+        if chat_type != "dm" or not user_id:
+            return None
+        raw_enabled = self.config.extra.get("pd_one_outbound_dm_workflows") if "pd_one_outbound_dm_workflows" in self.config.extra else os.getenv("PD_ONE_OUTBOUND_DM_WORKFLOWS", "auto")
+        if str(raw_enabled).strip().lower() in {"0", "false", "no", "off", "disabled"}:
+            return None
+        try:
+            from hermes_constants import get_hermes_home
+            default_db = Path(get_hermes_home()) / "state" / "outbound_dm_workflows.sqlite"
+        except Exception:
+            default_db = Path.home() / ".hermes" / "profiles" / "pdone" / "state" / "outbound_dm_workflows.sqlite"
+        db_path = Path(str(self.config.extra.get("pd_one_outbound_dm_workflows_db") or os.getenv("PD_ONE_OUTBOUND_DM_WORKFLOWS_DB") or default_db)).expanduser()
+        if str(raw_enabled).strip().lower() == "auto" and not db_path.exists():
+            return None
+        try:
+            from gateway.pd_one_outbound_dm_workflows import (
+                WorkflowRegistry,
+                build_disambiguation_context,
+                build_injected_context,
+                route_inbound_message,
+            )
+            registry = WorkflowRegistry(db_path)
+            root_message_id = str(post.get("root_id") or "")
+            decision = route_inbound_message(
+                registry,
+                sender_id=user_id,
+                message_text=message_text,
+                root_message_id=root_message_id,
+            )
+            if decision.action == "inject_workflow":
+                return build_injected_context(registry, decision)
+            if decision.action in {"ask_confirmation", "ask_user_to_choose"}:
+                return build_disambiguation_context(decision)
+        except Exception as exc:
+            logger.warning("Mattermost: failed to route PD One outbound DM workflow for %s/%s: %s", channel_id, user_id, exc)
+        return None
+
     @staticmethod
     def _combine_channel_context(*parts: Optional[str]) -> Optional[str]:
         present = [part for part in parts if part]
@@ -1965,7 +2009,8 @@ class MattermostAdapter(BasePlatformAdapter):
             self.config.extra, channel_id, None,
         )
         policy_context = self._build_pd_one_policy_context(sender_id, channel_id, chat_type)
-        channel_context = self._combine_channel_context(policy_context, thread_context)
+        workflow_context = self._build_pd_one_outbound_dm_workflow_context(sender_id, channel_id, chat_type, message_text, post)
+        channel_context = self._combine_channel_context(policy_context, workflow_context, thread_context)
 
         msg_event = MessageEvent(
             text=message_text,
