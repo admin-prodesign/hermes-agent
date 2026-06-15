@@ -1084,3 +1084,201 @@ async def test_mattermost_dm_post_does_not_seed_thread_root():
     msg_event = adapter.handle_message.call_args[0][0]
     assert msg_event.source.thread_id is None
     assert msg_event.source.message_id == "dm_post_123"
+class TestMattermostThreadRehydrationCache:
+    """Thread rehydration should avoid re-sending already loaded context/files."""
+
+    def setup_method(self):
+        self.adapter = _make_adapter()
+        self.adapter._bot_user_id = "bot_user_id"
+
+    @pytest.mark.asyncio
+    async def test_same_session_only_returns_unseen_thread_posts_and_files(self):
+        thread = {
+            "order": ["root", "old_reply", "new_reply", "trigger"],
+            "posts": {
+                "root": {
+                    "id": "root",
+                    "user_id": "user_root",
+                    "message": "Root context",
+                    "file_ids": ["root_file"],
+                    "create_at": 1,
+                },
+                "old_reply": {
+                    "id": "old_reply",
+                    "user_id": "user_old",
+                    "message": "Already loaded reply",
+                    "file_ids": ["old_file"],
+                    "create_at": 2,
+                },
+                "new_reply": {
+                    "id": "new_reply",
+                    "user_id": "user_new",
+                    "message": "Fresh reply",
+                    "file_ids": ["new_file"],
+                    "create_at": 3,
+                },
+                "trigger": {
+                    "id": "trigger",
+                    "user_id": "user_trigger",
+                    "message": "@bot_user_id latest request",
+                    "file_ids": [],
+                    "create_at": 4,
+                },
+            },
+        }
+        self.adapter._api_get = AsyncMock(return_value=thread)
+
+        first_context, first_files = await self.adapter._fetch_thread_context(
+            "root",
+            "old_reply",
+            session_key="agent:main:mattermost:channel:chan:root",
+        )
+        second_context, second_files = await self.adapter._fetch_thread_context(
+            "root",
+            "trigger",
+            session_key="agent:main:mattermost:channel:chan:root",
+        )
+
+        assert "Root context" in first_context
+        assert "Fresh reply" in first_context
+        assert first_files == ["root_file", "new_file"]
+        assert second_context is None
+        assert second_files == []
+
+    @pytest.mark.asyncio
+    async def test_different_session_rehydrates_independently(self):
+        thread = {
+            "order": ["root", "trigger"],
+            "posts": {
+                "root": {
+                    "id": "root",
+                    "user_id": "user_root",
+                    "message": "Root context",
+                    "file_ids": ["root_file"],
+                    "create_at": 1,
+                },
+                "trigger": {
+                    "id": "trigger",
+                    "user_id": "user_trigger",
+                    "message": "@bot_user_id latest request",
+                    "file_ids": [],
+                    "create_at": 2,
+                },
+            },
+        }
+        self.adapter._api_get = AsyncMock(return_value=thread)
+
+        first_context, first_files = await self.adapter._fetch_thread_context(
+            "root",
+            "trigger",
+            session_key="session-a",
+        )
+        second_context, second_files = await self.adapter._fetch_thread_context(
+            "root",
+            "trigger",
+            session_key="session-b",
+        )
+
+        assert "Root context" in first_context
+        assert first_files == ["root_file"]
+        assert "Root context" in second_context
+        assert second_files == ["root_file"]
+
+
+# ---------------------------------------------------------------------------
+# Mention translation append
+# ---------------------------------------------------------------------------
+
+class TestMattermostMentionTranslation:
+    @pytest.mark.asyncio
+    async def test_appends_utility_translation_when_enabled(self):
+        adapter = _make_adapter()
+        adapter.config.extra["auto_translate_mentioned_channel_messages"] = True
+        adapter._generate_mention_translation = AsyncMock(return_value="請檢查今天的排程。")
+        adapter._api_put = AsyncMock(return_value={"id": "post123"})
+        post = {"id": "post123", "message": "@pd-one please check today's schedule."}
+
+        await adapter._maybe_append_mention_translation(
+            post,
+            has_mention=True,
+            channel_type_raw="O",
+        )
+
+        adapter._api_put.assert_awaited_once()
+        path, payload = adapter._api_put.await_args.args
+        assert path == "posts/post123/patch"
+        assert "**Translation / 翻譯 (utility-agent):**" in payload["message"]
+        assert "請檢查今天的排程。" in payload["message"]
+        assert post["message"] == payload["message"]
+
+    @pytest.mark.asyncio
+    async def test_skips_dm_and_existing_translation_marker(self):
+        adapter = _make_adapter()
+        adapter.config.extra["auto_translate_mentioned_channel_messages"] = True
+        adapter._generate_mention_translation = AsyncMock(return_value="translation")
+        adapter._api_put = AsyncMock(return_value={"id": "post123"})
+
+        await adapter._maybe_append_mention_translation(
+            {"id": "post123", "message": "@pd-one hello"},
+            has_mention=True,
+            channel_type_raw="D",
+        )
+        await adapter._maybe_append_mention_translation(
+            {"id": "post124", "message": "@pd-one hello\n\n**Translation / 翻譯 (utility-agent):**\n你好"},
+            has_mention=True,
+            channel_type_raw="O",
+        )
+
+        adapter._generate_mention_translation.assert_not_awaited()
+        adapter._api_put.assert_not_awaited()
+
+    def test_mixed_chinese_heading_with_english_instructions_targets_chinese(self):
+        adapter = _make_adapter()
+        message = (
+            "#### 2026/06/15 邱老師面談（商周） / 2026/06/15 Interview with Teacher Chiu (Business Weekly)\n\n"
+            "@pd_one_bot Transcribe this meeting consisting of two recordings, and provide a bilingual meeting report."
+        )
+
+        assert adapter._mention_translation_target_language(message) == "Traditional Chinese"
+
+    @pytest.mark.asyncio
+    async def test_mention_translation_prompt_warns_not_to_keep_english_instructions(self):
+        adapter = _make_adapter()
+
+        class _Message:
+            content = "#### 2026/06/15 邱老師面談（商周）\n\n@pd_one_bot 請轉錄這場由兩段錄音組成的會議。"
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        message = (
+            "#### 2026/06/15 邱老師面談（商周） / 2026/06/15 Interview with Teacher Chiu (Business Weekly)\n\n"
+            "@pd_one_bot Transcribe this meeting consisting of two recordings, and provide a bilingual meeting report."
+        )
+        with patch("plugins.platforms.mattermost.adapter.async_call_llm", new=AsyncMock(return_value=_Response())) as llm:
+            translated = await adapter._generate_mention_translation(message)
+
+        assert "請轉錄" in translated
+        call = llm.await_args.kwargs
+        prompt_text = "\n".join(m["content"] for m in call["messages"])
+        assert "into Traditional Chinese" in prompt_text
+        assert "do not leave English instructions in English just because the heading contains Chinese" in prompt_text
+
+    def test_yaml_bridge_exports_mention_translation_env(self, monkeypatch):
+        from plugins.platforms.mattermost.adapter import _apply_yaml_config
+
+        monkeypatch.delenv("MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES", raising=False)
+        _apply_yaml_config({}, {"auto_translate_mentioned_channel_messages": True})
+
+        assert os.environ["MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES"] == "true"
+
+    def test_yaml_bridge_exports_ignored_channels_env(self, monkeypatch):
+        from plugins.platforms.mattermost.adapter import _apply_yaml_config
+
+        monkeypatch.delenv("MATTERMOST_IGNORED_CHANNELS", raising=False)
+        _apply_yaml_config({}, {"ignored_channels": ["chanA", "chanB"]})
+
+        assert os.environ["MATTERMOST_IGNORED_CHANNELS"] == "chanA,chanB"
