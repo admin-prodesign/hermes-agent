@@ -967,24 +967,51 @@ class MattermostAdapter(BasePlatformAdapter):
             cleaned = cleaned[: max_chars - 1].rstrip() + "…"
         return cleaned
 
+    @staticmethod
+    def _mention_translation_target_language(message: str) -> str:
+        """Pick the missing translation side for mixed mentioned-channel posts.
+
+        Mentioned Mattermost posts often have a short Chinese heading followed by
+        English instructions to PD One. Treat that as English-dominant prose that
+        needs Traditional Chinese, not as a Chinese/mixed message that needs the
+        already-English instructions repeated.
+        """
+        text = str(message or "")
+        cjk_chars = len(re.findall(r"[\u3400-\u9fff]", text))
+        latin_words = len(re.findall(r"\b[A-Za-z][A-Za-z0-9'’_-]*\b", text))
+        if cjk_chars == 0:
+            return "Traditional Chinese"
+        if latin_words == 0:
+            return "English"
+        # One Chinese character roughly carries more information than one Latin
+        # word, but a short Chinese heading plus English instructions should still
+        # target Traditional Chinese. Bias toward Chinese only when CJK clearly
+        # dominates the prose.
+        if latin_words >= max(4, cjk_chars // 2):
+            return "Traditional Chinese"
+        return "English"
+
     async def _generate_mention_translation(self, message: str) -> Optional[str]:
         """Use the auxiliary LLM slot as the utility agent for mention translations."""
         source = str(message or "").strip()
         if not source:
             return None
+        target_language = self._mention_translation_target_language(source)
         system_prompt = (
             "You are a low-cost utility agent that translates Mattermost messages. "
-            "Translate the user's message faithfully and concisely. If the source is "
-            "primarily English, translate to Traditional Chinese. If it is primarily "
-            "Traditional Chinese or mixed Chinese, translate to English. If both "
-            "languages are already present with equivalent meaning, return an empty "
-            "string. Preserve names, @mentions, URLs, file names, numbers, and technical "
-            "terms. Do not answer the message, do not add commentary, and do not wrap "
-            "the result in quotes or Markdown fences."
+            f"Translate the user's message faithfully and concisely into {target_language}. "
+            "For mixed Chinese/English messages, translate the substantive prose that is "
+            "not already in the target language; do not leave English instructions in "
+            "English just because the heading contains Chinese, and do not leave Chinese "
+            "instructions in Chinese just because there are English product names or IDs. "
+            "If both languages are already present with equivalent meaning, return an "
+            "empty string. Preserve names, @mentions, URLs, file names, numbers, and "
+            "technical terms. Do not answer the message, do not add commentary, and do "
+            "not wrap the result in quotes or Markdown fences."
         )
         user_prompt = (
-            "Translate this Mattermost message only. Return only the translation text, "
-            "or an empty string if no translation is needed.\n\n"
+            f"Translate this Mattermost message only into {target_language}. Return only "
+            "the translation text, or an empty string if no translation is needed.\n\n"
             f"Message:\n{source[:3000]}"
         )
         try:

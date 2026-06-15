@@ -2188,6 +2188,41 @@ class TestMattermostMentionTranslation:
         adapter._generate_mention_translation.assert_not_awaited()
         adapter._api_put.assert_not_awaited()
 
+    def test_mixed_chinese_heading_with_english_instructions_targets_chinese(self):
+        adapter = _make_adapter()
+        message = (
+            "#### 2026/06/15 邱老師面談（商周） / 2026/06/15 Interview with Teacher Chiu (Business Weekly)\n\n"
+            "@pd_one_bot Transcribe this meeting consisting of two recordings, and provide a bilingual meeting report."
+        )
+
+        assert adapter._mention_translation_target_language(message) == "Traditional Chinese"
+
+    @pytest.mark.asyncio
+    async def test_mention_translation_prompt_warns_not_to_keep_english_instructions(self):
+        adapter = _make_adapter()
+
+        class _Message:
+            content = "#### 2026/06/15 邱老師面談（商周）\n\n@pd_one_bot 請轉錄這場由兩段錄音組成的會議。"
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        message = (
+            "#### 2026/06/15 邱老師面談（商周） / 2026/06/15 Interview with Teacher Chiu (Business Weekly)\n\n"
+            "@pd_one_bot Transcribe this meeting consisting of two recordings, and provide a bilingual meeting report."
+        )
+        with patch("plugins.platforms.mattermost.adapter.async_call_llm", new=AsyncMock(return_value=_Response())) as llm:
+            translated = await adapter._generate_mention_translation(message)
+
+        assert "請轉錄" in translated
+        call = llm.await_args.kwargs
+        prompt_text = "\n".join(m["content"] for m in call["messages"])
+        assert "into Traditional Chinese" in prompt_text
+        assert "do not leave English instructions in English just because the heading contains Chinese" in prompt_text
+
     def test_yaml_bridge_exports_mention_translation_env(self, monkeypatch):
         from plugins.platforms.mattermost.adapter import _apply_yaml_config
 
