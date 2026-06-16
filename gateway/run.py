@@ -2024,6 +2024,9 @@ def _try_resolve_fallback_provider() -> dict | None:
     return None
 
 
+_IMAGE_MEDIA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif"}
+
+
 def _event_media_type_at(event, index: int) -> str:
     """Return the per-attachment MIME for the attachment at *index*.
 
