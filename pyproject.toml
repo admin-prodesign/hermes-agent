@@ -138,6 +138,10 @@ dependencies = [
   # Hence the ``sys_platform == 'win32'`` marker: the dep (and its portalocker
   # / pywin32 tree) ships only where it's actually used.
   "concurrent-log-handler==0.9.29; sys_platform == 'win32'",
+  # Decode iPhone HEIC/HEIF uploads at gateway ingest time and transcode them
+  # to JPEG before handing them to vision providers, which rarely accept HEIC
+  # natively. Required for Telegram document uploads with image/heic.
+  "pillow-heif==1.4.0",
 ]
 
 [project.optional-dependencies]
