@@ -1880,7 +1880,7 @@ def _try_resolve_fallback_provider() -> dict | None:
     return None
 
 
-_IMAGE_MEDIA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_IMAGE_MEDIA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif"}
 
 
 def _is_inbound_image_media(path: str, media_type: str, message_type: MessageType) -> bool:
