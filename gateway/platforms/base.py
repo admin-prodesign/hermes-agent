@@ -693,6 +693,59 @@ def _looks_like_image(data: bytes) -> bool:
     return False
 
 
+_HEIF_BRANDS = {
+    b"heic", b"heix", b"hevc", b"hevx",
+    b"heim", b"heis", b"hevm", b"hevs",
+    b"mif1", b"msf1", b"avif", b"avis",
+}
+
+
+def _looks_like_heif(data: bytes) -> bool:
+    """Return True for HEIF-family containers (HEIC/HEIF/AVIF) by ftyp brand."""
+    if len(data) < 12 or data[4:8] != b"ftyp":
+        return False
+    # Major brand at bytes 8:12; compatible brands follow in 4-byte chunks.
+    brands = [data[8:12]]
+    brands.extend(
+        data[i:i + 4]
+        for i in range(16, min(len(data), 64), 4)
+        if len(data[i:i + 4]) == 4
+    )
+    return any(brand in _HEIF_BRANDS for brand in brands)
+
+
+def _convert_heif_to_jpeg_bytes(data: bytes) -> bytes:
+    """Decode HEIF/HEIC bytes and return broadly-supported JPEG bytes."""
+    try:
+        from PIL import Image
+        import pillow_heif
+    except Exception as exc:  # pragma: no cover - exercised when optional dep missing
+        raise ValueError(
+            "HEIC/HEIF image received, but pillow-heif is not installed; "
+            "install pillow-heif to enable HEIC inbound images"
+        ) from exc
+
+    import io
+
+    pillow_heif.register_heif_opener()
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            # JPEG is the safest downstream format for LLM vision providers and
+            # mobile-origin photos. Flatten alpha if present.
+            if image.mode in {"RGBA", "LA"} or (image.mode == "P" and "transparency" in image.info):
+                background = Image.new("RGB", image.size, (255, 255, 255))
+                alpha = image.convert("RGBA").getchannel("A")
+                background.paste(image.convert("RGB"), mask=alpha)
+                image = background
+            else:
+                image = image.convert("RGB")
+            out = io.BytesIO()
+            image.save(out, format="JPEG", quality=95, optimize=True)
+            return out.getvalue()
+    except Exception as exc:
+        raise ValueError(f"Failed to decode HEIC/HEIF image: {exc}") from exc
+
+
 def cache_image_from_bytes(data: bytes, ext: str = ".jpg") -> str:
     """
     Save raw image bytes to the cache and return the absolute file path.
@@ -709,6 +762,10 @@ def cache_image_from_bytes(data: bytes, ext: str = ".jpg") -> str:
             error page returned by the upstream server).
     """
     validate_inbound_media_size(len(data), media_type="image")
+    ext = (ext or ".jpg").lower()
+    if _looks_like_heif(data):
+        data = _convert_heif_to_jpeg_bytes(data)
+        ext = ".jpg"
     if not _looks_like_image(data):
         snippet = data[:80].decode("utf-8", errors="replace")
         raise ValueError(
@@ -1400,6 +1457,8 @@ SUPPORTED_IMAGE_DOCUMENT_TYPES = {
     ".png": "image/png",
     ".webp": "image/webp",
     ".gif": "image/gif",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
 }
 
 
