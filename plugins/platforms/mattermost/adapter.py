@@ -1878,21 +1878,36 @@ def _apply_yaml_config(yaml_cfg: dict, mattermost_cfg: dict) -> dict | None:
     Mirrors the legacy ``mattermost_cfg`` block that used to live in
     ``gateway/config.py::load_gateway_config()`` before this migration.
 
-    The MattermostAdapter reads its runtime configuration via
-    ``os.getenv()`` for ``MATTERMOST_REQUIRE_MENTION``,
-    ``MATTERMOST_FREE_RESPONSE_CHANNELS``, and
-    ``MATTERMOST_ALLOWED_CHANNELS``.  Rather than rewrite those call sites
-    to read from ``PlatformConfig.extra``, this hook keeps the env-driven
-    model and merely owns the YAML→env translation here, next to the
-    adapter that consumes it.
+    Most MattermostAdapter runtime configuration is read from
+    ``PlatformConfig.extra`` first, then environment variables.  This hook
+    therefore seeds adapter-owned extras while preserving the historical
+    YAML→env bridge for env-driven call sites.
 
     Env vars take precedence over YAML — every assignment is guarded
     by ``not os.getenv(...)`` so an explicit env var survives a config.yaml
-    update.  Returns ``None`` because no extras are seeded into
-    ``PlatformConfig.extra`` directly (everything flows through env).
+    update.  Returns a dict of adapter-owned extras for the gateway config
+    loader to merge into ``PlatformConfig.extra``.
     """
+    seeded: dict[str, object] = {}
     if "require_mention" in mattermost_cfg and not os.getenv("MATTERMOST_REQUIRE_MENTION"):
         os.environ["MATTERMOST_REQUIRE_MENTION"] = str(mattermost_cfg["require_mention"]).lower()
+    if (
+        "auto_translate_mentioned_channel_messages" in mattermost_cfg
+        and not os.getenv("MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES")
+    ):
+        os.environ["MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES"] = str(
+            mattermost_cfg["auto_translate_mentioned_channel_messages"]
+        ).lower()
+    if "auto_translate_mentioned_channel_messages" in mattermost_cfg:
+        seeded["auto_translate_mentioned_channel_messages"] = mattermost_cfg[
+            "auto_translate_mentioned_channel_messages"
+        ]
+    if "auto_thread_root_heading" in mattermost_cfg:
+        seeded["auto_thread_root_heading"] = mattermost_cfg["auto_thread_root_heading"]
+    if "auto_thread_root_heading_disabled_channels" in mattermost_cfg:
+        seeded["auto_thread_root_heading_disabled_channels"] = mattermost_cfg[
+            "auto_thread_root_heading_disabled_channels"
+        ]
     frc = mattermost_cfg.get("free_response_channels")
     if frc is not None and not os.getenv("MATTERMOST_FREE_RESPONSE_CHANNELS"):
         if isinstance(frc, list):
@@ -1904,7 +1919,13 @@ def _apply_yaml_config(yaml_cfg: dict, mattermost_cfg: dict) -> dict | None:
         if isinstance(ac, list):
             ac = ",".join(str(v) for v in ac)
         os.environ["MATTERMOST_ALLOWED_CHANNELS"] = str(ac)
-    return None  # all settings flow through env; nothing to merge into extras
+    # ignored_channels: if set, bot NEVER responds in these channels (blacklist)
+    ic = mattermost_cfg.get("ignored_channels")
+    if ic is not None and not os.getenv("MATTERMOST_IGNORED_CHANNELS"):
+        if isinstance(ic, list):
+            ic = ",".join(str(v) for v in ic)
+        os.environ["MATTERMOST_IGNORED_CHANNELS"] = str(ic)
+    return seeded or None
 
 
 # ---------------------------------------------------------------------------
