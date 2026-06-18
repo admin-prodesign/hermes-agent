@@ -2492,6 +2492,62 @@ def _should_clear_resume_pending_after_turn(agent_result: dict) -> bool:
     return True
 
 
+_GATEWAY_SYSTEMD_CONTROL_RE = re.compile(
+    r"(?is)"
+    r"(?:^|[;&|\n])\s*"
+    r"(?:sudo\s+(?:-[^\s]+\s+)*)?"
+    r"systemctl\s+"
+    r"(?:(?:--user|--no-pager|--no-block|--wait|--quiet)\s+)*"
+    r"(?:restart|stop|kill)\b"
+    r"[^\n;&|]*\bhermes-gateway(?:-[\w.-]+)?\.service\b"
+)
+
+
+def _terminal_tool_call_command(tool_call: Dict[str, Any]) -> Optional[str]:
+    """Extract a terminal command from an OpenAI-style tool call, if present."""
+    fn = tool_call.get("function") or {}
+    name = str(fn.get("name") or tool_call.get("name") or "")
+    if name not in {"terminal", "terminal_tool"}:
+        return None
+    args = fn.get("arguments", tool_call.get("arguments", {}))
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except Exception:
+            # Last-resort string scan catches persisted malformed tool args.
+            return args
+    if isinstance(args, dict):
+        command = args.get("command")
+        return command if isinstance(command, str) else None
+    return None
+
+
+def _messages_contain_gateway_service_control(messages: list) -> bool:
+    """True when persisted history includes a gateway service-control tool call."""
+    if not isinstance(messages, list):
+        return False
+    # The incident is caused by a replayed terminal tool call.  Scan the tail to
+    # avoid expensive full-history work while still tolerating a few trailing
+    # tool/result rows after the assistant call.
+    for msg in messages[-20:]:
+        if not isinstance(msg, dict):
+            continue
+        for call in msg.get("tool_calls") or []:
+            if not isinstance(call, dict):
+                continue
+            command = _terminal_tool_call_command(call)
+            if command and _GATEWAY_SYSTEMD_CONTROL_RE.search(command):
+                return True
+        # Older providers may persist a single function_call instead of
+        # tool_calls.  Preserve compatibility for those transcripts.
+        call = msg.get("function_call")
+        if isinstance(call, dict):
+            command = _terminal_tool_call_command(call)
+            if command and _GATEWAY_SYSTEMD_CONTROL_RE.search(command):
+                return True
+    return False
+
+
 def _preserve_queued_followup_history_offset(
     current_result: dict,
     followup_result: dict,
@@ -6011,6 +6067,48 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         {"restart_timeout", "shutdown_timeout", "restart_interrupted"}
     )
 
+    def _suspend_unsafe_gateway_service_resume(self, entry) -> bool:
+        """Suspend resume-pending sessions whose tail would replay gateway control.
+
+        Restart recovery should resume normal interrupted work, but replaying an
+        old terminal tool call that controls ``hermes-gateway*.service`` can
+        restart the gateway from inside its own service cgroup and loop.  In
+        that case preserve the transcript but force the next user message onto a
+        fresh session lane.
+        """
+        db = getattr(self.session_store, "_db", None)
+        if db is None or not hasattr(db, "get_messages"):
+            return False
+        try:
+            messages = db.get_messages(entry.session_id)
+        except Exception as exc:
+            logger.debug(
+                "Failed to inspect resume-pending transcript %s for unsafe service control: %s",
+                getattr(entry, "session_key", "unknown"),
+                exc,
+            )
+            return False
+        if not _messages_contain_gateway_service_control(messages):
+            return False
+        entry.suspended = True
+        entry.resume_pending = False
+        entry.resume_reason = None
+        entry.last_resume_marked_at = None
+        try:
+            self.session_store._save()  # noqa: SLF001 - durable loop breaker
+        except Exception as exc:
+            logger.debug(
+                "Failed to persist unsafe resume suspension for %s: %s",
+                getattr(entry, "session_key", "unknown"),
+                exc,
+            )
+        logger.warning(
+            "Suspended resume-pending session %s because its transcript contains "
+            "a Hermes gateway service-control terminal command",
+            getattr(entry, "session_key", "unknown"),
+        )
+        return True
+
     async def _run_startup_resume_event(
         self,
         adapter: BasePlatformAdapter,
@@ -6161,6 +6259,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         now = datetime.now()
         scheduled = 0
         for entry in candidates:
+            if self._suspend_unsafe_gateway_service_resume(entry):
+                continue
+
             marker = entry.last_resume_marked_at or entry.updated_at
             if marker is not None and (now - marker).total_seconds() > window:
                 continue
