@@ -12236,6 +12236,21 @@ def _ws_host_origin_reason(ws: "WebSocket") -> Optional[str]:
         return f"origin_mismatch origin={origin} bound={bound_host}"
 
     if not _is_accepted_host(parsed.netloc, bound_host):
+        # Reverse-proxy case: a loopback-bound dashboard may be safely exposed
+        # through a local trusted tunnel (Cloudflare Access / Tailscale Serve)
+        # that rewrites the upstream Host header to localhost so the HTTP
+        # DNS-rebinding guard passes. Browser WebSocket handshakes still carry
+        # Origin: https://public.example, so accept that public origin only when
+        # the proxy also supplies a matching X-Forwarded-Host and the immediate
+        # peer is loopback. This preserves the loopback bind while allowing
+        # authenticated tunnel access without --insecure / all-interface binds.
+        bound_lc = str(bound_host).strip().lower()
+        peer = ws.client.host if ws.client else ""
+        xf_host = ws.headers.get("x-forwarded-host", "")
+        if bound_lc in _LOOPBACK_HOSTS and peer in _LOOPBACK_HOSTS and xf_host:
+            xf_first = xf_host.split(",", 1)[0].strip()
+            if _is_accepted_host(parsed.netloc, xf_first):
+                return None
         return f"origin_mismatch origin={origin} bound={bound_host}"
     return None
 
