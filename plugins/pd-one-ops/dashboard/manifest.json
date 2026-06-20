@@ -1,0 +1,14 @@
+{
+  "name": "pd-one-ops",
+  "label": "PD One Ops",
+  "description": "PD One operations catalog MVP: automations, supervisor coverage, skills, policies, and drift signals.",
+  "icon": "ShieldCheck",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/pd-one-ops",
+    "position": "after:cron"
+  },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}
