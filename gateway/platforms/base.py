@@ -3080,6 +3080,7 @@ class BasePlatformAdapter(ABC):
         # stay valid; chaining them masks the union of both protected regions.
         scan_content = BasePlatformAdapter._mask_protected_spans(content)
         scan_content = BasePlatformAdapter._mask_json_string_media(scan_content)
+        seen_media_paths: set[tuple[str, bool]] = set()
         for match in media_pattern.finditer(scan_content):
             path = match.group("path").strip()
             if len(path) >= 2 and path[0] == path[-1] and path[0] in "`\"'":
@@ -3087,11 +3088,25 @@ class BasePlatformAdapter(ABC):
             path = path.lstrip("`\"'").rstrip("`\"',.;:)}]")
             if path:
                 try:
-                    media.append((os.path.expanduser(path), has_voice_tag))
+                    expanded_path = os.path.expanduser(path)
                 except (OSError, RuntimeError, ValueError):
                     # Skip a crafted ~\x00 path rather than aborting extraction
                     # and dropping every other attachment in the response.
                     continue
+                # A bilingual reply can legitimately mention the same shared
+                # attachment in both language sections.  Deliver it once while
+                # still stripping every MEDIA directive from the visible text.
+                # Use a normalized key for local paths so ``~/x`` and
+                # ``/home/user/x`` do not double-upload; leave URLs untouched.
+                if re.match(r'^[a-z][a-z0-9+.-]*://', expanded_path, re.IGNORECASE):
+                    dedupe_path = expanded_path
+                else:
+                    dedupe_path = os.path.normcase(os.path.abspath(expanded_path))
+                dedupe_key = (dedupe_path, has_voice_tag)
+                if dedupe_key in seen_media_paths:
+                    continue
+                seen_media_paths.add(dedupe_key)
+                media.append((expanded_path, has_voice_tag))
 
         # Remove the delivered MEDIA tags from the user-visible text. Mask a
         # length-equal copy of ``cleaned`` (same union of protected regions) to
