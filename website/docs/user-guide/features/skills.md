@@ -124,12 +124,11 @@ The agent only loads the full skill content when it actually needs it.
 ```markdown
 ---
 name: my-skill
-description: Brief description of what this skill does
+description: Compact routing phrase, ideally 40-60 chars
 version: 1.0.0
 platforms: [macos, linux]     # Optional — restrict to specific OS platforms
 metadata:
   hermes:
-    prompt_summary: Short routing hint for the injected skills index
     tags: [python, automation]
     category: devops
     fallback_for_toolsets: [web]    # Optional — conditional activation (see below)
@@ -157,10 +156,9 @@ Trigger conditions for this skill.
 How to confirm it worked.
 ```
 
-`description` is for humans, docs, search, and hub listings. The injected
-system-prompt skills index uses a compact routing hint; by default Hermes falls
-back to a capped `description`, but skill authors can provide a more precise
-`metadata.hermes.prompt_summary` when the description is too long or too broad.
+Keep `description` short and routing-oriented because it is shown in
+`skills_list()` and the injected skills index. Avoid leading filler like "Use
+when"; put detailed triggers and caveats in the body or linked reference files.
 
 ### Platform-Specific Skills
 
