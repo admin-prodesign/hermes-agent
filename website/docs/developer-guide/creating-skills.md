@@ -46,7 +46,7 @@ skills/
 ```markdown
 ---
 name: my-skill
-description: Brief description (shown in skill search results)
+description: Compact routing phrase, ideally 40-60 chars
 version: 1.0.0
 author: Your Name
 license: MIT
@@ -55,7 +55,6 @@ platforms: [macos, linux]          # Optional — restrict to specific OS platfo
                                    #   Omit to load on all platforms (default)
 metadata:
   hermes:
-    prompt_summary: Short routing hint for the injected skills index
     tags: [Category, Subcategory, Keywords]
     related_skills: [other-skill-name]
     requires_toolsets: [web]            # Optional — only show when these toolsets are active
@@ -99,22 +98,11 @@ Known failure modes and how to handle them.
 How the agent confirms it worked.
 ```
 
-### Prompt Summary
-
-The injected system prompt includes a compact skills index so the agent can
-decide when to call `skill_view(name)`. By default that index uses a tightly
-capped version of `description`. If the human-facing description is long,
-docs-oriented, or too broad for routing, add a short prompt-facing summary:
-
-```yaml
-description: Full human-facing description for docs, search, and hub pages.
-metadata:
-  hermes:
-    prompt_summary: "PDF merge/split/OCR/watermark/encrypt/decrypt and text/table/image extraction."
-```
-
-Keep `prompt_summary` to one sentence. Hermes caps it before injection, but a
-crisp summary routes better and keeps every session's prompt lean.
+Keep `description` concise: it appears in `skills_list()` and the injected
+skills index. Prefer short routing language (for example, "Operate GitHub repos,
+PRs, reviews, issues, and CI.") over filler such as "Use when..." or a
+mini-runbook. Put detailed triggers, caveats, and examples in the skill body or
+`references/` files.
 
 ### Platform-Specific Skills
 
