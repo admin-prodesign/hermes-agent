@@ -3033,6 +3033,10 @@ DEFAULT_CONFIG = {
             # ~/.hermes/bin/ on first use.  When False you must install
             # bws yourself and have it on PATH.
             "auto_install": True,
+            # Optional target_env -> source_secret map for profile-local
+            # aliases. Useful when multiple profiles share one Bitwarden
+            # project but need different values for conventional env names.
+            "aliases": {},
             # Bitwarden region / self-hosted endpoint.  Empty string
             # means use the bws CLI default (US Cloud,
             # https://vault.bitwarden.com).  Set to
