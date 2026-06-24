@@ -44,7 +44,7 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -498,7 +498,7 @@ def fetch_bitwarden_secrets(
     secrets, warnings = _run_bws_list(bws, access_token, project_id, server_url)
     entry = _CachedFetch(secrets=secrets, fetched_at=time.time())
     _CACHE[cache_key] = entry
-    if use_cache:
+    if use_cache and cache_ttl_seconds > 0:
         _write_disk_cache(cache_key, entry, home_path)
     return secrets, warnings
 
@@ -597,6 +597,7 @@ def apply_bitwarden_secrets(
     cache_ttl_seconds: float = 300,
     auto_install: bool = True,
     server_url: str = "",
+    aliases: Optional[Mapping[str, str]] = None,
     home_path: Optional[Path] = None,
 ) -> FetchResult:
     """Pull secrets from BSM and set them on ``os.environ``.
@@ -654,8 +655,11 @@ def apply_bitwarden_secrets(
         result.error = str(exc)
         return result
 
+    alias_warnings: List[str] = []
+    secrets = expand_secret_aliases(secrets, aliases or {}, alias_warnings)
     result.secrets = secrets
     result.warnings.extend(warnings)
+    result.warnings.extend(alias_warnings)
 
     for key, value in secrets.items():
         if key == access_token_env:
@@ -671,6 +675,46 @@ def apply_bitwarden_secrets(
         result.applied.append(key)
 
     return result
+
+
+def expand_secret_aliases(
+    secrets: Dict[str, str],
+    aliases: Mapping[str, str],
+    warnings: Optional[List[str]] = None,
+) -> Dict[str, str]:
+    """Return ``secrets`` plus profile-local env-var aliases.
+
+    ``aliases`` maps target env var name -> source Bitwarden secret name.  This
+    lets two Hermes profiles share one Bitwarden project while still exposing
+    conventional runtime names such as ``DISCORD_BOT_TOKEN`` from namespaced
+    secrets like ``PDONE_DISCORD_BOT_TOKEN``.
+    """
+    if not aliases:
+        return secrets
+
+    expanded = dict(secrets)
+    for target, source in aliases.items():
+        if not isinstance(target, str) or not isinstance(source, str):
+            if warnings is not None:
+                warnings.append("Skipping Bitwarden alias with non-string key/value")
+            continue
+        target = target.strip()
+        source = source.strip()
+        if not _is_valid_env_name(target) or not _is_valid_env_name(source):
+            if warnings is not None:
+                warnings.append(
+                    f"Skipping Bitwarden alias {target!r} -> {source!r}: "
+                    "both names must be valid env-var names"
+                )
+            continue
+        if source not in secrets:
+            if warnings is not None:
+                warnings.append(
+                    f"Skipping Bitwarden alias {target}: source {source} not found"
+                )
+            continue
+        expanded[target] = secrets[source]
+    return expanded
 
 
 # ---------------------------------------------------------------------------

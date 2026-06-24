@@ -564,6 +564,34 @@ def test_apply_override_existing(monkeypatch, tmp_path):
     assert os.environ["OPENAI_API_KEY"] == "fresh"
 
 
+def test_apply_aliases_namespaced_secret_to_generic_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("BWS_ACCESS_TOKEN", "0.t")
+    fake_binary = tmp_path / "bws"
+    fake_binary.write_text("")
+    payload = _fake_bws_payload([
+        {"key": "PDONE_DISCORD_BOT_TOKEN", "value": "pdone-discord"},
+        {"key": "PDNEO_DISCORD_BOT_TOKEN", "value": "pdneo-discord"},
+    ])
+    monkeypatch.setattr(
+        bw.subprocess, "run",
+        lambda *a, **kw: mock.Mock(returncode=0, stdout=payload, stderr=""),
+    )
+    monkeypatch.setattr(bw, "find_bws", lambda **kw: fake_binary)
+
+    result = bw.apply_bitwarden_secrets(
+        enabled=True,
+        project_id="p",
+        override_existing=True,
+        auto_install=False,
+        aliases={"DISCORD_BOT_TOKEN": "PDONE_DISCORD_BOT_TOKEN"},
+    )
+
+    assert result.ok
+    assert os.environ["PDONE_DISCORD_BOT_TOKEN"] == "pdone-discord"
+    assert os.environ["DISCORD_BOT_TOKEN"] == "pdone-discord"
+    assert "DISCORD_BOT_TOKEN" in result.applied
+
+
 def test_apply_never_overrides_bootstrap_token(monkeypatch, tmp_path):
     """Even with override_existing=True, the access-token var is preserved."""
     monkeypatch.setenv("BWS_ACCESS_TOKEN", "0.original")

@@ -88,6 +88,7 @@ secrets:
     cache_ttl_seconds: 300
     override_existing: true
     auto_install: true
+    aliases: {}
 ```
 
 | Key | Default | What it does |
@@ -99,6 +100,7 @@ secrets:
 | `cache_ttl_seconds` | `300` | How long an in-process fetch result is reused. Set to `0` to disable caching. Cache is per-process; new `hermes` invocations start fresh. |
 | `override_existing` | `true` | When true, Bitwarden values overwrite anything already in env (so rotation in the web app actually takes effect). Flip to `false` if you want `.env` / shell exports to win locally. |
 | `auto_install` | `true` | When true, `bws` is auto-downloaded into `~/.hermes/bin/` on first use. |
+| `aliases` | `{}` | Optional target env var → source Bitwarden secret map. Use this for profile-local generic names, for example `DISCORD_BOT_TOKEN: PDONE_DISCORD_BOT_TOKEN` when several profiles share one Bitwarden project. |
 
 ## Failure modes
 

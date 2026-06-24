@@ -368,6 +368,9 @@ def cmd_sync(args: argparse.Namespace) -> int:
             use_cache=False,
             server_url=server_url,
         )
+        alias_warnings: list[str] = []
+        secrets = bw.expand_secret_aliases(secrets, bw_cfg.get("aliases") or {}, alias_warnings)
+        warnings.extend(alias_warnings)
     except Exception as exc:  # noqa: BLE001
         console.print(f"[red]Fetch failed: {exc}[/red]")
         return 1
