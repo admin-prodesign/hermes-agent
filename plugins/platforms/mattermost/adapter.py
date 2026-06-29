@@ -133,6 +133,10 @@ class MattermostAdapter(BasePlatformAdapter):
 
         self._last_post_status: Optional[int] = None
         self._last_post_error: str = ""
+        self._pd_one_quality_queue_path: str = str(
+            config.extra.get("pd_one_quality_queue_path", "")
+            or os.getenv("MATTERMOST_PD_ONE_QUALITY_QUEUE", "")
+        ).strip()
 
         # Dedup cache (prevent reprocessing)
         self._dedup = MessageDeduplicator()
@@ -263,6 +267,8 @@ class MattermostAdapter(BasePlatformAdapter):
     ) -> Dict[str, Any]:
         """Post once, optionally falling back flat for final notify content."""
         data = await self._api_post("posts", payload)
+        if data:
+            self._enqueue_pd_one_quality_event(chat_id, payload, data, metadata)
         if data or "root_id" not in payload:
             return data
         if not (isinstance(metadata, dict) and metadata.get("notify")):
@@ -281,7 +287,49 @@ class MattermostAdapter(BasePlatformAdapter):
             "Mattermost: falling back to flat channel delivery for notify-worthy post in %s",
             chat_id,
         )
-        return await self._api_post("posts", flat_payload)
+        data = await self._api_post("posts", flat_payload)
+        if data:
+            self._enqueue_pd_one_quality_event(chat_id, flat_payload, data, metadata)
+        return data
+
+    def _enqueue_pd_one_quality_event(
+        self,
+        chat_id: str,
+        payload: Dict[str, Any],
+        data: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]],
+    ) -> None:
+        """Best-effort queue signal for PD One reply-quality review.
+
+        The queue is a lightweight candidate signal only. It intentionally does
+        not persist message text, tool traces, or private source data; the
+        supervisor can fetch bounded Mattermost/review_log evidence later.
+        """
+        if not self._pd_one_quality_queue_path:
+            return
+        post_id = str(data.get("id") or "")
+        if not post_id:
+            return
+        meta = metadata if isinstance(metadata, dict) else {}
+        event = {
+            "event_type": "pd_one.reply_posted",
+            "platform": "mattermost",
+            "post_id": post_id,
+            "channel_id": str(data.get("channel_id") or chat_id or ""),
+            "root_id": str(data.get("root_id") or payload.get("root_id") or ""),
+            "create_at": data.get("create_at"),
+            "reply_to": str(meta.get("reply_to") or meta.get("thread_id") or meta.get("root_id") or ""),
+            "file_count": len(data.get("file_ids") or payload.get("file_ids") or []),
+            "message_chars": len(str(payload.get("message") or "")),
+            "queued_at_ms": int(time.time() * 1000),
+        }
+        try:
+            path = Path(self._pd_one_quality_queue_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+        except Exception as exc:
+            logger.warning("Mattermost: failed to enqueue PD One quality event for %s: %s", post_id, exc)
 
     async def _api_put(
         self, path: str, payload: Dict[str, Any]
