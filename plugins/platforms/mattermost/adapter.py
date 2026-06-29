@@ -146,6 +146,11 @@ class MattermostAdapter(BasePlatformAdapter):
         # do not inject/download it again for later turns in the same thread.
         self._thread_rehydration_cache: Dict[str, Dict[str, set[str]]] = {}
 
+        # Best-effort guard so simultaneous replies do not all attempt to title
+        # the same Mattermost root post. The root message itself remains the
+        # source of truth, so a gateway restart safely rechecks headings.
+        self._auto_heading_roots_inflight: set[str] = set()
+
     # ------------------------------------------------------------------
     # Config helpers
     # ------------------------------------------------------------------
@@ -171,11 +176,6 @@ class MattermostAdapter(BasePlatformAdapter):
         except (TypeError, ValueError):
             value = float(default)
         return max(value, minimum)
-
-        # Best-effort guard so simultaneous replies do not all attempt to title
-        # the same Mattermost root post. The root message itself remains the
-        # source of truth, so a gateway restart safely rechecks headings.
-        self._auto_heading_roots_inflight: set[str] = set()
 
     # ------------------------------------------------------------------
     # HTTP helpers
