@@ -146,7 +146,7 @@ def test_non_forum_group_reply_thread_id_does_not_fork_session_key():
         caption=None,
         chat=SimpleNamespace(
             id=-100123,
-            type=telegram_mod.ChatType.SUPERGROUP,
+            type="supergroup",
             is_forum=False,
             title="Regular group",
         ),
@@ -180,7 +180,7 @@ def test_forum_group_topic_message_preserves_thread_session_key():
         caption=None,
         chat=SimpleNamespace(
             id=-100123,
-            type=telegram_mod.ChatType.SUPERGROUP,
+            type="supergroup",
             is_forum=True,
             title="Forum group",
         ),
@@ -210,7 +210,7 @@ def test_forum_general_topic_without_message_thread_id_keeps_thread_context():
         caption=None,
         chat=SimpleNamespace(
             id=-100123,
-            type=telegram_mod.ChatType.SUPERGROUP,
+            type="supergroup",
             is_forum=True,
             title="Forum group",
         ),
@@ -456,6 +456,81 @@ async def test_send_private_dm_topic_uses_direct_messages_topic_id():
     assert result.success is True
     assert call_log[0]["message_thread_id"] is None
     assert call_log[0]["direct_messages_topic_id"] == 99999
+
+
+@pytest.mark.asyncio
+async def test_send_private_dm_topic_thread_not_found_falls_back_plain_and_prunes():
+    """Deleted Telegram DM topics must not strand slash-command responses."""
+    adapter = _make_adapter()
+    call_log = []
+    pruned = []
+
+    async def mock_send_message(**kwargs):
+        call_log.append(dict(kwargs))
+        if kwargs.get("message_thread_id") == 99999:
+            raise FakeBadRequest("Message thread not found")
+        return SimpleNamespace(message_id=44)
+
+    adapter._bot = SimpleNamespace(send_message=mock_send_message)
+    adapter._prune_stale_dm_topic_binding = lambda chat_id, thread_id: pruned.append((chat_id, thread_id))
+
+    result = await adapter.send(
+        chat_id="123",
+        content="reload complete",
+        metadata={
+            "thread_id": "99999",
+            "telegram_dm_topic_reply_fallback": True,
+            "telegram_reply_to_message_id": "777",
+        },
+    )
+
+    assert result.success is True
+    assert result.message_id == "44"
+    assert result.raw_response["thread_fallback"] is True
+    assert pruned == [("123", 99999)]
+    assert len(call_log) == 3
+    assert call_log[0]["message_thread_id"] == 99999
+    assert call_log[0]["reply_to_message_id"] == 777
+    assert call_log[1]["message_thread_id"] == 99999
+    assert call_log[2].get("message_thread_id") is None
+    assert call_log[2]["reply_to_message_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_send_private_dm_topic_missing_reply_anchor_falls_back_plain_and_prunes():
+    """A deleted original message should not make private-topic delivery fail."""
+    adapter = _make_adapter()
+    call_log = []
+    pruned = []
+
+    async def mock_send_message(**kwargs):
+        call_log.append(dict(kwargs))
+        if kwargs.get("reply_to_message_id") == 777:
+            raise FakeBadRequest("Message to be replied not found")
+        return SimpleNamespace(message_id=45)
+
+    adapter._bot = SimpleNamespace(send_message=mock_send_message)
+    adapter._prune_stale_dm_topic_binding = lambda chat_id, thread_id: pruned.append((chat_id, thread_id))
+
+    result = await adapter.send(
+        chat_id="123",
+        content="reload complete",
+        metadata={
+            "thread_id": "99999",
+            "telegram_dm_topic_reply_fallback": True,
+            "telegram_reply_to_message_id": "777",
+        },
+    )
+
+    assert result.success is True
+    assert result.message_id == "45"
+    assert result.raw_response["thread_fallback"] is True
+    assert pruned == [("123", 99999)]
+    assert len(call_log) == 2
+    assert call_log[0]["message_thread_id"] == 99999
+    assert call_log[0]["reply_to_message_id"] == 777
+    assert call_log[1].get("message_thread_id") is None
+    assert call_log[1]["reply_to_message_id"] is None
 
 
 def test_base_gateway_metadata_marks_telegram_dm_topics_as_reply_fallback():
@@ -800,14 +875,16 @@ async def test_send_dm_topic_fallback_without_anchor_does_not_crash():
 
 
 @pytest.mark.asyncio
-async def test_send_dm_topic_reply_not_found_fails_closed():
-    """If Telegram deletes the reply anchor, private-topic sends must not fall back elsewhere."""
+async def test_send_dm_topic_reply_not_found_falls_back_plain():
+    """If Telegram deletes the reply anchor, text replies should still deliver."""
     adapter = _make_adapter()
     call_log = []
 
     async def mock_send_message(**kwargs):
         call_log.append(dict(kwargs))
-        raise FakeBadRequest("Message to be replied not found")
+        if len(call_log) == 1:
+            raise FakeBadRequest("Message to be replied not found")
+        return SimpleNamespace(message_id=781)
 
     adapter._bot = SimpleNamespace(send_message=mock_send_message)
 
@@ -821,11 +898,14 @@ async def test_send_dm_topic_reply_not_found_fails_closed():
         },
     )
 
-    assert result.success is False
-    assert result.retryable is False
+    assert result.success is True
+    assert result.message_id == "781"
+    assert result.raw_response["thread_fallback"] is True
     assert call_log[0]["reply_to_message_id"] == 462
     assert call_log[0]["message_thread_id"] == 20197
-    assert len(call_log) == 1
+    assert call_log[1]["reply_to_message_id"] is None
+    assert call_log[1].get("message_thread_id") is None
+    assert len(call_log) == 2
 
 
 @pytest.mark.asyncio
