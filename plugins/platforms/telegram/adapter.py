@@ -3402,7 +3402,7 @@ class TelegramAdapter(BasePlatformAdapter):
                         # specific cases instead of blindly retrying.
                         if _BadReq and isinstance(send_err, _BadReq):
                             if self._is_thread_not_found_error(send_err) and effective_thread_id is not None:
-                                if private_dm_topic_send or (metadata and metadata.get("telegram_dm_topic_created_for_send")):
+                                if metadata and metadata.get("telegram_dm_topic_created_for_send"):
                                     return SendResult(
                                         success=False,
                                         error=str(send_err),
@@ -3426,7 +3426,10 @@ class TelegramAdapter(BasePlatformAdapter):
                                 # message still reaches the chat, and prune
                                 # the stale binding so future inbound
                                 # messages aren't redirected back to it
-                                # (#31501).
+                                # (#31501). Private DM-topic replies also use
+                                # this path: once Telegram says the requested
+                                # topic is gone, fail-loud delivery strands
+                                # slash-command responses with only a reaction.
                                 logger.warning(
                                     "[%s] Thread %s not found, retrying without message_thread_id",
                                     self.name, effective_thread_id,
@@ -3435,17 +3438,14 @@ class TelegramAdapter(BasePlatformAdapter):
                                     chat_id, effective_thread_id,
                                 )
                                 used_thread_fallback = True
+                                reply_to_id = None
                                 effective_thread_id = None
                                 thread_kwargs = {"message_thread_id": None}
+                                if private_dm_topic_send:
+                                    thread_kwargs = {}
                                 continue
                             err_lower = str(send_err).lower()
                             if "message to be replied not found" in err_lower and reply_to_id is not None:
-                                if private_dm_topic_send:
-                                    return SendResult(
-                                        success=False,
-                                        error=str(send_err),
-                                        retryable=False,
-                                    )
                                 # Original message was deleted before we
                                 # could reply. For private-topic fallback
                                 # sends, message_thread_id is only valid with
@@ -3454,6 +3454,11 @@ class TelegramAdapter(BasePlatformAdapter):
                                     "[%s] Reply target deleted, retrying without reply_to: %s",
                                     self.name, send_err,
                                 )
+                                if private_dm_topic_send and effective_thread_id is not None:
+                                    self._prune_stale_dm_topic_binding(
+                                        chat_id, effective_thread_id,
+                                    )
+                                    used_thread_fallback = True
                                 reply_to_id = None
                                 if metadata and metadata.get("telegram_dm_topic_reply_fallback"):
                                     thread_kwargs = {}
