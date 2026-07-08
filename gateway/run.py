@@ -11984,7 +11984,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "thread_id": str(getattr(source, "thread_id", None)) if getattr(source, "thread_id", None) else "",
                 "chat_type": getattr(source, "chat_type", "") or "",
                 "session_id": session_entry.session_id,
+                # Keep the historical bounded field for generic telemetry hooks,
+                # but also expose the raw platform text so request-card hooks can
+                # show what the human actually typed instead of the injected
+                # permission/thread preamble.  ``message_text`` can be very large
+                # once policy, history, memory, and attachment notes are added;
+                # truncating it to 500 chars often cuts off the final
+                # ``[New message]`` block.
                 "message": message_text[:500],
+                "raw_message": raw_event_text,
             }
             await self.hooks.emit("agent:start", hook_ctx)
 
