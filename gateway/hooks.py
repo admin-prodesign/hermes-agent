@@ -26,7 +26,8 @@ Context dict passed to ``agent:start`` / ``agent:end`` handlers:
                   when not in a thread / topic)
   chat_type    -- "dm" | "group" | "forum" (empty if unknown)
   session_id   -- Hermes session id
-  message      -- inbound message text (truncated to 500 chars)
+  message      -- prepared inbound message text (truncated to 500 chars)
+  raw_message  -- raw platform event text before injected context/policy
 
 ``agent:end`` adds:
   response     -- agent response text (truncated to 500 chars)
