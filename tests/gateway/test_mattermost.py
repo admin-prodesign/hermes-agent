@@ -1509,6 +1509,34 @@ class TestMattermostFileUpload:
         self.adapter = _make_adapter()
         self.adapter._session = MagicMock()
 
+    def test_unicode_filename_is_not_percent_encoded(self):
+        """Mattermost should receive the original UTF-8 attachment name."""
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        filename = "器管-20260709-01-宿舍規定違反懲處公告_中英.docx"
+        form = _build_file_upload_form(
+            "channel_1",
+            b"fake-docx",
+            filename,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+        payload = form()
+        file_disposition = payload._parts[1][0].headers["Content-Disposition"]
+
+        assert f'filename="{filename}"' in file_disposition
+        assert "%E5" not in file_disposition
+
+    def test_upload_filename_replaces_header_control_characters(self):
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        form = _build_file_upload_form("channel_1", b"data", "report\r\nInjected.txt")
+        file_disposition = form()._parts[1][0].headers["Content-Disposition"]
+
+        assert "report__Injected.txt" in file_disposition
+        assert "\r" not in file_disposition
+        assert "\n" not in file_disposition
+
     @pytest.mark.asyncio
     @patch("tools.url_safety.is_safe_url", return_value=True)
     async def test_send_image_downloads_and_uploads(self, _mock_safe):

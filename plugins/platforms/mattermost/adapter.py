@@ -53,6 +53,33 @@ _RECONNECT_MAX_DELAY = 60.0
 _RECONNECT_JITTER = 0.2
 
 
+def _build_file_upload_form(
+    channel_id: str,
+    file_data: bytes,
+    filename: str,
+    content_type: Optional[str] = None,
+):
+    """Build Mattermost upload form without percent-encoding Unicode names.
+
+    aiohttp's default ``quote_fields=True`` percent-encodes non-ASCII
+    characters in the multipart ``filename`` parameter. Mattermost stores
+    that encoded value literally, so a file such as ``報告.docx`` appears as
+    ``%E5%A0%B1%E5%91%8A.docx``. Mattermost accepts UTF-8 filenames directly,
+    matching browser and requests-based uploads. Strip header control
+    characters before disabling aiohttp's field quoting.
+    """
+    import aiohttp
+
+    safe_filename = re.sub(r"[\x00-\x1f\x7f]", "_", filename)
+    form = aiohttp.FormData(quote_fields=False)
+    form.add_field("channel_id", channel_id)
+    file_kwargs: Dict[str, Any] = {"filename": safe_filename}
+    if content_type:
+        file_kwargs["content_type"] = content_type
+    form.add_field("files", file_data, **file_kwargs)
+    return form
+
+
 def check_mattermost_requirements() -> bool:
     """Return True if the Mattermost adapter can be used."""
     token = os.getenv("MATTERMOST_TOKEN", "")
@@ -482,13 +509,11 @@ class MattermostAdapter(BasePlatformAdapter):
         import aiohttp
 
         url = f"{self._base_url}/api/v4/files"
-        form = aiohttp.FormData()
-        form.add_field("channel_id", channel_id)
-        form.add_field(
-            "files",
+        form = _build_file_upload_form(
+            channel_id,
             file_data,
-            filename=filename,
-            content_type=content_type,
+            filename,
+            content_type,
         )
         headers = {"Authorization": f"Bearer {self._token}"}
         async with self._session.post(url, headers=headers, data=form, timeout=aiohttp.ClientTimeout(total=60)) as resp:
@@ -2274,15 +2299,11 @@ async def _standalone_send(
                 file_path = media.get("path") if isinstance(media, dict) else media
                 if not file_path or not os.path.exists(file_path):
                     continue
-                form = aiohttp.FormData()
-                # Mattermost requires channel_id on file uploads so the
-                # server can attribute them.
-                form.add_field("channel_id", chat_id)
                 with open(file_path, "rb") as fh:
-                    form.add_field(
-                        "files",
+                    form = _build_file_upload_form(
+                        chat_id,
                         fh.read(),
-                        filename=os.path.basename(file_path),
+                        os.path.basename(file_path),
                     )
                 async with session.post(
                     f"{base_url}/api/v4/files",
