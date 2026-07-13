@@ -11984,6 +11984,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "thread_id": str(getattr(source, "thread_id", None)) if getattr(source, "thread_id", None) else "",
                 "chat_type": getattr(source, "chat_type", "") or "",
                 "session_id": session_entry.session_id,
+                # Stable platform receipt used by deterministic hooks for exact,
+                # idempotent source verification (for example admin approval posts).
+                "message_id": self._reply_anchor_for_event(event) or "",
                 # Keep the historical bounded field for generic telemetry hooks,
                 # but also expose the raw platform text so request-card hooks can
                 # show what the human actually typed instead of the injected
