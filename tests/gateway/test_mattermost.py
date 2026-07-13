@@ -145,6 +145,30 @@ class TestMattermostConfigLoading:
         assert mc.token == "mm-tok-abc123"
         assert mc.extra.get("url") == "https://mm.example.com"
 
+    def test_explicit_top_level_mattermost_disable_wins_over_env_credentials(
+        self, monkeypatch, tmp_path
+    ):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        (hermes_home / "config.yaml").write_text(
+            "mattermost:\n"
+            "  enabled: false\n"
+            "  require_mention: true\n"
+        )
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+        monkeypatch.setenv("MATTERMOST_TOKEN", "mm-tok-abc123")
+        monkeypatch.setenv("MATTERMOST_URL", "https://mm.example.com")
+
+        from gateway.config import load_gateway_config
+
+        config = load_gateway_config()
+        mattermost = config.platforms[Platform.MATTERMOST]
+
+        assert mattermost.enabled is False
+        assert mattermost.token == "mm-tok-abc123"
+        assert mattermost.extra.get("url") == "https://mm.example.com"
+        assert "_enabled_explicit" not in mattermost.extra
+
     def test_mattermost_not_loaded_without_token(self, monkeypatch):
         monkeypatch.delenv("MATTERMOST_TOKEN", raising=False)
         monkeypatch.delenv("MATTERMOST_URL", raising=False)
