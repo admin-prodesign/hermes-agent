@@ -332,7 +332,7 @@ class MattermostAdapter(BasePlatformAdapter):
         not persist message text, tool traces, or private source data; the
         supervisor can fetch bounded Mattermost/review_log evidence later.
         """
-        if not self._pd_one_quality_queue_path:
+        if not getattr(self, "_pd_one_quality_queue_path", None):
             return
         post_id = str(data.get("id") or "")
         if not post_id:
