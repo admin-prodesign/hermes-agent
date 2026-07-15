@@ -16182,17 +16182,24 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     if not synth_text:
                         break
                     if completion_notice_enabled and not completion_notice_sent:
-                        adapter = self.adapters.get(source.platform)
-                        if adapter and source.chat_id:
+                        adapter = next(
+                            (
+                                candidate
+                                for platform, candidate in self.adapters.items()
+                                if getattr(platform, "value", platform) == platform_name
+                            ),
+                            None,
+                        )
+                        if adapter and chat_id:
                             try:
-                                notice_prefix = "[done]" if session.exit_code == 0 else "[warning]"
+                                notice_prefix = "✅" if session.exit_code == 0 else "⚠️"
                                 notice_state = "successfully" if session.exit_code == 0 else "with an error"
                                 await adapter.send(
-                                    source.chat_id,
+                                    chat_id,
                                     f"{notice_prefix} Background process `{session_id}` finished {notice_state} "
                                     f"(exit code {session.exit_code}). I am reviewing the output now and will post "
                                     "the verified result shortly.",
-                                    metadata={"thread_id": source.thread_id} if source.thread_id else None,
+                                    metadata={"thread_id": thread_id} if thread_id else None,
                                 )
                                 completion_notice_sent = True
                             except Exception as notice_err:

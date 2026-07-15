@@ -3,8 +3,10 @@
 import asyncio
 import importlib
 import sys
+import threading
 import time
 import types
+from collections import OrderedDict
 from types import SimpleNamespace
 
 import pytest
@@ -297,6 +299,10 @@ def _make_runner(adapter):
     runner._session_db = None
     runner._running_agents = {}
     runner._session_run_generation = {}
+    runner._completion_delivery_lock = threading.Lock()
+    runner._completion_deliveries_inflight = set()
+    runner._completion_deliveries_delivered = OrderedDict()
+    runner._completion_delivery_retention = 4096
     runner.session_store = SimpleNamespace(_entries={}, _save=lambda: None)
     runner.hooks = SimpleNamespace(loaded_hooks=False)
     runner.config = SimpleNamespace(
