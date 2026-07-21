@@ -183,7 +183,9 @@ voice = [
   # so keep it out of the base install for source-build packagers like Homebrew.
   "faster-whisper==1.2.1",
   "sounddevice==0.5.5",
-  "numpy==2.4.3",
+  # NumPy 2.4 Linux wheels require x86-64-v2. Keep Hermes usable on older
+  # x86-64 hosts until the project's minimum CPU baseline changes explicitly.
+  "numpy==2.3.5",
 ]
 pty = [
   # Kept as a no-op back-compat alias — `ptyprocess` and `pywinpty` are now
@@ -198,7 +200,7 @@ honcho = ["honcho-ai==2.2.0"]
 # excluded from [all] like honcho/hindsight so a quarantined upstream release
 # can't break fresh installs.
 supermemory = ["supermemory==3.50.0"]
-mem0 = ["mem0ai==2.0.10"]
+mem0 = ["mem0ai==2.0.10", "numpy==2.3.5"]
 # Image resize recovery for the vision tools. Pillow is now a CORE dependency
 # (see the main `dependencies` list) since the byte/pixel shrink paths are on
 # the default vision-embed path and the mid-session lazy install deadlocked the

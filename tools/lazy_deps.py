@@ -132,7 +132,7 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     "stt.faster_whisper": (
         "faster-whisper==1.2.1",
         "sounddevice==0.5.5",
-        "numpy==2.4.3",
+        "numpy==2.3.5",
     ),
 
     # ─── Image generation backends ─────────────────────────────────────────
@@ -149,7 +149,7 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     # ensure() call at the import site, the SDK never installs on a hosted
     # instance and the provider silently reports itself unavailable.
     "memory.supermemory": ("supermemory==3.50.0",),
-    "memory.mem0": ("mem0ai==2.0.10",),
+    "memory.mem0": ("mem0ai==2.0.10", "numpy==2.3.5"),
 
     # ─── Messaging platforms (lazy-installable on demand) ──────────────────
     "platform.telegram": ("python-telegram-bot[webhooks]==22.6",),

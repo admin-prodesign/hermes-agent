@@ -197,6 +197,14 @@ def test_dev_extra_excluded_from_all():
     )
 
 
+def test_numpy_pin_preserves_pre_x86_v2_host_compatibility():
+    """NumPy 2.4 Linux wheels require x86-64-v2; this runtime supports older hosts."""
+    optional_dependencies = _load_optional_dependencies()
+
+    assert _exact_pins(optional_dependencies["voice"])["numpy"] == "2.3.5"
+    assert _exact_pins(optional_dependencies["mem0"])["numpy"] == "2.3.5"
+
+
 def test_messaging_extra_includes_qrcode_for_weixin_setup():
     optional_dependencies = _load_optional_dependencies()
 

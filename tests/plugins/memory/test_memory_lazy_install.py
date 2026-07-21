@@ -217,8 +217,11 @@ class TestSealedVenvDurableTarget:
             "the path honcho/hindsight use on hosted Fly instances"
         )
 
-        # Drive ensure(): missing first, satisfied after the (stubbed) install.
-        states = iter([False, True])
+        # Drive ensure(): every spec is missing first, then satisfied after the
+        # (stubbed) install. Keep this proportional to the feature's dependency
+        # count so multi-package features exercise the same durable-target path.
+        spec_count = len(ld.LAZY_DEPS[feature])
+        states = iter(([False] * spec_count) + ([True] * spec_count))
         monkeypatch.setattr(ld, "_is_satisfied", lambda spec: next(states))
 
         captured = {}
