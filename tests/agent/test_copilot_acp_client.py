@@ -285,11 +285,18 @@ def _fake_popen_capture(captured):
 
 
 def test_run_prompt_preserves_real_home_when_profile_home_available(monkeypatch, tmp_path):
+    import hermes_constants
+
     hermes_home = tmp_path / "hermes"
     (hermes_home / "home").mkdir(parents=True)
     real_home = tmp_path / "real-home"
     real_home.mkdir()
 
+    # This contract is specifically for host auto mode. The test suite can run
+    # inside a container, where auto mode intentionally selects the profile
+    # HOME instead; pin the environment being asserted instead of inheriting
+    # the test runner's deployment context.
+    monkeypatch.setattr(hermes_constants, "is_container", lambda: False)
     monkeypatch.setenv("HOME", str(real_home))
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
 
