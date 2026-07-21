@@ -5450,7 +5450,11 @@ def _dependency_importable(dep: str) -> bool:
     try:
         __import__(import_name)
         return True
-    except ImportError:
+    except Exception:
+        # Installed does not necessarily mean usable: optional dependency
+        # imports can fail during native-extension initialization, version
+        # validation, or transitive imports. Treat those cases as unavailable
+        # so the dashboard can report setup status instead of crashing.
         return False
 
 

@@ -514,6 +514,22 @@ class TestWebServerEndpoints:
         assert fields["api_key"]["url"] == "https://stub.example"
         assert fields["baseUrl"]["kind"] == "text"
 
+    def test_dependency_probe_treats_runtime_import_failure_as_unavailable(self, monkeypatch):
+        import builtins
+
+        from hermes_cli import web_server
+
+        real_import = builtins.__import__
+
+        def failing_import(name, *args, **kwargs):
+            if name == "mem0":
+                raise RuntimeError("native extension is incompatible")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", failing_import)
+
+        assert web_server._dependency_importable("mem0ai") is False
+
     def test_declared_surface_serves_curated_hindsight_schema(self):
         resp = self.client.get("/api/memory/providers/hindsight/config?surface=declared")
 
