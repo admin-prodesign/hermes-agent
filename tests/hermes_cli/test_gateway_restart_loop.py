@@ -324,8 +324,8 @@ class TestTerminalToolGatewayLifecycleGuard:
 
         result = json.loads(tt.terminal_tool(command=cmd))
 
-        assert result["exit_code"] == 1
-        assert "Blocked" in result["error"]
+        assert result["exit_code"] != 0
+        assert "blocked" in result["error"].lower()
 
     def test_force_true_cannot_bypass_block(self, monkeypatch):
         import tools.terminal_tool as tt

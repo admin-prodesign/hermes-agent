@@ -119,7 +119,14 @@ def gw_session(monkeypatch):
 
     session_key = "cluster-test-session"
     token = A.set_current_session_key(session_key)
+    aliases = A._approval_key_aliases("execute_code")
     with A._lock:
+        original_permanent = {alias for alias in aliases if alias in A._permanent_approved}
+        original_session = set(A._session_approved.get(session_key, set()))
+        original_yolo = session_key in A._session_yolo
+        A._permanent_approved.difference_update(aliases)
+        A._session_approved.pop(session_key, None)
+        A._session_yolo.discard(session_key)
         A._gateway_queues.pop(session_key, None)
         A._gateway_notify_cbs.pop(session_key, None)
     try:
@@ -127,6 +134,16 @@ def gw_session(monkeypatch):
     finally:
         A.reset_current_session_key(token)
         with A._lock:
+            A._permanent_approved.difference_update(aliases)
+            A._permanent_approved.update(original_permanent)
+            if original_session:
+                A._session_approved[session_key] = original_session
+            else:
+                A._session_approved.pop(session_key, None)
+            if original_yolo:
+                A._session_yolo.add(session_key)
+            else:
+                A._session_yolo.discard(session_key)
             A._gateway_queues.pop(session_key, None)
             A._gateway_notify_cbs.pop(session_key, None)
 

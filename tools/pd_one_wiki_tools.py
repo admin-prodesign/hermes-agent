@@ -108,7 +108,14 @@ def emit_wiki_update_candidate(
         cmd.append("--dry-run")
 
     try:
-        completed = subprocess.run(cmd, text=True, capture_output=True, timeout=20, check=False)
+        completed = subprocess.run(
+            cmd,
+            text=True,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=20,
+            check=False,
+        )
     except Exception as exc:
         return tool_error(f"failed to emit wiki candidate: {exc}")
     if completed.returncode != 0:
