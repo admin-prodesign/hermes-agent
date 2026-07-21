@@ -2,9 +2,10 @@
 
 Wires three behaviours:
 
-1. ``post_tool_call`` hook — inspects ``write_file`` and ``terminal``
-   tool results for newly-created paths matching test/temp patterns
-   under ``HERMES_HOME`` and tracks them silently.  Zero agent
+1. ``post_tool_call`` hook — inspects ``write_file``, ``patch``, and ``terminal``
+   tool results for standalone ephemeral paths matching test/temp patterns
+   under ``HERMES_HOME`` and tracks them silently.  Durable test-suite files
+   under a ``tests/`` directory are never auto-tracked.  Zero agent
    compliance required.
 
 2. ``on_session_end`` hook — when any test files were auto-tracked
@@ -72,13 +73,24 @@ def _drain(task_id: str, session_id: str) -> Set[str]:
 def _attempt_track(path_str: str, task_id: str, session_id: str) -> None:
     """Best-effort auto-track. Never raises."""
     try:
-        p = Path(path_str).expanduser()
+        # Canonicalize before classifying or applying durable-path guards.
+        # dg.track() resolves too; doing it here prevents a symlink alias from
+        # bypassing the tests/ exclusion and then being stored by its target.
+        p = Path(path_str).expanduser().resolve()
     except Exception:
         return
     if not p.exists():
         return
     category = dg.guess_category(p)
     if category is None:
+        return
+    # A path under tests/ is part of a durable regression suite, not an
+    # ad-hoc session test artifact.  Post-tool hooks cannot reliably infer
+    # whether write_file/patch/terminal created or merely modified the path;
+    # protect the suite boundary rather than risk deleting source tests at
+    # session end.  Manual `/disk-cleanup track` remains available when a
+    # caller intentionally wants to clean such a path.
+    if category == "test" and "tests" in p.parts:
         return
     newly = dg.track(str(p), category, silent=True)
     if newly:
@@ -206,7 +218,8 @@ Subcommands:
 Categories: temp | test | research | download | chrome-profile | cron-output | other
 
 All operations are scoped to HERMES_HOME and /tmp/hermes-*.
-Test files are auto-tracked on write_file / terminal and auto-cleaned at session end.
+Standalone test files are auto-tracked on write_file / patch / terminal and auto-cleaned at session end.
+Files inside durable tests/ suites are never auto-tracked.
 """
 
 
