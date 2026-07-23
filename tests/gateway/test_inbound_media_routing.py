@@ -1,7 +1,9 @@
 """Regression tests for gateway inbound media classification."""
 
+from types import SimpleNamespace
+
 from gateway.platforms.base import MessageType
-from gateway.run import _is_inbound_image_media
+from gateway.run import _event_media_is_image, _is_inbound_image_media
 
 
 def test_photo_event_does_not_treat_document_mime_as_image():
@@ -31,3 +33,17 @@ def test_legacy_photo_event_without_mime_uses_file_extension():
         "",
         MessageType.PHOTO,
     )
+
+
+def test_mixed_photo_event_does_not_classify_mime_less_word_document_as_image():
+    event = SimpleNamespace(
+        message_type=MessageType.PHOTO,
+        media_urls=[
+            "/tmp/cache/screenshot.png",
+            "/tmp/cache/mold-repair-procedure.doc",
+        ],
+        media_types=["image/png", ""],
+    )
+
+    assert _event_media_is_image(event, 0)
+    assert not _event_media_is_image(event, 1)
