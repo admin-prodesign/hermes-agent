@@ -2256,15 +2256,18 @@ def _event_media_type_at(event, index: int) -> str:
 def _event_media_is_image(event, index: int) -> bool:
     """True if the attachment at *index* is an image.
 
-    Trust the per-attachment MIME when present. Only fall back to the
-    message-level ``PHOTO`` type when this attachment's MIME is unknown --
-    otherwise a document (or any non-image) uploaded alongside an image in
-    the same message gets mis-routed as an image, base64'd into a vision
-    content part, and the provider 400s ("Could not process image").
+    Trust the per-attachment MIME when present. When it is missing, use the
+    attachment's own file extension before falling back to the message-level
+    ``PHOTO`` type. Mattermost leaves MIME blank for legacy Word ``.doc``
+    files; treating every MIME-less attachment in a mixed photo post as an
+    image silently drops those documents from agent context.
     """
     mtype = _event_media_type_at(event, index)
     if mtype:
         return mtype.startswith("image/")
+    media_urls = getattr(event, "media_urls", None) or []
+    if index < len(media_urls):
+        return os.path.splitext(str(media_urls[index]))[1].lower() in _IMAGE_MEDIA_EXTENSIONS
     return getattr(event, "message_type", None) == MessageType.PHOTO
 
 
