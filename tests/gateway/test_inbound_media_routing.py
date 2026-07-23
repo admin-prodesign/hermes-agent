@@ -47,3 +47,23 @@ def test_mixed_photo_event_does_not_classify_mime_less_word_document_as_image():
 
     assert _event_media_is_image(event, 0)
     assert not _event_media_is_image(event, 1)
+
+
+def test_mime_less_photo_without_extension_falls_back_to_message_type():
+    event = SimpleNamespace(
+        message_type=MessageType.PHOTO,
+        media_urls=["https://files.example.invalid/opaque-id"],
+        media_types=[""],
+    )
+
+    assert _event_media_is_image(event, 0)
+
+
+def test_mime_less_photo_url_ignores_query_when_checking_extension():
+    event = SimpleNamespace(
+        message_type=MessageType.PHOTO,
+        media_urls=["https://files.example.invalid/screenshot.png?download=1"],
+        media_types=[""],
+    )
+
+    assert _event_media_is_image(event, 0)
