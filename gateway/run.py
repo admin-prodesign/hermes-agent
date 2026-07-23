@@ -2267,7 +2267,12 @@ def _event_media_is_image(event, index: int) -> bool:
         return mtype.startswith("image/")
     media_urls = getattr(event, "media_urls", None) or []
     if index < len(media_urls):
-        return os.path.splitext(str(media_urls[index]))[1].lower() in _IMAGE_MEDIA_EXTENSIONS
+        from urllib.parse import unquote, urlsplit
+
+        media_path = unquote(urlsplit(str(media_urls[index])).path)
+        extension = os.path.splitext(media_path)[1].lower()
+        if extension:
+            return extension in _IMAGE_MEDIA_EXTENSIONS
     return getattr(event, "message_type", None) == MessageType.PHOTO
 
 
