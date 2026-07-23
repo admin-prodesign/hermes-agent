@@ -212,6 +212,73 @@ class TestBusySessionAck:
         agent.interrupt.assert_called_once_with("Are you working?")
 
     @pytest.mark.asyncio
+    async def test_mattermost_presence_check_gets_immediate_ack_without_interrupt_or_queue(self):
+        """A standalone presence check is consumed by the deterministic fast path."""
+        runner, _sentinel = _make_runner()
+        runner._busy_input_mode = "interrupt"
+        runner._queued_events = {}
+        adapter = _make_adapter(platform_val="mattermost")
+        source = SessionSource(
+            platform=Platform.MATTERMOST,
+            chat_id="dm-123",
+            chat_type="dm",
+            user_id="user1",
+        )
+        event = MessageEvent(
+            text="PD ONE 你在嗎?請回覆我",
+            message_type=MessageType.TEXT,
+            source=source,
+            message_id="presence-1",
+        )
+        sk = build_session_key(source)
+        agent = MagicMock()
+        runner._running_agents[sk] = agent
+        runner.adapters[Platform.MATTERMOST] = adapter
+
+        handled = await runner._handle_active_session_busy_message(event, sk)
+
+        assert handled is True
+        agent.interrupt.assert_not_called()
+        assert sk not in adapter._pending_messages
+        assert sk not in runner._queued_events
+        content = adapter._send_with_retry.call_args.kwargs["content"]
+        assert content.startswith("我在")
+        assert "Interrupting current task" not in content
+
+    @pytest.mark.asyncio
+    async def test_presence_words_with_substantive_request_use_normal_busy_path(self):
+        """The fast path must not swallow work appended to a presence check."""
+        runner, _sentinel = _make_runner()
+        runner._busy_input_mode = "interrupt"
+        runner._queued_events = {}
+        adapter = _make_adapter(platform_val="mattermost")
+        source = SessionSource(
+            platform=Platform.MATTERMOST,
+            chat_id="dm-123",
+            chat_type="dm",
+            user_id="user1",
+        )
+        event = MessageEvent(
+            text="你在嗎？請幫我檢查這份文件",
+            message_type=MessageType.TEXT,
+            source=source,
+            message_id="presence-work-1",
+        )
+        sk = build_session_key(source)
+        agent = MagicMock()
+        agent._active_children = []
+        runner._running_agents[sk] = agent
+        runner.adapters[Platform.MATTERMOST] = adapter
+
+        handled = await runner._handle_active_session_busy_message(event, sk)
+
+        assert handled is True
+        agent.interrupt.assert_called_once_with("你在嗎？請幫我檢查這份文件")
+        assert adapter._pending_messages[sk] is event
+        content = adapter._send_with_retry.call_args.kwargs["content"]
+        assert "Interrupting current task" in content
+
+    @pytest.mark.asyncio
     async def test_queue_mode_suppresses_interrupt_and_updates_ack(self):
         """When busy_input_mode is 'queue', message is queued WITHOUT interrupt."""
         runner, sentinel = _make_runner()
@@ -498,10 +565,10 @@ class TestBusySessionAck:
         runner._busy_input_mode = "interrupt"
         adapter = _make_adapter()
 
-        event1 = _make_event(text="hello?")
+        event1 = _make_event(text="first follow-up")
         # Reuse the same source so platform mock matches
         event2 = MessageEvent(
-            text="still there?",
+            text="second follow-up",
             message_type=MessageType.TEXT,
             source=event1.source,
             message_id="msg2",
@@ -711,7 +778,7 @@ class TestBusySessionOnboardingHint:
         runner._busy_input_mode = "interrupt"
         adapter = _make_adapter()
 
-        event = _make_event(text="ping")
+        event = _make_event(text="do this now")
         sk = build_session_key(event.source)
 
         agent = MagicMock()

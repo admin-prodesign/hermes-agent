@@ -3093,6 +3093,40 @@ _GATEWAY_SYSTEMD_CONTROL_RE = re.compile(
 )
 
 
+_SIMPLE_PRESENCE_CHECK_RE = re.compile(
+    r"(?ix)^\s*"
+    r"(?:@?[\w.-]+\s+)?"
+    r"(?:pd[\s_-]*one(?:[_\s-]*bot)?\s*)?"
+    r"(?:"
+    r"(?:你|您)?(?:還|有)?在(?:嗎|么)?"
+    r"|(?:你|您)?在線(?:嗎|么)?"
+    r"|請回覆(?:我)?"
+    r"|are\s+you\s+(?:there|online|available)"
+    r"|you\s+there"
+    r"|anyone\s+there"
+    r"|can\s+you\s+hear\s+me"
+    r"|hello"
+    r"|hi"
+    r"|ping"
+    r")"
+    r"(?:\s*[,，。.!！?？;；:/\\-]*\s*(?:請回覆(?:我)?|please\s+(?:reply|respond)))?"
+    r"\s*[,，。.!！?？;；:/\\-]*\s*$"
+)
+
+
+def _is_simple_presence_check(text: str | None) -> bool:
+    """Return True only for a standalone greeting/liveness check.
+
+    These messages need an immediate deterministic acknowledgment while a
+    gateway session is busy. They must not interrupt the active turn or be
+    replayed later as a model turn. Full-string anchoring keeps substantive
+    follow-ups on the normal queue/interrupt path.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return False
+    return _SIMPLE_PRESENCE_CHECK_RE.fullmatch(text) is not None
+
+
 def _terminal_tool_call_command(tool_call: Dict[str, Any]) -> Optional[str]:
     """Extract a terminal command from an OpenAI-style tool call, if present."""
     fn = tool_call.get("function") or {}
@@ -6081,6 +6115,62 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return False
 
         running_agent = self._running_agents.get(session_key)
+
+        # Standalone liveness checks should be answered immediately without
+        # aborting expensive in-flight work or occupying a later model turn.
+        # This runs before queueing, steering, interrupting, busy-ack debounce,
+        # and onboarding hints.
+        if event.message_type == MessageType.TEXT and _is_simple_presence_check(event.text):
+            has_chinese = bool(re.search(r"[\u3400-\u9fff]", event.text or ""))
+            zh_ack = "我在，正在處理前一項工作。請直接繼續留言，我會接著處理。"
+            en_ack = (
+                "I'm here and finishing the current task. "
+                "You can keep messaging; I'll handle it next."
+            )
+            is_mattermost_group = (
+                event.source.platform == Platform.MATTERMOST
+                and event.source.chat_type not in {"dm", "private"}
+            )
+            if is_mattermost_group:
+                presence_ack = f"{zh_ack}\n\n{en_ack}"
+            else:
+                presence_ack = zh_ack if has_chinese else en_ack
+
+            reply_anchor = self._reply_anchor_for_event(event)
+            try:
+                await adapter._send_with_retry(
+                    chat_id=event.source.chat_id,
+                    content=presence_ack,
+                    reply_to=(
+                        reply_anchor
+                        if event.source.platform == Platform.TELEGRAM
+                        and event.source.chat_type == "dm"
+                        and event.source.thread_id
+                        else (
+                            None
+                            if event.source.platform == Platform.TELEGRAM
+                            and event.source.thread_id
+                            else event.message_id
+                        )
+                    ),
+                    metadata=self._thread_metadata_for_source(
+                        event.source,
+                        reply_anchor,
+                    ),
+                )
+                logger.info(
+                    "Immediate presence acknowledgment delivered: "
+                    "platform=%s session=%s",
+                    event.source.platform.value,
+                    session_key,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Immediate presence acknowledgment failed for session %s: %s",
+                    session_key,
+                    exc,
+                )
+            return True
 
         effective_mode = self._busy_input_mode
         busy_text_mode = getattr(self, "_busy_text_mode", "interrupt")
