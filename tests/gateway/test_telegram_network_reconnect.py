@@ -1130,6 +1130,29 @@ async def test_delete_webhook_network_error_is_recoverable():
 
 
 @pytest.mark.asyncio
+async def test_delete_webhook_hang_is_bounded(monkeypatch):
+    """A wedged deleteWebhook call must not block every later platform."""
+    monkeypatch.setattr(tg_adapter, "_UPDATER_START_TIMEOUT", 0.01)
+    adapter = _make_adapter()
+    mock_bot = MagicMock()
+
+    async def _hang_forever(*args, **kwargs):
+        await asyncio.Event().wait()
+
+    mock_bot.delete_webhook = AsyncMock(side_effect=_hang_forever)
+    adapter._bot = mock_bot
+
+    result = await asyncio.wait_for(
+        adapter._delete_webhook_best_effort(), timeout=0.5
+    )
+
+    assert result is False
+    assert adapter._send_path_degraded is True
+    mock_bot.delete_webhook.assert_awaited_once_with(drop_pending_updates=False)
+    assert not adapter.has_fatal_error
+
+
+@pytest.mark.asyncio
 async def test_polling_bootstrap_network_error_schedules_background_recovery():
     """Initial start_polling() network failure should degrade, not raise."""
     adapter = _make_adapter()
