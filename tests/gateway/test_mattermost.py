@@ -1106,6 +1106,9 @@ class TestMattermostWebSocketParsing:
         assert '"read_limited":["operationalDocs"]' in msg_event.channel_context
         assert "mattermost-channels.md" in msg_event.channel_context
         assert "require approved-user authorization" in msg_event.channel_context
+        assert "1:1 equivalent substance and detail" in msg_event.channel_context
+        assert "every heading, paragraph, bullet, numbered item" in msg_event.channel_context
+        assert "feedback/recommendation" in msg_event.channel_context
 
     @pytest.mark.asyncio
     async def test_pd_one_policy_bridge_missing_cache_marks_lookup_failure(self, tmp_path):
