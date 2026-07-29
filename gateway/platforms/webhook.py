@@ -64,6 +64,7 @@ from gateway.platforms.webhook_filters import (
     WebhookRouteProcessor,
 )
 from gateway.response_filters import is_autonomous_silence_response
+from gateway.session import build_session_key
 
 logger = logging.getLogger(__name__)
 
@@ -904,6 +905,45 @@ class WebhookAdapter(BasePlatformAdapter):
             raw_message=payload,
             message_id=delivery_id,
         )
+
+        # Optional per-route model override for unattended webhook automations.
+        # Interactive chat keeps the global/default model, while routes like
+        # PD One/PD Neo failure autofix can use a faster, more reliable model.
+        route_model = route_config.get("model")
+        route_provider = route_config.get("provider")
+        if route_model or route_provider:
+            try:
+                session_key = build_session_key(
+                    source,
+                    group_sessions_per_user=self.config.extra.get("group_sessions_per_user", True),
+                    thread_sessions_per_user=self.config.extra.get("thread_sessions_per_user", False),
+                )
+                runner = getattr(self, "gateway_runner", None)
+                overrides = getattr(runner, "_session_model_overrides", None)
+                if isinstance(overrides, dict):
+                    override = {}
+                    if route_model:
+                        override["model"] = str(route_model)
+                    if route_provider:
+                        override["provider"] = str(route_provider)
+                    if route_config.get("base_url"):
+                        override["base_url"] = str(route_config.get("base_url"))
+                    if route_config.get("api_mode"):
+                        override["api_mode"] = str(route_config.get("api_mode"))
+                    overrides[session_key] = override
+                    logger.info(
+                        "[webhook] route=%s delivery=%s using model override provider=%s model=%s",
+                        route_name,
+                        delivery_id,
+                        override.get("provider"),
+                        override.get("model"),
+                    )
+            except Exception:
+                logger.exception(
+                    "[webhook] failed to apply model override route=%s delivery=%s",
+                    route_name,
+                    delivery_id,
+                )
 
         logger.info(
             "[webhook] %s event=%s route=%s prompt_len=%d delivery=%s",

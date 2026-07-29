@@ -313,8 +313,8 @@ async def test_cleanup_registers_callback_and_deletes_on_success(monkeypatch, tm
     # Fire it (base.py does this in _process_message_background's finally)
     # and let the scheduled coroutine run to completion.
     await _fire_post_delivery_cb(cb)
-    # delete_message is scheduled via run_coroutine_threadsafe → give the
-    # loop a couple of ticks to drain.
+    # Awaited cleanup should have run inline, but keep a short drain loop for
+    # callback chains that may still schedule side work.
     for _ in range(20):
         await asyncio.sleep(0.01)
         if adapter.deleted:

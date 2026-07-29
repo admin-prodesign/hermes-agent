@@ -287,6 +287,46 @@ def _check_all_guards(command: str, env_type: str,
                                   has_host_access=has_host_access)
 
 
+_GATEWAY_SYSTEMD_CONTROL_RE = re.compile(
+    r"(?is)"
+    r"(?:^|[;&|\n])\s*"
+    r"(?:sudo\s+(?:-[^\s]+\s+)*)?"
+    r"systemctl\s+"
+    r"(?:(?:--user|--no-pager|--no-block|--wait|--quiet)\s+)*"
+    r"(?:restart|stop|kill)\b"
+    r"[^\n;&|]*\bhermes-gateway(?:-[\w.-]+)?\.service\b"
+)
+
+
+def _check_gateway_service_control_guard(command: str) -> Optional[dict]:
+    """Hard-block gateway service control from inside a gateway process.
+
+    The CLI already refuses ``hermes gateway restart`` when ``_HERMES_GATEWAY``
+    is set, but a terminal command can bypass that by invoking systemd
+    directly.  Running ``systemctl --user restart hermes-gateway*.service`` from
+    a tool call owned by that same gateway leaves systemd waiting for the
+    service cgroup that contains the command, and restart recovery may replay
+    the turn.  Treat this as a hardline block below approval/yolo.
+    """
+    if os.getenv("_HERMES_GATEWAY") != "1":
+        return None
+    if not isinstance(command, str):
+        return None
+    if not _GATEWAY_SYSTEMD_CONTROL_RE.search(command):
+        return None
+    return {
+        "approved": False,
+        "hardline": True,
+        "message": (
+            "BLOCKED (hardline): gateway processes cannot restart/stop/kill "
+            "Hermes gateway services via systemctl. This prevents self-restart "
+            "deactivation/resume loops. Request an external supervisor/PD Neo "
+            "restart instead, or run the service-control command manually from "
+            "outside the gateway service."
+        ),
+    }
+
+
 # Allowlist: characters that can legitimately appear in directory paths.
 # Covers alphanumeric, path separators, Windows drive/UNC separators, tilde,
 # dot, hyphen, underscore, space, plus, at, equals, and comma.  Everything
@@ -2215,6 +2255,19 @@ def terminal_tool(
                 f"{FOREGROUND_MAX_TIMEOUT}s. Use background=true with "
                 f"notify_on_complete=true for long-running commands."
             )
+
+        # Guardrail: a gateway process must not use terminal/systemd to
+        # restart/stop/kill Hermes gateway services.  This is below approval and
+        # force/yolo because the failure mode is a self-restart loop.
+        gateway_service_block = _check_gateway_service_control_guard(command)
+        if gateway_service_block is not None:
+            return json.dumps({
+                "output": "",
+                "exit_code": -1,
+                "error": gateway_service_block["message"],
+                "status": "blocked",
+                "hardline": True,
+            }, ensure_ascii=False)
 
         # Guardrail: long-lived server/watch commands should run as managed
         # background sessions, not foreground shell hacks.
