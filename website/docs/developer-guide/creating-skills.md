@@ -46,7 +46,7 @@ skills/
 ```markdown
 ---
 name: my-skill
-description: Brief description (shown in skill search results)
+description: Compact routing phrase, ideally 40-60 chars
 version: 1.0.0
 author: Your Name
 license: MIT
@@ -97,6 +97,12 @@ Known failure modes and how to handle them.
 ## Verification
 How the agent confirms it worked.
 ```
+
+Keep `description` concise: it appears in `skills_list()` and the injected
+skills index. Prefer short routing language (for example, "Operate GitHub repos,
+PRs, reviews, issues, and CI.") over filler such as "Use when..." or a
+mini-runbook. Put detailed triggers, caveats, and examples in the skill body or
+`references/` files.
 
 ### Platform-Specific Skills
 
