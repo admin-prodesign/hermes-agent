@@ -326,7 +326,7 @@ def test_exact_tracker_and_thread_cannot_resurrect_closed_workflow(tmp_path):
         last_outreach_message_id="post-closed",
     )
     with reg.connect() as conn:
-        conn.execute("UPDATE workflows SET status = 'closed' WHERE id = ?", ("wf-closed",))
+        conn.execute("UPDATE workflows SET status = 'closed' WHERE workflow_id = ?", ("wf-closed",))
 
     by_tracker = route_inbound_message(
         reg, sender_id="alice", message_text="HW-CLOSED answer", now=utc(1)
