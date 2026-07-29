@@ -45,7 +45,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -670,7 +670,7 @@ def _run_bws_list(
     # bws child intentionally receives the access token; exact preservation
     # (BWS_SERVER_URL manual overrides etc. must survive untouched).
     from tools.environments.local import build_subprocess_env
-    env = build_subprocess_env(scrub_secrets=False, inherit_profile_home=False)
+    env = build_subprocess_env(scrub_secrets=True, inherit_profile_home=False)
     env["BWS_ACCESS_TOKEN"] = access_token
     # Make sure we're not echoing telemetry / colour codes into json.
     env.setdefault("NO_COLOR", "1")
@@ -776,6 +776,17 @@ def apply_bitwarden_secrets(
     if not enabled:
         return result
 
+    # Applying one profile's fetched values to process-global os.environ is
+    # forbidden in multiplex mode. Multiplex callers must use
+    # build_profile_secret_scope()/set_secret_scope() instead.
+    from agent.secret_scope import is_multiplex_active
+    if is_multiplex_active():
+        result.error = (
+            "apply_bitwarden_secrets cannot mutate process-global os.environ "
+            "while gateway multiplexing is active"
+        )
+        return result
+
     access_token = os.environ.get(access_token_env, "").strip()
     if not access_token:
         result.error = (
@@ -832,6 +843,45 @@ def apply_bitwarden_secrets(
         result.applied.append(key)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Profile-local aliases
+# ---------------------------------------------------------------------------
+
+
+def expand_secret_aliases(
+    secrets: Dict[str, str],
+    aliases: Mapping[str, str],
+    warnings: Optional[List[str]] = None,
+) -> Dict[str, str]:
+    """Return fetched secrets plus validated target-to-source aliases."""
+    if not aliases:
+        return secrets
+
+    expanded = dict(secrets)
+    for target, source in aliases.items():
+        if not isinstance(target, str) or not isinstance(source, str):
+            if warnings is not None:
+                warnings.append("Skipping Bitwarden alias with non-string key/value")
+            continue
+        target = target.strip()
+        source = source.strip()
+        if not _is_valid_env_name(target) or not _is_valid_env_name(source):
+            if warnings is not None:
+                warnings.append(
+                    f"Skipping Bitwarden alias {target!r} -> {source!r}: "
+                    "both names must be valid env-var names"
+                )
+            continue
+        if source not in secrets:
+            if warnings is not None:
+                warnings.append(
+                    f"Skipping Bitwarden alias {target}: source {source} not found"
+                )
+            continue
+        expanded[target] = secrets[source]
+    return expanded
 
 
 # ---------------------------------------------------------------------------
@@ -900,6 +950,10 @@ class BitwardenSource(SecretSource):
             "server_url": {
                 "description": "Region / self-hosted endpoint (empty = US Cloud)",
                 "default": "",
+            },
+            "aliases": {
+                "description": "Target env var to source-secret aliases",
+                "default": {},
             },
         }
 
@@ -974,8 +1028,15 @@ class BitwardenSource(SecretSource):
                 )
             return result
 
+        alias_warnings: List[str] = []
+        secrets = expand_secret_aliases(
+            secrets,
+            cfg.get("aliases") or {},
+            alias_warnings,
+        )
         result.secrets = secrets
         result.warnings.extend(warnings)
+        result.warnings.extend(alias_warnings)
         return result
 
     def remediation(self, kind, cfg: dict) -> str:

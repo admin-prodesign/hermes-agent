@@ -481,6 +481,38 @@ class TestPostToolCallHook:
         tracked_file = _isolate_env / "disk-cleanup" / "tracked.json"
         assert not tracked_file.exists() or tracked_file.read_text().strip() == "[]"
 
+    def test_write_file_does_not_track_durable_test_suite_file(self, _isolate_env):
+        pi = _load_plugin_init()
+        p = _isolate_env / "scripts" / "tests" / "test_existing.py"
+        p.parent.mkdir(parents=True)
+        p.write_text("original")
+
+        pi._on_post_tool_call(
+            tool_name="write_file",
+            args={"path": str(p), "content": "modified"},
+            result="OK",
+            task_id="durable-write", session_id="durable-suite",
+        )
+
+        tracked_file = _isolate_env / "disk-cleanup" / "tracked.json"
+        assert not tracked_file.exists() or tracked_file.read_text().strip() == "[]"
+
+    def test_patch_does_not_track_durable_test_suite_file(self, _isolate_env):
+        pi = _load_plugin_init()
+        p = _isolate_env / "tests" / "test_existing.py"
+        p.parent.mkdir(parents=True)
+        p.write_text("original")
+
+        pi._on_post_tool_call(
+            tool_name="patch",
+            args={"path": str(p), "old_string": "original", "new_string": "modified"},
+            result="OK",
+            task_id="durable-patch", session_id="durable-suite",
+        )
+
+        tracked_file = _isolate_env / "disk-cleanup" / "tracked.json"
+        assert not tracked_file.exists() or tracked_file.read_text().strip() == "[]"
+
     def test_terminal_command_picks_up_paths(self, _isolate_env):
         pi = _load_plugin_init()
         p = _isolate_env / "tmp_created.log"
@@ -494,6 +526,43 @@ class TestPostToolCallHook:
         tracked_file = _isolate_env / "disk-cleanup" / "tracked.json"
         data = json.loads(tracked_file.read_text())
         assert any(Path(i["path"]) == p.resolve() for i in data)
+
+    def test_terminal_does_not_track_durable_test_suite_file(self, _isolate_env):
+        pi = _load_plugin_init()
+        p = _isolate_env / "profiles" / "pdone" / "tests" / "test_existing.py"
+        p.parent.mkdir(parents=True)
+        p.write_text("original")
+
+        pi._on_post_tool_call(
+            tool_name="terminal",
+            args={"command": f"cp /tmp/test_existing.py {p}"},
+            result=f"copied to {p}\n",
+            task_id="durable-terminal", session_id="durable-suite",
+        )
+
+        tracked_file = _isolate_env / "disk-cleanup" / "tracked.json"
+        assert not tracked_file.exists() or tracked_file.read_text().strip() == "[]"
+
+    def test_symlink_alias_to_durable_test_suite_file_is_not_tracked(self, _isolate_env):
+        pi = _load_plugin_init()
+        durable = _isolate_env / "profiles" / "pdone" / "tests" / "test_existing.py"
+        durable.parent.mkdir(parents=True)
+        durable.write_text("original")
+        alias = _isolate_env / "test_alias.py"
+        try:
+            alias.symlink_to(durable)
+        except OSError as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+
+        pi._on_post_tool_call(
+            tool_name="write_file",
+            args={"path": str(alias), "content": "modified"},
+            result="OK",
+            task_id="durable-symlink", session_id="durable-suite",
+        )
+
+        tracked_file = _isolate_env / "disk-cleanup" / "tracked.json"
+        assert not tracked_file.exists() or tracked_file.read_text().strip() == "[]"
 
     def test_ignores_unrelated_tool(self, _isolate_env):
         pi = _load_plugin_init()

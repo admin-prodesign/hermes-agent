@@ -328,6 +328,12 @@ TOOLSETS = {
         "includes": []
     },
 
+    "pd_one_wiki": {
+        "description": "PD One-on-Hermes company-wiki candidate emission (no direct canonical wiki writes)",
+        "tools": ["emit_wiki_update_candidate"],
+        "includes": []
+    },
+
 
     # Scenario-specific toolsets
     
