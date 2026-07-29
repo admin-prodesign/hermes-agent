@@ -54,6 +54,7 @@ class TurnContext:
     repeat_count: list = field(default_factory=lambda: [0])
     long_tool_hint_fired: list = field(default_factory=lambda: [False])
     agent_holder: list = field(default_factory=lambda: [None])
+    latest_heartbeat_status: dict = field(default_factory=dict)
 
     # --- constants / cleanup bookkeeping ---------------------------------
     _LONG_TOOL_THRESHOLD_S: float = 30.0
