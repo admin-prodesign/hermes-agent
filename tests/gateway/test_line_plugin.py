@@ -770,10 +770,11 @@ class TestAdapterInit:
         }))
         ad.handle_message = AsyncMock()
 
-        async def _download_media(message_id, msg_type):
+        async def _download_media(message_id, msg_type, *, filename=None):
             assert message_id == "img1"
             assert msg_type == "image"
-            return str(cached_image)
+            assert filename is None
+            return str(cached_image), "image/jpeg"
 
         ad._download_media = _download_media
         event = {
@@ -816,10 +817,11 @@ class TestAdapterInit:
         }))
         ad.handle_message = AsyncMock()
 
-        async def _download_media(message_id, msg_type):
+        async def _download_media(message_id, msg_type, *, filename=None):
             assert message_id == "aud1"
             assert msg_type == "audio"
-            return str(cached_audio)
+            assert filename is None
+            return str(cached_audio), "audio/mp4"
 
         def _transcribe_audio(path):
             assert path == str(cached_audio)
@@ -870,9 +872,10 @@ class TestAdapterInit:
         monkeypatch.setattr(_line, "cache_audio_from_bytes", _cache_audio)
         ad._client = _FakeClient()
 
-        path = asyncio.run(ad._download_media("voice-msg", "audio"))
+        path, media_type = asyncio.run(ad._download_media("voice-msg", "audio"))
 
         assert path == str(cached)
+        assert media_type == "audio/mp4"
         assert cached.read_bytes() == b"audio-bytes"
 
 
