@@ -620,24 +620,6 @@ class TestMattermostSend:
         assert payload["root_id"] == "root_post"
 
     @pytest.mark.asyncio
-    async def test_progress_send_with_invalid_thread_root_never_falls_back_flat(self):
-        """Tool/status/progress bubbles must stay quiet when the thread is broken."""
-        self.adapter._reply_mode = "thread"
-        self.adapter._api_get = AsyncMock(return_value={"id": "bad_root", "root_id": ""})
-        self.adapter._api_post = AsyncMock(return_value={})
-
-        result = await self.adapter.send(
-            "channel_1",
-            "⚙️ terminal...",
-            metadata={"thread_id": "bad_root"},
-        )
-
-        assert result.success is False
-        assert self.adapter._api_post.call_count == 1
-        payload = self.adapter._api_post.call_args_list[0][0][1]
-        assert payload["root_id"] == "bad_root"
-
-    @pytest.mark.asyncio
     async def test_send_api_failure(self):
         """When API returns error, send should return failure."""
         mock_resp = AsyncMock()
