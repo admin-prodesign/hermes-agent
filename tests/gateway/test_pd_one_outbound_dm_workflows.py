@@ -306,3 +306,33 @@ def test_format_outreach_message_contains_tracker_title_and_reply_instruction():
     assert text.startswith("[PD One Follow-up: HW-2026-0611-003]")
     assert "Training Homework — SOP Module 1" in text
     assert "Reply to this message, or include HW-2026-0611-003" in text
+
+
+def test_exact_tracker_and_thread_cannot_resurrect_closed_workflow(tmp_path):
+    reg = make_registry(tmp_path)
+    reg.create_workflow(
+        workflow_id="wf-closed",
+        workflow_type="training_homework",
+        title="Closed homework",
+        owner_user_id="admin",
+        instructions={"question": "done"},
+    )
+    reg.add_target(
+        workflow_id="wf-closed",
+        target_user_id="alice",
+        tracker_code="HW-CLOSED",
+        status="awaiting_reply",
+        phase="awaiting_initial_reply",
+        last_outreach_message_id="post-closed",
+    )
+    with reg.connect() as conn:
+        conn.execute("UPDATE workflows SET status = 'closed' WHERE id = ?", ("wf-closed",))
+
+    by_tracker = route_inbound_message(
+        reg, sender_id="alice", message_text="HW-CLOSED answer", now=utc(1)
+    )
+    by_thread = route_inbound_message(
+        reg, sender_id="alice", message_text="answer", root_message_id="post-closed", now=utc(1)
+    )
+    assert by_tracker.action == "normal_dm"
+    assert by_thread.action == "normal_dm"

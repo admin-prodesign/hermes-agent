@@ -12,9 +12,20 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from agent.secret_scope import get_secret
+from hermes_constants import get_hermes_home
+from tools.environments.local import build_subprocess_env
 from tools.registry import registry, tool_error, tool_result
 
-SCRIPT = Path("/home/prodesign/.hermes/scripts/pd_one_wiki_candidate_emit.py")
+
+def _deployment_hermes_home() -> Path:
+    home = get_hermes_home()
+    if home.parent.name == "profiles":
+        return home.parent.parent
+    return home
+
+
+SCRIPT = _deployment_hermes_home() / "scripts" / "pd_one_wiki_candidate_emit.py"
 
 ENTITY_TYPES = {"mold", "equipment", "customer", "process", "source-system", "other"}
 UPDATE_TYPES = {"observation", "correction", "resolution", "maintenance", "customer-preference", "open-question", "source-link"}
@@ -108,8 +119,13 @@ def emit_wiki_update_candidate(
         cmd.append("--dry-run")
 
     try:
+        env = build_subprocess_env(scrub_secrets=True, inherit_profile_home=True)
+        bridge_root = get_secret("PD_ONE_WIKI_BRIDGE_ROOT", "")
+        if bridge_root:
+            env["PD_ONE_WIKI_BRIDGE_ROOT"] = bridge_root
         completed = subprocess.run(
             cmd,
+            env=env,
             stdin=subprocess.DEVNULL,
             text=True,
             encoding="utf-8",

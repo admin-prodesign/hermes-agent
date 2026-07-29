@@ -21501,6 +21501,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         session_key: str = None,
         run_generation: Optional[int] = None,
         event_message_id: Optional[str] = None,
+        message_type: Optional[str] = None,
+        raw_event_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Forward the message to a remote Hermes API server instead of
         running a local AIAgent.
@@ -21575,6 +21577,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             "model": "hermes-agent",
             "messages": api_messages,
             "stream": True,
+            # Preserve gateway-native routing semantics across the proxy seam.
+            # The remote API ignores unknown metadata safely, while Hermes-aware
+            # peers can use it for raw-text policy and voice/audio behavior.
+            "metadata": {
+                "message_type": str(getattr(message_type, "value", message_type) or ""),
+                "raw_event_text": raw_event_text if raw_event_text is not None else message,
+            },
         }
 
         # Set up platform streaming if available -------------------------
@@ -21962,6 +21971,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 session_key=session_key,
                 run_generation=run_generation,
                 event_message_id=event_message_id,
+                message_type=message_type,
+                raw_event_text=raw_event_text,
             )
 
         from run_agent import AIAgent
