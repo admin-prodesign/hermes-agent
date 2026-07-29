@@ -793,7 +793,7 @@ class TestAdapterInit:
         row = json.loads(logs[0].read_text(encoding="utf-8").strip())
         assert row["message_type"] == "image"
         assert row["text"] == "[image]"
-        assert row["media"][0]["type"] == "image"
+        assert row["media"][0]["type"] == "image/jpeg"
         copied = row["media"][0]["path"]
         assert os.path.exists(copied)
         assert open(copied, "rb").read() == b"image-bytes"
@@ -850,7 +850,7 @@ class TestAdapterInit:
             "provider": "fake-stt",
             "transcript": "打掃好了",
         }
-        assert row["media"][0]["type"] == "audio"
+        assert row["media"][0]["type"] == "audio/mp4"
         assert "replyToken" not in row["raw_event"]
 
     def test_audio_download_uses_audio_cache(self, monkeypatch, tmp_path):
