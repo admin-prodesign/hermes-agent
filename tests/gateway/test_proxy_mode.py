@@ -159,11 +159,16 @@ class TestRunAgentProxyDispatch:
             session_id="test-session-123",
             session_key="test-key",
             run_generation=7,
+            message_type="audio",
+            raw_event_text="raw admin: text",
         )
 
         assert result["final_response"] == "Hello from remote!"
         runner._run_agent_via_proxy.assert_called_once()
-        assert runner._run_agent_via_proxy.call_args.kwargs["run_generation"] == 7
+        forwarded = runner._run_agent_via_proxy.call_args.kwargs
+        assert forwarded["run_generation"] == 7
+        assert forwarded["message_type"] == "audio"
+        assert forwarded["raw_event_text"] == "raw admin: text"
 
 
 class TestRunAgentViaProxy:
@@ -198,6 +203,8 @@ class TestRunAgentViaProxy:
                         ],
                         source=source,
                         session_id="session-abc",
+                        message_type="audio",
+                        raw_event_text="raw voice transcription",
                     )
 
         # Verify request URL
@@ -216,8 +223,12 @@ class TestRunAgentViaProxy:
         assert messages[2] == {"role": "assistant", "content": "Hi there!"}
         assert messages[3] == {"role": "user", "content": "How are you?"}
 
-        # Verify streaming is requested
+        # Verify streaming and Hermes gateway metadata are preserved.
         assert session.captured_json["stream"] is True
+        assert session.captured_json["metadata"] == {
+            "message_type": "audio",
+            "raw_event_text": "raw voice transcription",
+        }
 
         # Verify response was assembled
         assert result["final_response"] == "Hello world"

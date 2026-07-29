@@ -230,6 +230,46 @@ class TestBitwardenSource:
         assert captured["server_url"] == "https://vault.bitwarden.eu"
         assert captured["home_path"] == tmp_path
 
+    def test_fetch_expands_profile_aliases(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BWS_ACCESS_TOKEN", "0.token")
+        import agent.secret_sources.bitwarden as bw
+
+        monkeypatch.setattr(bw, "find_bws", lambda **kw: Path("/fake/bws"))
+        monkeypatch.setattr(
+            bw,
+            "fetch_bitwarden_secrets",
+            lambda **kw: ({"PDNEO_TELEGRAM_BOT_TOKEN": "token"}, []),
+        )
+
+        result = BitwardenSource().fetch(
+            {
+                "enabled": True,
+                "project_id": "proj",
+                "aliases": {
+                    "TELEGRAM_BOT_TOKEN": "PDNEO_TELEGRAM_BOT_TOKEN",
+                },
+            },
+            tmp_path,
+        )
+
+        assert result.ok
+        assert result.secrets["TELEGRAM_BOT_TOKEN"] == "token"
+        assert result.secrets["PDNEO_TELEGRAM_BOT_TOKEN"] == "token"
+
+    def test_fetch_runtime_error_classified(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BWS_ACCESS_TOKEN", "0.token")
+        import agent.secret_sources.bitwarden as bw
+
+        monkeypatch.setattr(bw, "find_bws", lambda **kw: Path("/fake/bws"))
+
+        def _fail(**kwargs):
+            raise RuntimeError("bws exited 1: 401 unauthorized")
+
+        monkeypatch.setattr(bw, "fetch_bitwarden_secrets", _fail)
+        result = BitwardenSource().fetch(
+            {"enabled": True, "project_id": "proj"}, tmp_path
+        )
+        assert result.error_kind is ErrorKind.AUTH_FAILED
 
     def test_e2e_through_orchestrator(self, tmp_path, monkeypatch):
         """Full path: registry → BitwardenSource → env, with fetch mocked."""

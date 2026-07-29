@@ -3,8 +3,10 @@
 import asyncio
 import importlib
 import sys
+import threading
 import time
 import types
+from collections import OrderedDict
 from types import SimpleNamespace
 
 import pytest
@@ -187,6 +189,15 @@ class NonEditingProgressCaptureAdapter(ProgressCaptureAdapter):
         raise AssertionError("non-editable adapters should not receive edit_message calls")
 
 
+class CompletionNoticeAdapter(ProgressCaptureAdapter):
+    def __init__(self, platform=Platform.DISCORD):
+        super().__init__(platform=platform)
+        self.handled = []
+
+    async def handle_message(self, event):
+        self.handled.append(event)
+
+
 class FakeAgent:
     def __init__(self, **kwargs):
         # Capture anything passed via kwargs (older code path) but don't
@@ -290,6 +301,34 @@ class DelayedProgressAgent:
         }
 
 
+class SlowProgressAgent:
+    def __init__(self, **kwargs):
+        self.tool_progress_callback = kwargs.get("tool_progress_callback")
+        self.api_call_count = 1
+        self.max_iterations = 90
+        self.tools = []
+
+    def get_activity_summary(self):
+        return {
+            "api_call_count": self.api_call_count,
+            "max_iterations": self.max_iterations,
+            "current_tool": "terminal",
+            "last_activity_desc": "running terminal",
+            "seconds_since_activity": 0.1,
+        }
+
+    def run_conversation(self, message, conversation_history=None, task_id=None):
+        cb = self.tool_progress_callback
+        if cb is not None:
+            cb("tool.started", "terminal", "pytest tests/gateway", {})
+        time.sleep(0.65)
+        return {
+            "final_response": "done",
+            "messages": [],
+            "api_calls": 1,
+        }
+
+
 class RetryableEditProgressAgent:
     """Keep the turn alive long enough to retry the same progress bubble."""
 
@@ -372,6 +411,10 @@ def _make_runner(adapter):
     runner._session_db = None
     runner._running_agents = {}
     runner._session_run_generation = {}
+    runner._completion_delivery_lock = threading.Lock()
+    runner._completion_deliveries_inflight = set()
+    runner._completion_deliveries_delivered = OrderedDict()
+    runner._completion_delivery_retention = 4096
     runner.session_store = SimpleNamespace(_entries={}, _save=lambda: None)
     runner.hooks = SimpleNamespace(loaded_hooks=False)
     runner.config = SimpleNamespace(
@@ -380,6 +423,309 @@ def _make_runner(adapter):
         stt_enabled=False,
     )
     return runner
+
+
+@pytest.mark.asyncio
+async def test_run_agent_progress_stays_in_originating_topic(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
+
+    fake_dotenv = types.ModuleType("dotenv")
+    fake_dotenv.load_dotenv = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+
+    fake_run_agent = types.ModuleType("run_agent")
+    fake_run_agent.AIAgent = FakeAgent
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+    import tools.terminal_tool  # noqa: F401 - register terminal emoji for this fake-agent test
+
+    adapter = ProgressCaptureAdapter()
+    runner = _make_runner(adapter)
+    gateway_run = importlib.import_module("gateway.run")
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "fake"})
+    source = SessionSource(
+        platform=Platform.TELEGRAM,
+        chat_id="-1001",
+        chat_type="group",
+        thread_id="17585",
+    )
+
+    result = await runner._run_agent(
+        message="hello",
+        context_prompt="",
+        history=[],
+        source=source,
+        session_id="sess-1",
+        session_key="agent:main:telegram:group:-1001:17585",
+    )
+
+    assert result["final_response"] == "done"
+    assert adapter.sent == [
+        {
+            "chat_id": "-1001",
+            "content": '💻 Running pwd',
+            "reply_to": None,
+            "metadata": {"thread_id": "17585"},
+        }
+    ]
+    assert adapter.edits
+    assert all(call["metadata"] == {"thread_id": "17585"} for call in adapter.typing)
+
+
+def test_gateway_heartbeat_uses_informative_tool_status():
+    gateway_run = importlib.import_module("gateway.run")
+    message = gateway_run._build_gateway_heartbeat_message(
+        elapsed_mins=2,
+        latest_status={
+            "kind": "tool",
+            "tool_name": "terminal",
+            "message": gateway_run._gateway_tool_activity_sentence("terminal", "pytest tests/gateway"),
+        },
+        activity={"api_call_count": 3, "max_iterations": 90, "current_tool": "terminal"},
+    )
+
+    assert "I’m now running a command" in message
+    assert "pytest tests/gateway" in message
+    assert "Still working..." not in message
+    assert "iteration 3/90" in message
+
+
+@pytest.mark.asyncio
+async def test_run_agent_heartbeat_posts_informative_status_in_discord_thread(monkeypatch, tmp_path):
+    import yaml
+
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
+    monkeypatch.setenv("HERMES_AGENT_FIRST_NOTIFY_AFTER", "0.05")
+    monkeypatch.setenv("HERMES_AGENT_NOTIFY_INTERVAL", "0.15")
+    (tmp_path / "config.yaml").write_text(
+        yaml.dump({
+            "agent": {
+                "gateway_first_notify_after": 0.05,
+                "gateway_notify_interval": 0.15,
+            },
+            "display": {"platforms": {"discord": {"tool_progress": "all"}}},
+        }),
+        encoding="utf-8",
+    )
+
+    fake_dotenv = types.ModuleType("dotenv")
+    fake_dotenv.load_dotenv = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+
+    fake_run_agent = types.ModuleType("run_agent")
+    fake_run_agent.AIAgent = SlowProgressAgent
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+
+    adapter = ProgressCaptureAdapter(platform=Platform.DISCORD)
+    runner = _make_runner(adapter)
+    gateway_run = importlib.import_module("gateway.run")
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+    source = SessionSource(
+        platform=Platform.DISCORD,
+        chat_id="channel-1",
+        chat_type="group",
+        thread_id="thread-1",
+    )
+
+    result = await runner._run_agent(
+        message="slow please",
+        context_prompt="",
+        history=[],
+        source=source,
+        session_id="sess-heartbeat-discord",
+        session_key="agent:main:discord:group:channel-1:thread-1",
+    )
+
+    assert result["final_response"] == "done"
+    heartbeat_sends = [s for s in adapter.sent if "I’m now running a command" in s["content"]]
+    assert heartbeat_sends
+    assert all(s["metadata"] == {"thread_id": "thread-1"} for s in heartbeat_sends)
+    assert all("Still working..." not in s["content"] for s in heartbeat_sends)
+
+
+@pytest.mark.asyncio
+async def test_run_agent_heartbeat_edits_existing_message_when_possible(monkeypatch, tmp_path):
+    import yaml
+
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
+    monkeypatch.setenv("HERMES_AGENT_FIRST_NOTIFY_AFTER", "0.05")
+    monkeypatch.setenv("HERMES_AGENT_NOTIFY_INTERVAL", "0.15")
+    (tmp_path / "config.yaml").write_text(
+        yaml.dump({
+            "agent": {
+                "gateway_first_notify_after": 0.05,
+                "gateway_notify_interval": 0.15,
+            },
+            "display": {"platforms": {"discord": {"tool_progress": "all"}}},
+        }),
+        encoding="utf-8",
+    )
+
+    fake_dotenv = types.ModuleType("dotenv")
+    fake_dotenv.load_dotenv = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+
+    fake_run_agent = types.ModuleType("run_agent")
+    fake_run_agent.AIAgent = SlowProgressAgent
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+
+    adapter = ProgressCaptureAdapter(platform=Platform.DISCORD)
+    runner = _make_runner(adapter)
+    gateway_run = importlib.import_module("gateway.run")
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+    source = SessionSource(
+        platform=Platform.DISCORD,
+        chat_id="channel-1",
+        chat_type="group",
+        thread_id="thread-1",
+    )
+
+    result = await runner._run_agent(
+        message="slow please",
+        context_prompt="",
+        history=[],
+        source=source,
+        session_id="sess-heartbeat-edit",
+        session_key="agent:main:discord:group:channel-1:thread-1",
+    )
+
+    assert result["final_response"] == "done"
+    heartbeat_edits = [e for e in adapter.edits if "I’m now running a command" in e["content"]]
+    assert heartbeat_edits
+
+
+@pytest.mark.asyncio
+async def test_process_watcher_posts_completion_notice_before_synthetic_review(monkeypatch):
+    gateway_run = importlib.import_module("gateway.run")
+    monkeypatch.setenv("HERMES_AGENT_BACKGROUND_COMPLETION_NOTICE", "true")
+
+    from tools.process_registry import ProcessSession, process_registry
+
+    session = ProcessSession(
+        id="proc_notice_test",
+        command="echo done",
+        session_key="agent:main:discord:group:channel-1:thread-1",
+        exited=True,
+        exit_code=0,
+        output_buffer="done\n",
+        notify_on_complete=True,
+    )
+    with process_registry._lock:
+        process_registry._running.pop(session.id, None)
+        process_registry._finished[session.id] = session
+        process_registry._completion_consumed.discard(session.id)
+
+    adapter = CompletionNoticeAdapter(platform=Platform.DISCORD)
+    runner = _make_runner(adapter)
+    runner.session_store = SimpleNamespace(_ensure_loaded=lambda: None, _entries={})
+    runner._session_sources = {}
+
+    try:
+        await runner._run_process_watcher({
+            "session_id": session.id,
+            "check_interval": 0.01,
+            "session_key": session.session_key,
+            "platform": "discord",
+            "chat_id": "channel-1",
+            "thread_id": "thread-1",
+            "user_id": "user-1",
+            "user_name": "Andy",
+            "notify_on_complete": True,
+        })
+    finally:
+        with process_registry._lock:
+            process_registry._running.pop(session.id, None)
+            process_registry._finished.pop(session.id, None)
+            process_registry._completion_consumed.discard(session.id)
+
+    assert adapter.sent
+    assert adapter.sent[0]["content"].startswith("✅ Background process `proc_notice_test` finished")
+    assert adapter.sent[0]["metadata"] == {"thread_id": "thread-1"}
+    assert adapter.handled
+    assert adapter.handled[0].internal is True
+    assert "[IMPORTANT: Background process proc_notice_test completed" in adapter.handled[0].text
+
+
+@pytest.mark.asyncio
+async def test_run_agent_progress_edits_keep_originating_topic_metadata(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
+
+    fake_dotenv = types.ModuleType("dotenv")
+    fake_dotenv.load_dotenv = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+
+    fake_run_agent = types.ModuleType("run_agent")
+    fake_run_agent.AIAgent = FakeAgent
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+
+    adapter = MetadataEditProgressCaptureAdapter()
+    runner = _make_runner(adapter)
+    gateway_run = importlib.import_module("gateway.run")
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "fake"})
+    source = SessionSource(
+        platform=Platform.TELEGRAM,
+        chat_id="-1001",
+        chat_type="group",
+        thread_id="17585",
+    )
+
+    result = await runner._run_agent(
+        message="hello",
+        context_prompt="",
+        history=[],
+        source=source,
+        session_id="sess-progress-edit-topic",
+        session_key="agent:main:telegram:group:-1001:17585",
+    )
+
+    assert result["final_response"] == "done"
+    assert adapter.edits
+    assert all(call["metadata"] == {"thread_id": "17585"} for call in adapter.edits)
+
+
+@pytest.mark.asyncio
+async def test_run_agent_progress_does_not_use_event_message_id_for_telegram_dm(monkeypatch, tmp_path):
+    """Telegram DM progress must not reuse event message id as thread metadata."""
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
+
+    fake_dotenv = types.ModuleType("dotenv")
+    fake_dotenv.load_dotenv = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+
+    fake_run_agent = types.ModuleType("run_agent")
+    fake_run_agent.AIAgent = FakeAgent
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+
+    adapter = ProgressCaptureAdapter(platform=Platform.TELEGRAM)
+    runner = _make_runner(adapter)
+    gateway_run = importlib.import_module("gateway.run")
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+
+    source = SessionSource(
+        platform=Platform.TELEGRAM,
+        chat_id="12345",
+        chat_type="dm",
+        thread_id=None,
+    )
+
+    result = await runner._run_agent(
+        message="hello",
+        context_prompt="",
+        history=[],
+        source=source,
+        session_id="sess-2",
+        session_key="agent:main:telegram:dm:12345",
+        event_message_id="777",
+    )
+
+    assert result["final_response"] == "done"
+    assert adapter.sent
+    assert adapter.sent[0]["metadata"] is None
+    assert all(call["metadata"] is None for call in adapter.typing)
 
 
 @pytest.mark.asyncio

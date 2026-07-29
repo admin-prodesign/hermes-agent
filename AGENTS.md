@@ -297,6 +297,10 @@ Applies to TypeScript across Hermes: desktop, TUI, website, and future TS packag
 - `src/store` owns shared atoms.
 - `src/lib` owns shared pure helpers.
 
+## Platform Reply Formatting
+
+- In Discord replies, avoid Markdown tables. Use compact bullets, numbered lists, or short labeled sections instead; tables render poorly in many Discord clients and are hard to review in threads.
+
 ## File Dependency Chain
 
 ```

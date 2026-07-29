@@ -172,6 +172,94 @@ def test_connect_migrates_legacy_db_before_optional_column_indexes(tmp_path):
 
 
 
+def test_link_rejects_self_loop(kanban_home):
+    with kb.connect() as conn:
+        a = kb.create_task(conn, title="a")
+        with pytest.raises(ValueError, match="itself"):
+            kb.link_tasks(conn, a, a)
+
+
+def test_link_detects_cycle(kanban_home):
+    with kb.connect() as conn:
+        a = kb.create_task(conn, title="a")
+        b = kb.create_task(conn, title="b", parents=[a])
+        c = kb.create_task(conn, title="c", parents=[b])
+        with pytest.raises(ValueError, match="cycle"):
+            kb.link_tasks(conn, c, a)
+        with pytest.raises(ValueError, match="cycle"):
+            kb.link_tasks(conn, b, a)
+
+
+def test_recompute_ready_cascades_through_chain(kanban_home):
+    with kb.connect() as conn:
+        a = kb.create_task(conn, title="a")
+        b = kb.create_task(conn, title="b", parents=[a])
+        c = kb.create_task(conn, title="c", parents=[b])
+        assert [kb.get_task(conn, x).status for x in (a, b, c)] == \
+               ["ready", "todo", "todo"]
+        kb.complete_task(conn, a)
+        assert kb.get_task(conn, b).status == "ready"
+        kb.complete_task(conn, b)
+        assert kb.get_task(conn, c).status == "ready"
+
+
+def test_recompute_ready_keeps_explicit_initial_block_sticky(kanban_home):
+    """initial_status=blocked is a controller/human gate, not a dependency wait."""
+    with kb.connect() as conn:
+        task_id = kb.create_task(
+            conn,
+            title="approval-gated",
+            assignee="a",
+            initial_status="blocked",
+        )
+        assert kb.get_task(conn, task_id).status == "blocked"
+
+        promoted = kb.recompute_ready(conn)
+        assert promoted == 0
+        assert kb.get_task(conn, task_id).status == "blocked"
+
+        assert kb.unblock_task(conn, task_id) is True
+        assert kb.get_task(conn, task_id).status == "ready"
+
+
+def test_recompute_ready_promotes_blocked_with_done_parents(kanban_home):
+    """blocked tasks with all parents done should be promoted to ready,
+    unless the circuit-breaker failure limit has been reached."""
+    with kb.connect() as conn:
+        parent = kb.create_task(conn, title="parent", assignee="a")
+        child = kb.create_task(
+            conn, title="child", assignee="a", parents=[parent],
+        )
+        # Complete the parent
+        kb.claim_task(conn, parent)
+        kb.complete_task(conn, parent, result="ok")
+        # Manually block the child with zero failures (simulates a
+        # dependency block, not a circuit-breaker block).
+        conn.execute(
+            "UPDATE tasks SET status='blocked', consecutive_failures=0, "
+            "last_failure_error=NULL WHERE id=?",
+            (child,),
+        )
+        conn.commit()
+        assert kb.get_task(conn, child).status == "blocked"
+        # recompute_ready should promote blocked → ready
+        promoted = kb.recompute_ready(conn)
+        assert promoted == 1
+        task = kb.get_task(conn, child)
+        assert task.status == "ready"
+        assert task.consecutive_failures == 0
+        assert task.last_failure_error is None
+
+
+def test_recompute_ready_fan_in_waits_for_all_parents(kanban_home):
+    with kb.connect() as conn:
+        a = kb.create_task(conn, title="a")
+        b = kb.create_task(conn, title="b")
+        c = kb.create_task(conn, title="c", parents=[a, b])
+        kb.complete_task(conn, a)
+        assert kb.get_task(conn, c).status == "todo"
+        kb.complete_task(conn, b)
+        assert kb.get_task(conn, c).status == "ready"
 
 
 # ---------------------------------------------------------------------------

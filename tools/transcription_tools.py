@@ -8,6 +8,8 @@ Provides speech-to-text transcription with six providers:
     Auto-downloads the model (~150 MB for ``base``) on first use.
   - **groq** (free tier) — Groq Whisper API, requires ``GROQ_API_KEY``.
   - **openai** (paid) — OpenAI Whisper API, requires ``VOICE_TOOLS_OPENAI_KEY``.
+  - **openai-codex** — OpenAI Speech-to-Text using the existing Codex/ChatGPT
+    OAuth token, no separate OpenAI API key required.
   - **mistral** — Mistral Voxtral Transcribe API, requires ``MISTRAL_API_KEY``.
   - **xai** — xAI Grok STT API, requires ``XAI_API_KEY``. High accuracy,
     Inverse Text Normalization, diarization, 21 languages.
@@ -110,6 +112,7 @@ DEFAULT_PROVIDER = "local"
 DEFAULT_LOCAL_MODEL = "base"
 DEFAULT_LOCAL_STT_LANGUAGE = "en"
 DEFAULT_STT_MODEL = os.getenv("STT_OPENAI_MODEL", "whisper-1")
+DEFAULT_CODEX_STT_MODEL = os.getenv("STT_CODEX_OPENAI_MODEL", "gpt-4o-mini-transcribe")
 DEFAULT_GROQ_STT_MODEL = os.getenv("STT_GROQ_MODEL", "whisper-large-v3-turbo")
 DEFAULT_MISTRAL_STT_MODEL = os.getenv("STT_MISTRAL_MODEL", "voxtral-mini-latest")
 DEFAULT_ELEVENLABS_STT_MODEL = os.getenv("STT_ELEVENLABS_MODEL", "scribe_v2")
@@ -198,6 +201,15 @@ def _has_openai_audio_backend() -> bool:
     """Return True when OpenAI audio can use config credentials, env credentials, or the managed gateway."""
     try:
         _resolve_openai_audio_client_config()
+        return True
+    except ValueError:
+        return False
+
+
+def _has_codex_audio_backend() -> bool:
+    """Return True when Codex OAuth can be resolved for OpenAI audio."""
+    try:
+        _resolve_codex_audio_client_config()
         return True
     except ValueError:
         return False
@@ -343,6 +355,7 @@ BUILTIN_STT_PROVIDERS = frozenset({
     "local_command",
     "groq",
     "openai",
+    "openai-codex",
     "mistral",
     "xai",
     "elevenlabs",
@@ -1022,6 +1035,14 @@ def _get_provider(stt_config: dict) -> str:
             )
             return "none"
 
+        if provider == "openai-codex":
+            if _HAS_OPENAI and _has_codex_audio_backend():
+                return "openai-codex"
+            logger.warning(
+                "STT provider 'openai-codex' configured but Codex OAuth credentials are unavailable"
+            )
+            return "none"
+
         if provider == "mistral":
             if _HAS_MISTRAL and _resolve_provider_key("MISTRAL_API_KEY", "mistral"):
                 return "mistral"
@@ -1081,6 +1102,9 @@ def _get_provider(stt_config: dict) -> str:
     if _HAS_OPENAI and _has_openai_audio_backend():
         logger.info("No local STT available, using OpenAI Whisper API")
         return "openai"
+    if _HAS_OPENAI and _has_codex_audio_backend():
+        logger.info("No local/direct OpenAI STT available, using Codex OAuth for OpenAI Speech-to-Text")
+        return "openai-codex"
     # Only auto-select Mistral if the SDK is already present — don't trigger a
     # lazy-install during passive auto-detection. Explicit `provider: mistral`
     # (above) does lazy-install on first transcription call.
@@ -1998,6 +2022,59 @@ def _transcribe_openai(
         logger.error("%s transcription failed: %s", provider_label, e, exc_info=True)
         return {"success": False, "transcript": "", "error": f"Transcription failed: {e}"}
 
+
+def _transcribe_openai_codex(file_path: str, model_name: str) -> Dict[str, Any]:
+    """Transcribe using OpenAI Speech-to-Text with Codex/ChatGPT OAuth."""
+    try:
+        api_key, base_url = _resolve_codex_audio_client_config()
+    except ValueError as exc:
+        return {
+            "success": False,
+            "transcript": "",
+            "error": str(exc),
+        }
+
+    if not _HAS_OPENAI:
+        return {"success": False, "transcript": "", "error": "openai package not installed"}
+
+    if model_name in GROQ_MODELS:
+        logger.info("Model %s not available on OpenAI, using %s", model_name, DEFAULT_CODEX_STT_MODEL)
+        model_name = DEFAULT_CODEX_STT_MODEL
+
+    try:
+        from openai import OpenAI, APIError, APIConnectionError, APITimeoutError
+        client = OpenAI(api_key=api_key, base_url=base_url, timeout=30, max_retries=0)
+        try:
+            with open(file_path, "rb") as audio_file:
+                transcription = client.audio.transcriptions.create(
+                    model=model_name,
+                    file=audio_file,
+                    response_format="text" if model_name == "whisper-1" else "json",
+                )
+
+            transcript_text = _extract_transcript_text(transcription)
+            logger.info(
+                "Transcribed %s via OpenAI Codex OAuth STT (%s, %d chars)",
+                Path(file_path).name, model_name, len(transcript_text),
+            )
+            return {"success": True, "transcript": transcript_text, "provider": "openai-codex"}
+        finally:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
+
+    except PermissionError:
+        return {"success": False, "transcript": "", "error": f"Permission denied: {file_path}"}
+    except APIConnectionError as e:
+        return {"success": False, "transcript": "", "error": f"Connection error: {e}"}
+    except APITimeoutError as e:
+        return {"success": False, "transcript": "", "error": f"Request timeout: {e}"}
+    except APIError as e:
+        return {"success": False, "transcript": "", "error": f"API error: {e}"}
+    except Exception as e:
+        logger.error("OpenAI Codex OAuth transcription failed: %s", e, exc_info=True)
+        return {"success": False, "transcript": "", "error": f"Transcription failed: {e}"}
+
 # ---------------------------------------------------------------------------
 # Provider: mistral (Voxtral Transcribe API)
 # ---------------------------------------------------------------------------
@@ -2434,6 +2511,11 @@ def _transcribe_prepared_audio(file_path: str, model: Optional[str] = None) -> D
         model_name = model or openai_cfg.get("model", DEFAULT_STT_MODEL)
         return _transcribe_openai(file_path, model_name)
 
+    if provider == "openai-codex":
+        codex_cfg = stt_config.get("openai-codex", {})
+        model_name = model or codex_cfg.get("model", DEFAULT_CODEX_STT_MODEL)
+        return _transcribe_openai_codex(file_path, model_name)
+
     if provider == "mistral":
         mistral_cfg = stt_config.get("mistral") or {}
         model_name = model or mistral_cfg.get("model", DEFAULT_MISTRAL_STT_MODEL)
@@ -2515,7 +2597,8 @@ def _transcribe_prepared_audio(file_path: str, model: Optional[str] = None) -> D
             f"transcription, configure {LOCAL_STT_COMMAND_ENV} or install a local whisper CLI, "
             "set GROQ_API_KEY for free Groq Whisper, set MISTRAL_API_KEY for Mistral "
             "Voxtral Transcribe, configure xAI OAuth or set XAI_API_KEY for xAI Grok STT, "
-            "set ELEVENLABS_API_KEY for ElevenLabs Scribe, or set VOICE_TOOLS_OPENAI_KEY "
+            "set ELEVENLABS_API_KEY for ElevenLabs Scribe, configure Codex OAuth "
+            "for OpenAI Speech-to-Text, or set VOICE_TOOLS_OPENAI_KEY "
             "or OPENAI_API_KEY for the OpenAI Whisper API."
         ),
     }
@@ -2654,6 +2737,35 @@ def _resolve_openai_audio_client_config() -> tuple[str, str]:
     return managed_gateway.nous_user_token, urljoin(
         f"{managed_gateway.gateway_origin.rstrip('/')}/", "v1"
     )
+
+
+def _resolve_codex_audio_client_config() -> tuple[str, str]:
+    """Return OpenAI API audio config backed by Hermes Codex OAuth credentials."""
+    stt_config = _load_stt_config()
+    codex_cfg = stt_config.get("openai-codex", {})
+    cfg_api_key = codex_cfg.get("api_key", "")
+    cfg_base_url = codex_cfg.get("base_url", "")
+    if cfg_api_key:
+        return cfg_api_key, (cfg_base_url or OPENAI_BASE_URL)
+
+    try:
+        from hermes_cli.auth import resolve_codex_runtime_credentials
+
+        creds = resolve_codex_runtime_credentials(refresh_if_expiring=True)
+    except Exception as exc:
+        raise ValueError(
+            "No usable Codex OAuth credentials found for OpenAI Speech-to-Text. "
+            "Authenticate the openai-codex provider with `hermes auth` or `hermes model`."
+        ) from exc
+
+    api_key = str(creds.get("api_key", "") or "").strip()
+    if not api_key:
+        raise ValueError("Codex OAuth credentials did not provide an access token")
+
+    # Codex chat itself uses chatgpt.com/backend-api/codex, but the same OAuth
+    # bearer is accepted by api.openai.com for /v1/audio/transcriptions.  The
+    # ChatGPT backend rejects direct audio transcription uploads with 403.
+    return api_key, (cfg_base_url or OPENAI_BASE_URL)
 
 
 def _extract_transcript_text(transcription: Any) -> str:

@@ -55,6 +55,22 @@ class TestTurnRunner:
         assert asyncio.iscoroutinefunction(TurnRunner.send_progress_messages)
         assert runner._ctx is ctx
 
+    def test_progress_callback_updates_shared_heartbeat_tool_status(self):
+        latest_heartbeat_status = {}
+        ctx = TurnContext(
+            source=type("Source", (), {"chat_id": "chan"})(),
+            _run_still_current=lambda: True,
+            progress_queue=queue_mod.Queue(),
+            tool_progress_enabled=True,
+            progress_mode="all",
+            latest_heartbeat_status=latest_heartbeat_status,
+        )
+        runner = _make_runner(ctx)
+        runner.progress_callback("tool.started", "web_search", "latest upstream")
+        assert latest_heartbeat_status["kind"] == "tool"
+        assert latest_heartbeat_status["tool_name"] == "web_search"
+        assert latest_heartbeat_status["message"]
+
     def test_send_progress_messages_no_queue_returns(self):
         ctx = TurnContext(progress_queue=None)
         runner = _make_runner(ctx)
