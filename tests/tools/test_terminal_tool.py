@@ -30,6 +30,46 @@ def test_terminal_schema_advertises_persistent_env_state():
     assert "once per session" in description
 
 
+def test_gateway_terminal_blocks_systemd_gateway_restart(monkeypatch):
+    """A gateway-hosted terminal call must not restart a gateway service.
+
+    This is a hard guard below approval/yolo: if an agent turn running inside
+    the gateway executes ``systemctl --user restart hermes-gateway*.service``,
+    systemd waits for the very service that owns the command to stop, creating
+    a deactivation/resume loop.
+    """
+    monkeypatch.setenv("_HERMES_GATEWAY", "1")
+
+    result = terminal_tool._check_gateway_service_control_guard(
+        "systemctl --user restart hermes-gateway-pdone.service"
+    )
+
+    assert result is not None
+    assert result["approved"] is False
+    assert result["hardline"] is True
+    assert "cannot restart/stop/kill Hermes gateway services" in result["message"]
+
+
+def test_gateway_terminal_allows_non_gateway_systemctl(monkeypatch):
+    monkeypatch.setenv("_HERMES_GATEWAY", "1")
+
+    result = terminal_tool._check_gateway_service_control_guard(
+        "systemctl --user restart unrelated-worker.service"
+    )
+
+    assert result is None
+
+
+def test_non_gateway_terminal_allows_gateway_systemctl_for_supervisors(monkeypatch):
+    monkeypatch.delenv("_HERMES_GATEWAY", raising=False)
+
+    result = terminal_tool._check_gateway_service_control_guard(
+        "systemctl --user restart hermes-gateway-pdone.service"
+    )
+
+    assert result is None
+
+
 def test_printf_literal_sudo_does_not_trigger_rewrite(monkeypatch):
     monkeypatch.delenv("SUDO_PASSWORD", raising=False)
     monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
