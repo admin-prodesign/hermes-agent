@@ -1118,7 +1118,8 @@ class LineAdapter(BasePlatformAdapter):
                     )
                     shutil.copy2(src, dest)
                     record.update({"path": str(dest), "bytes": dest.stat().st_size})
-                    if self.capture_transcribe_audio and media_type in {"audio", "voice"} and transcription is None:
+                    is_audio_media = media_type in {"audio", "voice"} or media_type.startswith("audio/")
+                    if self.capture_transcribe_audio and is_audio_media and transcription is None:
                         try:
                             result = _transcribe_audio_for_capture(str(src))
                             transcription = {
