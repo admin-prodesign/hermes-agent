@@ -1166,6 +1166,27 @@ class TestLoadGatewayConfig:
         assert Platform.RELAY in config.platforms
         assert config.platforms[Platform.RELAY].enabled is True
 
+    def test_bridges_mattermost_auto_thread_heading_exclusions_to_extra(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        config_path = hermes_home / "config.yaml"
+        config_path.write_text(
+            "mattermost:\n"
+            "  enabled: true\n"
+            "  auto_thread_root_heading: true\n"
+            "  auto_thread_root_heading_disabled_channels:\n"
+            "  - chan_sip\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        config = load_gateway_config()
+        mattermost = config.platforms[Platform.MATTERMOST]
+
+        assert mattermost.extra["auto_thread_root_heading"] is True
+        assert mattermost.extra["auto_thread_root_heading_disabled_channels"] == ["chan_sip"]
+
     def test_bridges_group_sessions_per_user_from_config_yaml(self, tmp_path, monkeypatch):
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()

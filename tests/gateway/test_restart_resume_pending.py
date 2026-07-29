@@ -1101,6 +1101,50 @@ async def test_startup_auto_resume_includes_crash_recovery():
 
 
 @pytest.mark.asyncio
+async def test_startup_auto_resume_suspends_unsafe_gateway_service_restart():
+    """Do not replay interrupted turns that tried to control the gateway unit."""
+    runner, adapter = make_restart_runner()
+    source = make_restart_source(chat_id="loop-chat")
+    pending_entry = SessionEntry(
+        session_key="agent:main:telegram:dm:loop-chat",
+        session_id="sid-loop",
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+        origin=source,
+        platform=Platform.TELEGRAM,
+        chat_type="dm",
+        resume_pending=True,
+        resume_reason="shutdown_timeout",
+        last_resume_marked_at=datetime.now(),
+    )
+    runner.session_store._entries = {pending_entry.session_key: pending_entry}
+    runner.session_store._db.get_messages.return_value = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "function": {
+                        "name": "terminal",
+                        "arguments": '{"command": "systemctl --user restart hermes-gateway-pdone.service"}',
+                    },
+                }
+            ],
+        }
+    ]
+    adapter.handle_message = AsyncMock()
+
+    scheduled = runner._schedule_resume_pending_sessions()
+
+    assert scheduled == 0
+    adapter.handle_message.assert_not_called()
+    assert pending_entry.suspended is True
+    assert pending_entry.resume_pending is False
+    assert pending_entry.resume_reason is None
+    runner.session_store._save.assert_called()
+
+
+@pytest.mark.asyncio
 async def test_startup_auto_resume_skips_stale_entries():
     """Entries older than the freshness window must not be auto-resumed."""
     runner, adapter = make_restart_runner()

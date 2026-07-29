@@ -142,6 +142,10 @@ dependencies = [
   # through this native module in-process; shared metrics installs no network
   # exporter and consumes only its bounded projection.
   "nemo-relay>=0.6.0,<0.7; (sys_platform == 'darwin' and platform_machine == 'arm64') or (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64') or (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'win32' and platform_machine == 'ARM64')",
+  # Decode iPhone HEIC/HEIF uploads at gateway ingest time and transcode them
+  # to JPEG before handing them to vision providers, which rarely accept HEIC
+  # natively. Required for Telegram document uploads with image/heic.
+  "pillow-heif==1.4.0",
 ]
 
 [project.optional-dependencies]

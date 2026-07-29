@@ -46,6 +46,8 @@ Deletion rules (same as the original PR):
 - The state directory `$HERMES_HOME/disk-cleanup/` is itself excluded
 - `$HERMES_HOME/logs/`, `memories/`, `sessions/`, `skills/`, `plugins/`,
   and config files are never tracked
+- Auto-tracking resolves canonical paths first and never tracks files inside
+  durable `tests/` suites, including access through symlink aliases
 - Backup/restore is scoped to `tracked.json` — the plugin never touches
   agent logs
 - Atomic writes: `.tmp` → backup → rename

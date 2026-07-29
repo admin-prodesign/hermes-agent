@@ -45,7 +45,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -835,6 +835,45 @@ def apply_bitwarden_secrets(
 
 
 # ---------------------------------------------------------------------------
+# Profile-local aliases
+# ---------------------------------------------------------------------------
+
+
+def expand_secret_aliases(
+    secrets: Dict[str, str],
+    aliases: Mapping[str, str],
+    warnings: Optional[List[str]] = None,
+) -> Dict[str, str]:
+    """Return fetched secrets plus validated target-to-source aliases."""
+    if not aliases:
+        return secrets
+
+    expanded = dict(secrets)
+    for target, source in aliases.items():
+        if not isinstance(target, str) or not isinstance(source, str):
+            if warnings is not None:
+                warnings.append("Skipping Bitwarden alias with non-string key/value")
+            continue
+        target = target.strip()
+        source = source.strip()
+        if not _is_valid_env_name(target) or not _is_valid_env_name(source):
+            if warnings is not None:
+                warnings.append(
+                    f"Skipping Bitwarden alias {target!r} -> {source!r}: "
+                    "both names must be valid env-var names"
+                )
+            continue
+        if source not in secrets:
+            if warnings is not None:
+                warnings.append(
+                    f"Skipping Bitwarden alias {target}: source {source} not found"
+                )
+            continue
+        expanded[target] = secrets[source]
+    return expanded
+
+
+# ---------------------------------------------------------------------------
 # SecretSource adapter — the registry-facing wrapper around this module.
 # ---------------------------------------------------------------------------
 
@@ -900,6 +939,10 @@ class BitwardenSource(SecretSource):
             "server_url": {
                 "description": "Region / self-hosted endpoint (empty = US Cloud)",
                 "default": "",
+            },
+            "aliases": {
+                "description": "Target env var to source-secret aliases",
+                "default": {},
             },
         }
 
@@ -974,8 +1017,15 @@ class BitwardenSource(SecretSource):
                 )
             return result
 
+        alias_warnings: List[str] = []
+        secrets = expand_secret_aliases(
+            secrets,
+            cfg.get("aliases") or {},
+            alias_warnings,
+        )
         result.secrets = secrets
         result.warnings.extend(warnings)
+        result.warnings.extend(alias_warnings)
         return result
 
     def remediation(self, kind, cfg: dict) -> str:

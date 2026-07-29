@@ -146,6 +146,30 @@ class TestMattermostConfigLoading:
         assert mc.token == "mm-tok-abc123"
         assert mc.extra.get("url") == "https://mm.example.com"
 
+    def test_explicit_top_level_mattermost_disable_wins_over_env_credentials(
+        self, monkeypatch, tmp_path
+    ):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        (hermes_home / "config.yaml").write_text(
+            "mattermost:\n"
+            "  enabled: false\n"
+            "  require_mention: true\n"
+        )
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+        monkeypatch.setenv("MATTERMOST_TOKEN", "mm-tok-abc123")
+        monkeypatch.setenv("MATTERMOST_URL", "https://mm.example.com")
+
+        from gateway.config import load_gateway_config
+
+        config = load_gateway_config()
+        mattermost = config.platforms[Platform.MATTERMOST]
+
+        assert mattermost.enabled is False
+        assert mattermost.token == "mm-tok-abc123"
+        assert mattermost.extra.get("url") == "https://mm.example.com"
+        assert "_enabled_explicit" not in mattermost.extra
+
     def test_mattermost_not_loaded_without_token(self, monkeypatch):
         monkeypatch.delenv("MATTERMOST_TOKEN", raising=False)
         monkeypatch.delenv("MATTERMOST_URL", raising=False)
@@ -194,7 +218,7 @@ def _make_adapter():
     config = PlatformConfig(
         enabled=True,
         token="test-token",
-        extra={"url": "https://mm.example.com"},
+        extra={"url": "https://mm.example.com", "pd_one_policy_bridge": False},
     )
     adapter = MattermostAdapter(config)
     return adapter
@@ -262,6 +286,35 @@ class TestMattermostTruncateMessage:
         msg = "x" * 4000
         chunks = self.adapter.truncate_message(msg, 4000)
         assert len(chunks) == 1
+
+
+# ---------------------------------------------------------------------------
+# Gateway progress/status routing
+# ---------------------------------------------------------------------------
+
+class TestMattermostProgressRouting:
+    def test_root_post_progress_uses_triggering_post_as_thread_root(self):
+        """Root-channel mentions have no source.thread_id, but progress must thread."""
+        from gateway.run import _mattermost_progress_thread_route
+
+        thread_id, reply_to = _mattermost_progress_thread_route(
+            source_thread_id=None,
+            event_message_id="root_post",
+        )
+
+        assert thread_id == "root_post"
+        assert reply_to == "root_post"
+
+    def test_reply_progress_preserves_existing_root_and_reply_anchor(self):
+        from gateway.run import _mattermost_progress_thread_route
+
+        thread_id, reply_to = _mattermost_progress_thread_route(
+            source_thread_id="thread_root",
+            event_message_id="reply_post",
+        )
+
+        assert thread_id == "thread_root"
+        assert reply_to == "reply_post"
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +407,111 @@ class TestMattermostSend:
         assert result.success is True
         payload = self.adapter._session.post.call_args[1]["json"]
         assert payload["root_id"] == "root_post"
+
+    @pytest.mark.asyncio
+    async def test_send_uses_metadata_thread_id_as_root_id(self):
+        """Status/progress sends carry thread context in metadata, not reply_to."""
+        self.adapter._reply_mode = "thread"
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"id": "status_post"})
+        mock_resp.text = AsyncMock(return_value="")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        mock_get_resp = AsyncMock()
+        mock_get_resp.status = 200
+        mock_get_resp.json = AsyncMock(return_value={"id": "root_post", "root_id": ""})
+        mock_get_resp.text = AsyncMock(return_value="")
+        mock_get_resp.__aenter__ = AsyncMock(return_value=mock_get_resp)
+        mock_get_resp.__aexit__ = AsyncMock(return_value=False)
+
+        self.adapter._session.post = MagicMock(return_value=mock_resp)
+        self.adapter._session.get = MagicMock(return_value=mock_get_resp)
+
+        result = await self.adapter.send(
+            "channel_1",
+            "⏳ Still working...",
+            metadata={"thread_id": "root_post"},
+        )
+
+        assert result.success is True
+        payload = self.adapter._session.post.call_args[1]["json"]
+        assert payload["root_id"] == "root_post"
+
+    @pytest.mark.asyncio
+    async def test_send_local_file_uses_metadata_thread_id_as_root_id(self, tmp_path):
+        """MEDIA/file attachments must preserve thread metadata like text sends."""
+        self.adapter._reply_mode = "thread"
+        file_path = tmp_path / "chart.png"
+        file_path.write_bytes(b"png-bytes")
+
+        self.adapter._upload_file = AsyncMock(return_value="file_123")
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"id": "file_post"})
+        mock_resp.text = AsyncMock(return_value="")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        mock_get_resp = AsyncMock()
+        mock_get_resp.status = 200
+        mock_get_resp.json = AsyncMock(return_value={"id": "thread_root", "root_id": ""})
+        mock_get_resp.text = AsyncMock(return_value="")
+        mock_get_resp.__aenter__ = AsyncMock(return_value=mock_get_resp)
+        mock_get_resp.__aexit__ = AsyncMock(return_value=False)
+
+        self.adapter._session.post = MagicMock(return_value=mock_resp)
+        self.adapter._session.get = MagicMock(return_value=mock_get_resp)
+
+        result = await self.adapter.send_image_file(
+            "channel_1",
+            str(file_path),
+            metadata={"thread_id": "thread_root"},
+        )
+
+        assert result.success is True
+        payload = self.adapter._session.post.call_args[1]["json"]
+        assert payload["file_ids"] == ["file_123"]
+        assert payload["root_id"] == "thread_root"
+
+    @pytest.mark.asyncio
+    async def test_send_multiple_images_uses_metadata_thread_id_as_root_id(self, tmp_path):
+        """Batched Mattermost image uploads must stay in the originating thread."""
+        self.adapter._reply_mode = "thread"
+        image_path = tmp_path / "chart.png"
+        image_path.write_bytes(b"png-bytes")
+
+        self.adapter._upload_file = AsyncMock(return_value="image_file_123")
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"id": "image_post"})
+        mock_resp.text = AsyncMock(return_value="")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        mock_get_resp = AsyncMock()
+        mock_get_resp.status = 200
+        mock_get_resp.json = AsyncMock(return_value={"id": "thread_root", "root_id": ""})
+        mock_get_resp.text = AsyncMock(return_value="")
+        mock_get_resp.__aenter__ = AsyncMock(return_value=mock_get_resp)
+        mock_get_resp.__aexit__ = AsyncMock(return_value=False)
+
+        self.adapter._session.post = MagicMock(return_value=mock_resp)
+        self.adapter._session.get = MagicMock(return_value=mock_get_resp)
+
+        await self.adapter.send_multiple_images(
+            "channel_1",
+            [(f"file://{image_path}", "")],
+            metadata={"thread_id": "thread_root"},
+        )
+
+        payload = self.adapter._session.post.call_args[1]["json"]
+        assert payload["file_ids"] == ["image_file_123"]
+        assert payload["root_id"] == "thread_root"
 
     @pytest.mark.asyncio
     async def test_send_without_thread_no_root_id(self):
@@ -462,24 +620,6 @@ class TestMattermostSend:
         assert payload["root_id"] == "root_post"
 
     @pytest.mark.asyncio
-    async def test_progress_send_with_invalid_thread_root_never_falls_back_flat(self):
-        """Tool/status/progress bubbles must stay quiet when the thread is broken."""
-        self.adapter._reply_mode = "thread"
-        self.adapter._api_get = AsyncMock(return_value={"id": "bad_root", "root_id": ""})
-        self.adapter._api_post = AsyncMock(return_value={})
-
-        result = await self.adapter.send(
-            "channel_1",
-            "⚙️ terminal...",
-            metadata={"thread_id": "bad_root"},
-        )
-
-        assert result.success is False
-        assert self.adapter._api_post.call_count == 1
-        payload = self.adapter._api_post.call_args_list[0][0][1]
-        assert payload["root_id"] == "bad_root"
-
-    @pytest.mark.asyncio
     async def test_send_api_failure(self):
         """When API returns error, send should return failure."""
         mock_resp = AsyncMock()
@@ -494,6 +634,116 @@ class TestMattermostSend:
         result = await self.adapter.send("channel_1", "Hello!")
 
         assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_send_typing_includes_thread_parent_id_from_metadata(self):
+        """Threaded Mattermost typing indicators should include parent_id."""
+        self.adapter._bot_user_id = "bot_user"
+        self.adapter._api_post = AsyncMock(return_value={"status": "OK"})
+
+        await self.adapter.send_typing("channel_1", metadata={"thread_id": "root_post"})
+
+        self.adapter._api_post.assert_awaited_once_with(
+            "users/bot_user/typing",
+            {"channel_id": "channel_1", "parent_id": "root_post"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_processing_reactions_success_lifecycle(self):
+        """Mattermost processing lifecycle should swap 👀 for ✅ on success."""
+        from gateway.platforms.base import MessageEvent, ProcessingOutcome
+
+        self.adapter._bot_user_id = "bot_user"
+        self.adapter._api_post = AsyncMock(return_value={"ok": True})
+        self.adapter._api_delete = AsyncMock(return_value=True)
+        event = MessageEvent(text="hello", message_id="post_1")
+
+        await self.adapter.on_processing_start(event)
+        await self.adapter.on_processing_complete(event, ProcessingOutcome.SUCCESS)
+
+        self.adapter._api_post.assert_any_await(
+            "reactions",
+            {"user_id": "bot_user", "post_id": "post_1", "emoji_name": "eyes"},
+        )
+        self.adapter._api_delete.assert_awaited_once_with(
+            "users/bot_user/posts/post_1/reactions/eyes"
+        )
+        self.adapter._api_post.assert_any_await(
+            "reactions",
+            {"user_id": "bot_user", "post_id": "post_1", "emoji_name": "white_check_mark"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_processing_reactions_failure_lifecycle(self):
+        """Mattermost processing lifecycle should swap 👀 for ❌ on failure."""
+        from gateway.platforms.base import MessageEvent, ProcessingOutcome
+
+        self.adapter._bot_user_id = "bot_user"
+        self.adapter._api_post = AsyncMock(return_value={"ok": True})
+        self.adapter._api_delete = AsyncMock(return_value=True)
+        event = MessageEvent(text="hello", message_id="post_1")
+
+        await self.adapter.on_processing_complete(event, ProcessingOutcome.FAILURE)
+
+        self.adapter._api_post.assert_awaited_once_with(
+            "reactions",
+            {"user_id": "bot_user", "post_id": "post_1", "emoji_name": "x"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_message_calls_api_delete(self):
+        """delete_message() should delete the Mattermost post by ID."""
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.text = AsyncMock(return_value="")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        self.adapter._session.delete = MagicMock(return_value=mock_resp)
+
+        result = await self.adapter.delete_message("channel_1", "post_to_delete")
+
+        assert result is True
+        call_args = self.adapter._session.delete.call_args
+        assert "/api/v4/posts/post_to_delete" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_delete_message_failure_returns_false(self):
+        mock_resp = AsyncMock()
+        mock_resp.status = 403
+        mock_resp.text = AsyncMock(return_value="Forbidden")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        self.adapter._session.delete = MagicMock(return_value=mock_resp)
+
+        assert await self.adapter.delete_message("channel_1", "post_to_delete") is False
+
+    @pytest.mark.asyncio
+    async def test_delete_message_uses_transient_session_when_primary_closed(self):
+        """Progress cleanup should still delete if the long-lived connector closed."""
+        self.adapter._session.closed = True
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.text = AsyncMock(return_value="")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        transient_session = MagicMock()
+        transient_session.delete = MagicMock(return_value=mock_resp)
+
+        session_cm = AsyncMock()
+        session_cm.__aenter__ = AsyncMock(return_value=transient_session)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("aiohttp.ClientSession", return_value=session_cm) as client_session:
+            result = await self.adapter.delete_message("channel_1", "post_to_delete")
+
+        assert result is True
+        client_session.assert_called_once()
+        call_args = transient_session.delete.call_args
+        assert "/api/v4/posts/post_to_delete" in call_args[0][0]
 
 
 # ---------------------------------------------------------------------------
@@ -532,6 +782,31 @@ class TestMattermostWebSocketParsing:
         # @mention is stripped from the message text
         assert msg_event.text == "Hello from Matrix!"
         assert msg_event.message_id == "post_abc"
+
+
+    @pytest.mark.asyncio
+    async def test_ignored_channel_is_silently_skipped_before_mention_processing(self):
+        self.adapter.config.extra["ignored_channels"] = ["chan_ignored"]
+        self.adapter._maybe_append_mention_translation = AsyncMock()
+        post_data = {
+            "id": "post_ignored",
+            "user_id": "user_123",
+            "channel_id": "chan_ignored",
+            "message": "@hermes-bot should be owned by another runtime",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        assert not self.adapter.handle_message.called
+        self.adapter._maybe_append_mention_translation.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_ignore_own_messages(self):
@@ -682,6 +957,193 @@ class TestMattermostWebSocketParsing:
         assert msg_event.source.thread_id == "root_post_123"
 
     @pytest.mark.asyncio
+    async def test_root_channel_post_uses_own_post_id_as_thread_id(self):
+        """Top-level Mattermost posts should get isolated sessions per post/thread."""
+        post_data = {
+            "id": "root_post_456",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Start a separate task",
+            "root_id": "",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+        assert self.adapter.handle_message.called
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.source.thread_id == "root_post_456"
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_fetches_root_thread_context(self):
+        """A mention in an existing thread should prepend earlier thread posts."""
+        post_data = {
+            "id": "post_reply",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id What did we decide?",
+            "root_id": "root_post_123",
+        }
+        self.adapter._api_get = AsyncMock(return_value={
+            "order": ["root_post_123", "older_reply", "post_reply"],
+            "posts": {
+                "root_post_123": {
+                    "id": "root_post_123",
+                    "user_id": "user_root",
+                    "message": "Original question before Hermes was mentioned",
+                    "create_at": 1000,
+                },
+                "older_reply": {
+                    "id": "older_reply",
+                    "user_id": "user_older",
+                    "message": "Earlier answer in the Mattermost thread",
+                    "file_ids": ["prior_file_1"],
+                    "create_at": 2000,
+                },
+                "post_reply": post_data,
+            },
+        })
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        self.adapter._api_get.assert_any_await("posts/root_post_123/thread")
+        self.adapter._api_get.assert_any_await("files/prior_file_1/info")
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.source.thread_id == "root_post_123"
+        assert "Mattermost thread context" in msg_event.channel_context
+        assert "Original question before Hermes was mentioned" in msg_event.channel_context
+        assert "Earlier answer in the Mattermost thread" in msg_event.channel_context
+        assert "prior_file_1" in msg_event.channel_context
+        assert "What did we decide?" not in msg_event.channel_context
+
+    @pytest.mark.asyncio
+    async def test_thread_context_fetch_failure_does_not_drop_message(self):
+        """Thread API failures should not prevent the triggering mention from running."""
+        post_data = {
+            "id": "post_reply",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Continue",
+            "root_id": "root_post_123",
+        }
+        self.adapter._api_get = AsyncMock(side_effect=RuntimeError("thread unavailable"))
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        assert self.adapter.handle_message.called
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.text == "Continue"
+        assert msg_event.channel_context is None
+
+    @pytest.mark.asyncio
+    async def test_pd_one_policy_bridge_injects_hermes_policy_context(self, tmp_path):
+        """PD One profile can inject Hermes sender policy cache into context."""
+        cache = tmp_path / "users"
+        cache.mkdir()
+        (cache / "user_123.json").write_text(json.dumps({
+            "schema": "pd-one.mattermost-policy-resolution.v1",
+            "found": True,
+            "active": True,
+            "decision": "allow_dm",
+            "turnHandling": "scoped_dm_allowed",
+            "language": "zh-tw",
+            "roles": ["facilities"],
+            "safeScopes": ["facilities", "appsheet-readonly"],
+            "tools": {"reads": "allowed", "writes": "confirm"},
+            "approval": {"writes": False, "gatewayRestart": False},
+            "dataAccess": {"credentials": "deny", "operationalDocs": "read-summarize-only"},
+            "setupResponse": {"en": "setup needed"},
+        }), encoding="utf-8")
+        self.adapter.config.extra.update({
+            "pd_one_policy_bridge": True,
+            "pd_one_hermes_policy_root": "/hermes/profiles/pdone",
+            "pd_one_policy_cache_users": str(cache),
+        })
+        post_data = {
+            "id": "post_root",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Can I update this?",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert "PD One Hermes permission bridge" in msg_event.channel_context
+        assert '"requesterMattermostUserId":"user_123"' in msg_event.channel_context
+        assert '"roles":["facilities"]' in msg_event.channel_context
+        assert '"dataAccessSummary"' in msg_event.channel_context
+        assert '"denied":["credentials"]' in msg_event.channel_context
+        assert '"read_limited":["operationalDocs"]' in msg_event.channel_context
+        assert "mattermost-channels.md" in msg_event.channel_context
+        assert "require approved-user authorization" in msg_event.channel_context
+        assert "1:1 equivalent substance and detail" in msg_event.channel_context
+        assert "every heading, paragraph, bullet, numbered item" in msg_event.channel_context
+        assert "feedback/recommendation" in msg_event.channel_context
+
+    @pytest.mark.asyncio
+    async def test_pd_one_policy_bridge_missing_cache_marks_lookup_failure(self, tmp_path):
+        """Missing Hermes policy cache entries are explicit, not silent allows."""
+        cache = tmp_path / "users"
+        cache.mkdir()
+        self.adapter.config.extra.update({
+            "pd_one_policy_bridge": True,
+            "pd_one_hermes_policy_root": "/hermes/profiles/pdone",
+            "pd_one_policy_cache_users": str(cache),
+        })
+        post_data = {
+            "id": "post_root",
+            "user_id": "unknown_user",
+            "channel_id": "chan_456",
+            "message": "@bot_user_id Help me",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@unknown",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert "PD One Hermes permission bridge" in msg_event.channel_context
+        assert '"found":false' in msg_event.channel_context
+        assert "stop scoped work" in msg_event.channel_context
+
+    @pytest.mark.asyncio
     async def test_invalid_post_json_ignored(self):
         """Invalid JSON in data.post should be silently ignored."""
         event = {
@@ -694,6 +1156,325 @@ class TestMattermostWebSocketParsing:
 
         await self.adapter._handle_ws_event(event)
         assert not self.adapter.handle_message.called
+
+
+class TestMattermostMissedMentionBackfill:
+    def setup_method(self):
+        self.adapter = _make_adapter()
+        self.adapter._bot_user_id = "bot_user_id"
+        self.adapter._bot_username = "pd_one_bot"
+        self.adapter.handle_message = AsyncMock()
+        self.adapter._backfill_watermark_ms = 1000
+        self.adapter._backfill_overlap_seconds = 0
+        self.adapter._backfill_seen_ttl_seconds = 3600
+        self.adapter._backfill_unreplied_lookback_seconds = 21600
+
+    @pytest.mark.asyncio
+    async def test_backfill_replays_recent_mention_through_normal_parser(self):
+        post = {
+            "id": "missed_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot Confirmed, apply it",
+            "create_at": 2000,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        async def fake_post(path, payload):
+            assert path == "teams/team_1/posts/search"
+            assert payload["terms"] == "@pd_one_bot"
+            return {"order": ["missed_post"], "posts": {"missed_post": post}}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(side_effect=fake_post)
+
+        replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 1
+        assert self.adapter._backfill_watermark_ms == 2000
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "missed_post"
+        assert msg_event.text == "Confirmed, apply it"
+        assert msg_event.source.thread_id == "missed_post"
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_recent_mention_when_bot_already_replied_in_thread(self):
+        post = {
+            "id": "recent_replied_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot how are reminders generated?",
+            "root_id": "thread_root",
+            "create_at": 2000,
+        }
+        bot_reply = {
+            "id": "bot_reply_after",
+            "user_id": "bot_user_id",
+            "channel_id": "chan_456",
+            "message": "Handled",
+            "root_id": "thread_root",
+            "create_at": 2500,
+        }
+        self.adapter._backfill_watermark_ms = 2000
+        self.adapter._backfill_overlap_seconds = 600
+        self.adapter._backfill_seen_post_ids = {}
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "posts/thread_root/thread":
+                return {
+                    "order": ["recent_replied_post", "bot_reply_after"],
+                    "posts": {"recent_replied_post": post, "bot_reply_after": bot_reply},
+                }
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["recent_replied_post"], "posts": {"recent_replied_post": post}})
+
+        replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 0
+        assert not self.adapter.handle_message.called
+        assert "recent_replied_post" in self.adapter._backfill_seen_post_ids
+
+    @pytest.mark.asyncio
+    async def test_backfill_bot_replied_skip_uses_seen_cache_on_repeated_poll(self):
+        post = {
+            "id": "recent_replied_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot how are reminders generated?",
+            "root_id": "thread_root",
+            "create_at": 2000,
+        }
+        bot_reply = {
+            "id": "bot_reply_after",
+            "user_id": "bot_user_id",
+            "channel_id": "chan_456",
+            "message": "Handled",
+            "root_id": "thread_root",
+            "create_at": 2500,
+        }
+        self.adapter._backfill_watermark_ms = 2000
+        self.adapter._backfill_overlap_seconds = 600
+        self.adapter._backfill_seen_post_ids = {}
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "posts/thread_root/thread":
+                return {
+                    "order": ["recent_replied_post", "bot_reply_after"],
+                    "posts": {"recent_replied_post": post, "bot_reply_after": bot_reply},
+                }
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["recent_replied_post"], "posts": {"recent_replied_post": post}})
+
+        assert await self.adapter._run_backfill_once() == 0
+        assert await self.adapter._run_backfill_once() == 0
+        thread_fetches = [call.args[0] for call in self.adapter._api_get.await_args_list if call.args[0] == "posts/thread_root/thread"]
+        assert thread_fetches == ["posts/thread_root/thread"]
+        assert not self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
+    async def test_backfill_preserves_thread_root_for_missed_reply(self):
+        post = {
+            "id": "missed_reply",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot continue",
+            "root_id": "thread_root",
+            "create_at": 3000,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            if path == "posts/thread_root/thread":
+                return {"order": ["thread_root", "missed_reply"], "posts": {"missed_reply": post}}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["missed_reply"], "posts": {"missed_reply": post}})
+
+        await self.adapter._run_backfill_once()
+
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "missed_reply"
+        assert msg_event.source.thread_id == "thread_root"
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_posts_older_than_overlap_window(self):
+        old_post = {
+            "id": "old_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot old",
+            "create_at": 999,
+        }
+        self.adapter._api_get = AsyncMock(return_value=[{"id": "team_1"}])
+        self.adapter._api_post = AsyncMock(return_value={"order": ["old_post"], "posts": {"old_post": old_post}})
+
+        replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 0
+        assert not self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
+    async def test_backfill_replays_older_unreplied_mention_within_unreplied_lookback(self):
+        old_unreplied_post = {
+            "id": "old_unreplied_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot still needs a reply",
+            "create_at": 500,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "posts/old_unreplied_post/thread":
+                return {"order": ["old_unreplied_post"], "posts": {"old_unreplied_post": old_unreplied_post}}
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["old_unreplied_post"], "posts": {"old_unreplied_post": old_unreplied_post}})
+
+        with patch("plugins.platforms.mattermost.adapter.time.time", return_value=7.0):
+            replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 1
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "old_unreplied_post"
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_older_mention_when_bot_already_replied_in_thread(self):
+        old_replied_post = {
+            "id": "old_replied_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot already handled",
+            "create_at": 500,
+        }
+        bot_reply = {
+            "id": "bot_reply",
+            "user_id": "bot_user_id",
+            "channel_id": "chan_456",
+            "message": "Handled",
+            "create_at": 750,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "posts/old_replied_post/thread":
+                return {
+                    "order": ["old_replied_post", "bot_reply"],
+                    "posts": {"old_replied_post": old_replied_post, "bot_reply": bot_reply},
+                }
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["old_replied_post"], "posts": {"old_replied_post": old_replied_post}})
+
+        with patch("plugins.platforms.mattermost.adapter.time.time", return_value=7.0):
+            replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 0
+        assert not self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
+    async def test_backfill_long_overlap_catches_multi_minute_late_mentions(self):
+        delayed_post = {
+            "id": "delayed_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot delayed by minutes",
+            "create_at": 5000,
+        }
+        self.adapter._backfill_watermark_ms = 600_000
+        self.adapter._backfill_overlap_seconds = 600
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["delayed_post"], "posts": {"delayed_post": delayed_post}})
+
+        replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 1
+        msg_event = self.adapter.handle_message.call_args[0][0]
+        assert msg_event.message_id == "delayed_post"
+
+    @pytest.mark.asyncio
+    async def test_backfill_seen_cache_prevents_replay_inside_long_overlap(self):
+        post = {
+            "id": "repeat_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot only once",
+            "create_at": 2000,
+        }
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            if path == "channels/chan_456":
+                return {"id": "chan_456", "type": "O"}
+            return {}
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["repeat_post"], "posts": {"repeat_post": post}})
+
+        assert await self.adapter._run_backfill_once() == 1
+        assert await self.adapter._run_backfill_once() == 0
+        assert self.adapter.handle_message.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_backfill_skips_expired_posts_before_thread_lookup(self):
+        expired_post = {
+            "id": "expired_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@pd_one_bot expired",
+            "create_at": 500,
+        }
+        self.adapter._backfill_watermark_ms = 10_000
+        self.adapter._backfill_overlap_seconds = 1
+        self.adapter._backfill_unreplied_lookback_seconds = 1
+
+        async def fake_get(path):
+            if path == "users/me/teams":
+                return [{"id": "team_1"}]
+            raise AssertionError(f"expired post should not fetch thread/channel: {path}")
+
+        self.adapter._api_get = AsyncMock(side_effect=fake_get)
+        self.adapter._api_post = AsyncMock(return_value={"order": ["expired_post"], "posts": {"expired_post": expired_post}})
+
+        with patch("plugins.platforms.mattermost.adapter.time.time", return_value=10.0):
+            replayed = await self.adapter._run_backfill_once()
+
+        assert replayed == 0
+        assert not self.adapter.handle_message.called
+        assert [call.args[0] for call in self.adapter._api_get.await_args_list] == ["users/me/teams"]
 
 
 # ---------------------------------------------------------------------------
@@ -740,10 +1521,30 @@ class TestMattermostMentionBehavior:
             assert self.adapter.handle_message.called
 
     @pytest.mark.asyncio
+    async def test_config_require_mention_false_responds_to_all(self):
+        """config.extra require_mention=false should respond without env vars."""
+        self.adapter.config.extra["require_mention"] = False
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MATTERMOST_REQUIRE_MENTION", None)
+            os.environ.pop("MATTERMOST_FREE_RESPONSE_CHANNELS", None)
+            await self.adapter._handle_ws_event(self._make_event("hello"))
+            assert self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
     async def test_free_response_channel_responds_without_mention(self):
         """Messages in free-response channels don't need @mention."""
         with patch.dict(os.environ, {"MATTERMOST_FREE_RESPONSE_CHANNELS": "chan_456,chan_789"}):
             os.environ.pop("MATTERMOST_REQUIRE_MENTION", None)
+            await self.adapter._handle_ws_event(self._make_event("hello", channel_id="chan_456"))
+            assert self.adapter.handle_message.called
+
+    @pytest.mark.asyncio
+    async def test_config_free_response_channel_responds_without_mention(self):
+        """config.extra free_response_channels should bypass mention requirement."""
+        self.adapter.config.extra["free_response_channels"] = ["chan_456", "chan_789"]
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MATTERMOST_REQUIRE_MENTION", None)
+            os.environ.pop("MATTERMOST_FREE_RESPONSE_CHANNELS", None)
             await self.adapter._handle_ws_event(self._make_event("hello", channel_id="chan_456"))
             assert self.adapter.handle_message.called
 
@@ -785,6 +1586,34 @@ class TestMattermostFileUpload:
     def setup_method(self):
         self.adapter = _make_adapter()
         self.adapter._session = MagicMock()
+
+    def test_unicode_filename_is_not_percent_encoded(self):
+        """Mattermost should receive the original UTF-8 attachment name."""
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        filename = "器管-20260709-01-宿舍規定違反懲處公告_中英.docx"
+        form = _build_file_upload_form(
+            "channel_1",
+            b"fake-docx",
+            filename,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+        payload = form()
+        file_disposition = payload._parts[1][0].headers["Content-Disposition"]
+
+        assert f'filename="{filename}"' in file_disposition
+        assert "%E5" not in file_disposition
+
+    def test_upload_filename_replaces_header_control_characters(self):
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        form = _build_file_upload_form("channel_1", b"data", "report\r\nInjected.txt")
+        file_disposition = form()._parts[1][0].headers["Content-Disposition"]
+
+        assert "report__Injected.txt" in file_disposition
+        assert "\r" not in file_disposition
+        assert "\n" not in file_disposition
 
     @pytest.mark.asyncio
     @patch("tools.url_safety.is_safe_url", return_value=True)
@@ -835,6 +1664,193 @@ class TestMattermostFileUpload:
 
         assert result.success is True
         assert result.message_id == "post_with_file"
+
+
+# ---------------------------------------------------------------------------
+# Passive thread root heading automation
+# ---------------------------------------------------------------------------
+
+class TestMattermostAutoThreadRootHeading:
+    def setup_method(self):
+        self.adapter = _make_adapter()
+        self.adapter._bot_user_id = "bot_user_id"
+        self.adapter.config.extra["auto_thread_root_heading"] = True
+        self.adapter.handle_message = AsyncMock()
+
+    def _reply_event(self, message="Follow-up reply"):
+        post_data = {
+            "id": "reply_post",
+            "root_id": "root_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": message,
+        }
+        return {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+    def test_detects_existing_markdown_heading(self):
+        assert self.adapter._has_markdown_heading("### Proper title\n\nBody") is True
+        assert self.adapter._has_markdown_heading("body without heading") is False
+        assert self.adapter._has_markdown_heading("\n\n# Title") is True
+
+    def test_detects_bilingual_heading_title(self):
+        assert self.adapter._heading_title_is_bilingual("出貨延遲檢討 / Shipping Delay Review") is True
+        assert self.adapter._heading_title_is_bilingual("Shipping Delay Review / 出貨延遲檢討") is True
+        assert self.adapter._heading_title_is_bilingual("PD One 測試") is False
+        assert self.adapter._heading_title_is_bilingual("Shipping Delay Review") is False
+
+    def test_fallback_thread_root_heading_title_is_bilingual(self):
+        assert self.adapter._fallback_thread_root_heading_title("請幫忙確認出貨延遲") == "請幫忙確認出貨延遲 / Thread Discussion"
+        assert self.adapter._fallback_thread_root_heading_title("Shipping delay needs review") == "討論串 / Shipping delay needs review"
+
+    @pytest.mark.asyncio
+    async def test_existing_heading_utility_output_must_preserve_source_text(self):
+        class _Message:
+            content = "Rewritten Thread Title / 改寫後標題"
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        with patch("plugins.platforms.mattermost.adapter.async_call_llm", new=AsyncMock(return_value=_Response())) as llm:
+            title = await self.adapter._generate_thread_root_heading_title(
+                "## Existing Thread Title\n\nBody",
+                "reply",
+                existing_heading_title="Existing Thread Title",
+            )
+
+        assert title == "Existing Thread Title / 討論串"
+        llm.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_existing_heading_accepts_utility_translation_that_preserves_source_text(self):
+        class _Message:
+            content = "Existing Thread Title / 既有討論標題"
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        with patch("plugins.platforms.mattermost.adapter.async_call_llm", new=AsyncMock(return_value=_Response())):
+            title = await self.adapter._generate_thread_root_heading_title(
+                "## Existing Thread Title\n\nBody",
+                "reply",
+                existing_heading_title="Existing Thread Title",
+            )
+
+        assert title == "Existing Thread Title / 既有討論標題"
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_adds_heading_before_mention_gate(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "Can someone look at this?",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="出貨延遲檢討 / Shipping Delay Review")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("I can help"))
+
+        self.adapter._api_put.assert_awaited_once_with(
+            "posts/root_post/patch",
+            {"message": "##### 出貨延遲檢討 / Shipping Delay Review\n\nCan someone look at this?"},
+        )
+        # No @mention in the reply, so the normal agent path should still be skipped.
+        assert getattr(self.adapter.handle_message, "call_count") == 0
+
+    @pytest.mark.asyncio
+    async def test_own_thread_reply_adds_heading_but_does_not_reenter_agent(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "Untitled user question",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="使用者問題 / User Question")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+        event = self._reply_event("PD One answer")
+        post = json.loads(event["data"]["post"])
+        post["id"] = "bot_reply_post"
+        post["user_id"] = "bot_user_id"
+        event["data"]["post"] = json.dumps(post)
+        event["data"]["sender_name"] = "@pd_one_bot"
+
+        await self.adapter._handle_ws_event(event)
+
+        self.adapter._api_put.assert_awaited_once_with(
+            "posts/root_post/patch",
+            {"message": "##### 使用者問題 / User Question\n\nUntitled user question"},
+        )
+        assert getattr(self.adapter.handle_message, "call_count") == 0
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_updates_existing_non_bilingual_heading(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "## Existing Thread Title\n\nBody",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="Existing Thread Title / 既有討論標題")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._generate_thread_root_heading_title.assert_awaited_once_with(
+            "## Existing Thread Title\n\nBody",
+            "another reply",
+            existing_heading_title="Existing Thread Title",
+        )
+        self.adapter._api_put.assert_awaited_once_with(
+            "posts/root_post/patch",
+            {"message": "## Existing Thread Title / 既有討論標題\n\nBody"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_root_that_already_has_bilingual_heading(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "## 既有討論標題 / Existing Thread Title\n\nBody",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="Ignored Title")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._generate_thread_root_heading_title.assert_not_awaited()
+        self.adapter._api_put.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_when_disabled(self):
+        self.adapter.config.extra["auto_thread_root_heading"] = False
+        self.adapter._api_get = AsyncMock(return_value={"message": "Root"})
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._api_get.assert_not_awaited()
+        self.adapter._api_put.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_configured_disabled_channel(self):
+        self.adapter.config.extra["auto_thread_root_heading_disabled_channels"] = ["chan_456"]
+        self.adapter._api_get = AsyncMock(return_value={"message": "Root"})
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._api_get.assert_not_awaited()
+        self.adapter._api_put.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -1061,6 +2077,33 @@ class TestMattermostMediaTypes:
         assert not msg.media_types[0].startswith("image/")
         assert not msg.media_types[0].startswith("audio/")
 
+    @pytest.mark.asyncio
+    async def test_attachment_download_uses_large_file_timeout(self):
+        """Slow valid Mattermost files should not be capped by the JSON API 30s timeout."""
+        self.adapter.config.extra["file_download_timeout"] = 900
+        self.adapter.config.extra["file_download_sock_read_timeout"] = 180
+        file_info = {"name": "料桶.抽料機清潔.pptx", "mime_type": "application/octet-stream"}
+        self.adapter._api_get = AsyncMock(return_value=file_info)
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.read = AsyncMock(return_value=b"PK\x03\x04 fake pptx")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+        self.adapter._session = MagicMock()
+        mock_get = MagicMock(return_value=mock_resp)
+        self.adapter._session.get = mock_get
+
+        with patch("gateway.platforms.base.cache_document_from_bytes", return_value="/tmp/cleaning.pptx"):
+            await self.adapter._handle_ws_event(self._make_event(["slow_pptx"]))
+
+        timeout = mock_get.call_args.kwargs["timeout"]
+        assert timeout.total == 900
+        assert timeout.sock_read == 180
+        msg = self.adapter.handle_message.call_args[0][0]
+        assert msg.media_urls == ["/tmp/cleaning.pptx"]
+        assert msg.media_types == ["application/octet-stream"]
+
 
 
 @pytest.mark.asyncio
@@ -1122,3 +2165,201 @@ async def test_mattermost_dm_post_does_not_seed_thread_root():
     msg_event = adapter.handle_message.call_args[0][0]
     assert msg_event.source.thread_id is None
     assert msg_event.source.message_id == "dm_post_123"
+class TestMattermostThreadRehydrationCache:
+    """Thread rehydration should avoid re-sending already loaded context/files."""
+
+    def setup_method(self):
+        self.adapter = _make_adapter()
+        self.adapter._bot_user_id = "bot_user_id"
+
+    @pytest.mark.asyncio
+    async def test_same_session_only_returns_unseen_thread_posts_and_files(self):
+        thread = {
+            "order": ["root", "old_reply", "new_reply", "trigger"],
+            "posts": {
+                "root": {
+                    "id": "root",
+                    "user_id": "user_root",
+                    "message": "Root context",
+                    "file_ids": ["root_file"],
+                    "create_at": 1,
+                },
+                "old_reply": {
+                    "id": "old_reply",
+                    "user_id": "user_old",
+                    "message": "Already loaded reply",
+                    "file_ids": ["old_file"],
+                    "create_at": 2,
+                },
+                "new_reply": {
+                    "id": "new_reply",
+                    "user_id": "user_new",
+                    "message": "Fresh reply",
+                    "file_ids": ["new_file"],
+                    "create_at": 3,
+                },
+                "trigger": {
+                    "id": "trigger",
+                    "user_id": "user_trigger",
+                    "message": "@bot_user_id latest request",
+                    "file_ids": [],
+                    "create_at": 4,
+                },
+            },
+        }
+        self.adapter._api_get = AsyncMock(return_value=thread)
+
+        first_context, first_files = await self.adapter._fetch_thread_context(
+            "root",
+            "old_reply",
+            session_key="agent:main:mattermost:channel:chan:root",
+        )
+        second_context, second_files = await self.adapter._fetch_thread_context(
+            "root",
+            "trigger",
+            session_key="agent:main:mattermost:channel:chan:root",
+        )
+
+        assert "Root context" in first_context
+        assert "Fresh reply" in first_context
+        assert first_files == ["root_file", "new_file"]
+        assert second_context is None
+        assert second_files == []
+
+    @pytest.mark.asyncio
+    async def test_different_session_rehydrates_independently(self):
+        thread = {
+            "order": ["root", "trigger"],
+            "posts": {
+                "root": {
+                    "id": "root",
+                    "user_id": "user_root",
+                    "message": "Root context",
+                    "file_ids": ["root_file"],
+                    "create_at": 1,
+                },
+                "trigger": {
+                    "id": "trigger",
+                    "user_id": "user_trigger",
+                    "message": "@bot_user_id latest request",
+                    "file_ids": [],
+                    "create_at": 2,
+                },
+            },
+        }
+        self.adapter._api_get = AsyncMock(return_value=thread)
+
+        first_context, first_files = await self.adapter._fetch_thread_context(
+            "root",
+            "trigger",
+            session_key="session-a",
+        )
+        second_context, second_files = await self.adapter._fetch_thread_context(
+            "root",
+            "trigger",
+            session_key="session-b",
+        )
+
+        assert "Root context" in first_context
+        assert first_files == ["root_file"]
+        assert "Root context" in second_context
+        assert second_files == ["root_file"]
+
+
+# ---------------------------------------------------------------------------
+# Mention translation append
+# ---------------------------------------------------------------------------
+
+class TestMattermostMentionTranslation:
+    @pytest.mark.asyncio
+    async def test_appends_utility_translation_when_enabled(self):
+        adapter = _make_adapter()
+        adapter.config.extra["auto_translate_mentioned_channel_messages"] = True
+        adapter._generate_mention_translation = AsyncMock(return_value="請檢查今天的排程。")
+        adapter._api_put = AsyncMock(return_value={"id": "post123"})
+        post = {"id": "post123", "message": "@pd-one please check today's schedule."}
+
+        await adapter._maybe_append_mention_translation(
+            post,
+            has_mention=True,
+            channel_type_raw="O",
+        )
+
+        adapter._api_put.assert_awaited_once()
+        path, payload = adapter._api_put.await_args.args
+        assert path == "posts/post123/patch"
+        assert "**Translation / 翻譯 (utility-agent):**" in payload["message"]
+        assert "請檢查今天的排程。" in payload["message"]
+        assert post["message"] == payload["message"]
+
+    @pytest.mark.asyncio
+    async def test_skips_dm_and_existing_translation_marker(self):
+        adapter = _make_adapter()
+        adapter.config.extra["auto_translate_mentioned_channel_messages"] = True
+        adapter._generate_mention_translation = AsyncMock(return_value="translation")
+        adapter._api_put = AsyncMock(return_value={"id": "post123"})
+
+        await adapter._maybe_append_mention_translation(
+            {"id": "post123", "message": "@pd-one hello"},
+            has_mention=True,
+            channel_type_raw="D",
+        )
+        await adapter._maybe_append_mention_translation(
+            {"id": "post124", "message": "@pd-one hello\n\n**Translation / 翻譯 (utility-agent):**\n你好"},
+            has_mention=True,
+            channel_type_raw="O",
+        )
+
+        adapter._generate_mention_translation.assert_not_awaited()
+        adapter._api_put.assert_not_awaited()
+
+    def test_mixed_chinese_heading_with_english_instructions_targets_chinese(self):
+        adapter = _make_adapter()
+        message = (
+            "#### 2026/06/15 邱老師面談（商周） / 2026/06/15 Interview with Teacher Chiu (Business Weekly)\n\n"
+            "@pd_one_bot Transcribe this meeting consisting of two recordings, and provide a bilingual meeting report."
+        )
+
+        assert adapter._mention_translation_target_language(message) == "Traditional Chinese"
+
+    @pytest.mark.asyncio
+    async def test_mention_translation_prompt_warns_not_to_keep_english_instructions(self):
+        adapter = _make_adapter()
+
+        class _Message:
+            content = "#### 2026/06/15 邱老師面談（商周）\n\n@pd_one_bot 請轉錄這場由兩段錄音組成的會議。"
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        message = (
+            "#### 2026/06/15 邱老師面談（商周） / 2026/06/15 Interview with Teacher Chiu (Business Weekly)\n\n"
+            "@pd_one_bot Transcribe this meeting consisting of two recordings, and provide a bilingual meeting report."
+        )
+        with patch("plugins.platforms.mattermost.adapter.async_call_llm", new=AsyncMock(return_value=_Response())) as llm:
+            translated = await adapter._generate_mention_translation(message)
+
+        assert "請轉錄" in translated
+        call = llm.await_args.kwargs
+        prompt_text = "\n".join(m["content"] for m in call["messages"])
+        assert "into Traditional Chinese" in prompt_text
+        assert "do not leave English instructions in English just because the heading contains Chinese" in prompt_text
+
+    def test_yaml_bridge_exports_mention_translation_env(self, monkeypatch):
+        from plugins.platforms.mattermost.adapter import _apply_yaml_config
+
+        monkeypatch.delenv("MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES", raising=False)
+        _apply_yaml_config({}, {"auto_translate_mentioned_channel_messages": True})
+
+        assert os.environ["MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES"] == "true"
+
+    def test_yaml_bridge_exports_ignored_channels_env(self, monkeypatch):
+        from plugins.platforms.mattermost.adapter import _apply_yaml_config
+
+        monkeypatch.delenv("MATTERMOST_IGNORED_CHANNELS", raising=False)
+        _apply_yaml_config({}, {"ignored_channels": ["chanA", "chanB"]})
+
+        assert os.environ["MATTERMOST_IGNORED_CHANNELS"] == "chanA,chanB"
