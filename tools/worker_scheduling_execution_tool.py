@@ -9,11 +9,11 @@ a general shell.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 from typing import Any
 
+from tools.environments.local import build_subprocess_env
 from tools.registry import registry
 
 TOOLSET = "worker_scheduling_execution"
@@ -142,7 +142,7 @@ def worker_scheduling_execute(
     except ValueError as exc:
         return _json_result(success=False, error="invalid_request", detail=str(exc))
 
-    env = os.environ.copy()
+    env = build_subprocess_env(scrub_secrets=False, inherit_profile_home=False)
     env["PYTHONUNBUFFERED"] = "1"
 
     try:
@@ -150,7 +150,10 @@ def worker_scheduling_execute(
             cmd,
             cwd=str(PROJECT_DIR),
             env=env,
+            stdin=subprocess.DEVNULL,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             timeout=timeout_seconds,
             check=False,
