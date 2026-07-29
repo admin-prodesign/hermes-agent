@@ -1713,6 +1713,8 @@ def load_gateway_config() -> GatewayConfig:
                     bridged["allowed_topics"] = platform_cfg["allowed_topics"]
                 if "free_response_channels" in platform_cfg:
                     bridged["free_response_channels"] = platform_cfg["free_response_channels"]
+                if "ignored_channels" in platform_cfg:
+                    bridged["ignored_channels"] = platform_cfg["ignored_channels"]
                 if "mention_patterns" in platform_cfg:
                     bridged["mention_patterns"] = platform_cfg["mention_patterns"]
                 if "exclusive_bot_mentions" in platform_cfg:
@@ -1743,6 +1745,14 @@ def load_gateway_config() -> GatewayConfig:
                         bridged["channel_prompts"] = {str(k): v for k, v in channel_prompts.items()}
                     else:
                         bridged["channel_prompts"] = channel_prompts
+                if plat == Platform.MATTERMOST and "pd_one_channel_scopes" in platform_cfg:
+                    scopes = platform_cfg["pd_one_channel_scopes"]
+                    if isinstance(scopes, dict):
+                        bridged["pd_one_channel_scopes"] = {str(k): v for k, v in scopes.items()}
+                    else:
+                        bridged["pd_one_channel_scopes"] = scopes
+                if plat == Platform.MATTERMOST and "pd_one_admin_prefix" in platform_cfg:
+                    bridged["pd_one_admin_prefix"] = platform_cfg["pd_one_admin_prefix"]
                 if "gateway_restart_notification" in platform_cfg:
                     bridged["gateway_restart_notification"] = platform_cfg["gateway_restart_notification"]
                 if "typing_indicator" in platform_cfg:
@@ -1852,8 +1862,9 @@ def load_gateway_config() -> GatewayConfig:
                     # require_mention (not a telegram: block), so the telegram plugin's
                     # apply_yaml_config_fn hook — which only runs when a telegram config
                     # block exists — can't cover the no-telegram-block case (#3979).
-                    if not os.getenv("TELEGRAM_REQUIRE_MENTION"):
-                        os.environ["TELEGRAM_REQUIRE_MENTION"] = str(_tl_require_mention).lower()
+                    # Keep profile policy in PlatformConfig.extra. Writing
+                    # YAML-derived values into os.environ contaminates sibling
+                    # profiles in multiplexed gateways.
 
             # Telegram settings → env vars / extra: migrated to the telegram
             # plugin's apply_yaml_config_fn hook
@@ -1865,9 +1876,10 @@ def load_gateway_config() -> GatewayConfig:
 
             # Signal settings → env vars (env vars take precedence)
             signal_cfg = yaml_cfg.get("signal", {})
-            if isinstance(signal_cfg, dict):
-                if "require_mention" in signal_cfg and not os.getenv("SIGNAL_REQUIRE_MENTION"):
-                    os.environ["SIGNAL_REQUIRE_MENTION"] = str(signal_cfg["require_mention"]).lower()
+            if isinstance(signal_cfg, dict) and "require_mention" in signal_cfg:
+                _signal_plat = platforms_data.setdefault(Platform.SIGNAL.value, {})
+                _signal_extra = _signal_plat.setdefault("extra", {})
+                _signal_extra.setdefault("require_mention", signal_cfg["require_mention"])
 
             # DingTalk settings → env vars: migrated to the dingtalk plugin's
             # apply_yaml_config_fn hook (plugins/platforms/dingtalk/adapter.py).
