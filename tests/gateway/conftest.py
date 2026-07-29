@@ -256,6 +256,21 @@ _ensure_telegram_mock()
 _ensure_discord_mock()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_live_gateway_env(monkeypatch):
+    """Keep gateway tests independent from this machine's live gateway env."""
+    for env_name in (
+        "DISCORD_ALLOWED_CHANNELS",
+        "DISCORD_IGNORED_CHANNELS",
+        "DISCORD_FREE_RESPONSE_CHANNELS",
+        "DISCORD_NO_THREAD_CHANNELS",
+        "DISCORD_AUTO_THREAD",
+        "DISCORD_THREAD_REQUIRE_MENTION",
+        "DISCORD_HISTORY_BACKFILL",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+
+
 # ---------------------------------------------------------------------------
 # Plugin-adapter anti-pattern guard
 # ---------------------------------------------------------------------------

@@ -390,6 +390,7 @@ async def test_session_hygiene_messages_stay_in_originating_topic(monkeypatch, t
     result = await runner._handle_message(event)
 
     assert result == "ok"
+    assert runner._run_agent.call_args.kwargs["raw_event_text"] == "hello"
     # Compression warnings are no longer sent to users — compression
     # happens silently with server-side logging only.
     assert len(adapter.sent) == 0

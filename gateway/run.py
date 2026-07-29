@@ -575,6 +575,23 @@ def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
     return redacted
 
 
+def _mattermost_progress_thread_route(
+    *,
+    source_thread_id: Optional[str],
+    event_message_id: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Return Mattermost progress/status route as (thread_id, reply_to).
+
+    Mattermost only sets ``source.thread_id`` for posts that are already replies.
+    A root-channel mention has no source thread yet, but synthetic progress/status
+    posts must still use the triggering post as ``root_id``; otherwise they show
+    up as channel-root leaks before the final reply.
+    """
+    thread_id = source_thread_id or event_message_id
+    reply_to = event_message_id if event_message_id else None
+    return thread_id, reply_to
+
+
 def _prepare_gateway_status_message(platform: Any, event_type: str, message: str) -> Optional[str]:
     """Filter/sanitize agent status callbacks before platform delivery.
 
@@ -714,6 +731,69 @@ def _resolve_gateway_display_bool(
     if value is None:
         return bool(default)
     return bool(value)
+def _gateway_tool_activity_sentence(tool_name: Optional[str], preview: Optional[str]) -> str:
+    """Cheap, template-based description for gateway progress heartbeats.
+
+    This intentionally does not call an LLM.  It turns tool-progress state into
+    an "I'm now doing X" breadcrumb suitable for periodic chat heartbeats.
+    """
+    tool = str(tool_name or "").strip() or "a tool"
+    raw_preview = str(preview or "").strip().replace("\n", " ")
+    if len(raw_preview) > 120:
+        raw_preview = raw_preview[:117].rstrip() + "..."
+    preview_part = f": `{raw_preview}`" if raw_preview else ""
+    pretty = tool.replace("_", " ")
+    verbs = {
+        "browser_navigate": "opening a web page",
+        "browser_click": "interacting with the browser",
+        "browser_type": "typing into the browser",
+        "browser_snapshot": "checking the browser page",
+        "browser_console": "checking browser page state",
+        "read_file": "reading a file",
+        "search_files": "searching the codebase",
+        "patch": "editing files",
+        "write_file": "writing a file",
+        "terminal": "running a command",
+        "execute_code": "running a Python helper",
+        "web_search": "searching the web",
+        "web_extract": "reading web content",
+        "delegate_task": "checking with a subagent",
+        "cronjob": "working with scheduled jobs",
+        "process": "checking a background process",
+    }
+    action = verbs.get(tool, f"using {pretty}")
+    return f"I’m now {action}{preview_part}."
+
+
+def _build_gateway_heartbeat_message(
+    *,
+    elapsed_mins: int,
+    latest_status: Optional[Dict[str, Any]] = None,
+    activity: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Build an informative long-running heartbeat without extra model calls."""
+    elapsed = f"{elapsed_mins} min elapsed" if elapsed_mins else "under 1 min elapsed"
+    activity = activity or {}
+    latest_text = ""
+    if latest_status:
+        latest_text = str(latest_status.get("message") or "").strip()
+    if not latest_text and activity.get("current_tool"):
+        latest_text = _gateway_tool_activity_sentence(activity.get("current_tool"), None)
+    if not latest_text and activity.get("last_activity_desc"):
+        latest_text = str(activity.get("last_activity_desc") or "").strip()
+    if not latest_text:
+        latest_text = "Still working — waiting for the current model/tool step to finish."
+    latest_text = latest_text.replace("\n", " ").strip()
+    if len(latest_text) > 240:
+        latest_text = latest_text[:237].rstrip() + "..."
+
+    detail_parts: List[str] = []
+    if activity.get("api_call_count") is not None and activity.get("max_iterations"):
+        detail_parts.append(f"iteration {activity.get('api_call_count')}/{activity.get('max_iterations')}")
+    if activity.get("current_tool") and "current_tool" not in str(latest_status or {}):
+        detail_parts.append(f"tool: {activity.get('current_tool')}")
+    detail = f" ({elapsed}; {', '.join(detail_parts)})" if detail_parts else f" ({elapsed})"
+    return f"⏳ {latest_text}{detail}"
 
 
 def _telegramize_command_mentions(text: str, platform: Any) -> str:
@@ -1717,8 +1797,21 @@ def _bridge_max_turns_from_config(home: "Path") -> None:
         return
 
     agent_cfg = cfg.get("agent", {})
-    if isinstance(agent_cfg, dict) and "max_turns" in agent_cfg:
-        os.environ["HERMES_MAX_ITERATIONS"] = str(agent_cfg["max_turns"])
+    if isinstance(agent_cfg, dict):
+        if "max_turns" in agent_cfg:
+            os.environ["HERMES_MAX_ITERATIONS"] = str(agent_cfg["max_turns"])
+        if "gateway_timeout" in agent_cfg:
+            os.environ["HERMES_AGENT_TIMEOUT"] = str(agent_cfg["gateway_timeout"])
+        if "gateway_timeout_warning" in agent_cfg:
+            os.environ["HERMES_AGENT_TIMEOUT_WARNING"] = str(agent_cfg["gateway_timeout_warning"])
+        if "gateway_notify_interval" in agent_cfg:
+            os.environ["HERMES_AGENT_NOTIFY_INTERVAL"] = str(agent_cfg["gateway_notify_interval"])
+        if "gateway_first_notify_after" in agent_cfg:
+            os.environ["HERMES_AGENT_FIRST_NOTIFY_AFTER"] = str(agent_cfg["gateway_first_notify_after"])
+        if "gateway_background_completion_notice" in agent_cfg:
+            os.environ["HERMES_AGENT_BACKGROUND_COMPLETION_NOTICE"] = str(
+                agent_cfg["gateway_background_completion_notice"]
+            ).lower()
     # config-authoritative knobs for the session-search index (config.yaml
     # sessions.* wins over stale env; env stays the cross-process carrier).
     sessions_cfg = cfg.get("sessions", {})
@@ -2006,6 +2099,12 @@ if _config_path.exists():
                 os.environ["HERMES_AGENT_TIMEOUT_WARNING"] = str(_agent_cfg["gateway_timeout_warning"])
             if "gateway_notify_interval" in _agent_cfg:
                 os.environ["HERMES_AGENT_NOTIFY_INTERVAL"] = str(_agent_cfg["gateway_notify_interval"])
+            if "gateway_first_notify_after" in _agent_cfg:
+                os.environ["HERMES_AGENT_FIRST_NOTIFY_AFTER"] = str(_agent_cfg["gateway_first_notify_after"])
+            if "gateway_background_completion_notice" in _agent_cfg:
+                os.environ["HERMES_AGENT_BACKGROUND_COMPLETION_NOTICE"] = str(
+                    _agent_cfg["gateway_background_completion_notice"]
+                ).lower()
             if "restart_drain_timeout" in _agent_cfg:
                 os.environ["HERMES_RESTART_DRAIN_TIMEOUT"] = str(_agent_cfg["restart_drain_timeout"])
             if "gateway_auto_continue_freshness" in _agent_cfg:
@@ -2484,6 +2583,9 @@ def _try_resolve_fallback_provider() -> dict | None:
     return None
 
 
+_IMAGE_MEDIA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif"}
+
+
 def _event_media_type_at(event, index: int) -> str:
     """Return the per-attachment MIME for the attachment at *index*.
 
@@ -2497,15 +2599,23 @@ def _event_media_type_at(event, index: int) -> str:
 def _event_media_is_image(event, index: int) -> bool:
     """True if the attachment at *index* is an image.
 
-    Trust the per-attachment MIME when present. Only fall back to the
-    message-level ``PHOTO`` type when this attachment's MIME is unknown --
-    otherwise a document (or any non-image) uploaded alongside an image in
-    the same message gets mis-routed as an image, base64'd into a vision
-    content part, and the provider 400s ("Could not process image").
+    Trust the per-attachment MIME when present. When it is missing, use the
+    attachment's own file extension before falling back to the message-level
+    ``PHOTO`` type. Mattermost leaves MIME blank for legacy Word ``.doc``
+    files; treating every MIME-less attachment in a mixed photo post as an
+    image silently drops those documents from agent context.
     """
     mtype = _event_media_type_at(event, index)
     if mtype:
         return mtype.startswith("image/")
+    media_urls = getattr(event, "media_urls", None) or []
+    if index < len(media_urls):
+        from urllib.parse import unquote, urlsplit
+
+        media_path = unquote(urlsplit(str(media_urls[index])).path)
+        extension = os.path.splitext(media_path)[1].lower()
+        if extension:
+            return extension in _IMAGE_MEDIA_EXTENSIONS
     return getattr(event, "message_type", None) == MessageType.PHOTO
 
 
@@ -2536,6 +2646,16 @@ def _event_media_is_video(event, index: int) -> bool:
     return getattr(event, "message_type", None) == MessageType.VIDEO
 
 
+def _is_inbound_image_media(path: str, media_type: str, message_type: MessageType) -> bool:
+    """Return True only for attachments that should be sent as image input."""
+    mtype = (media_type or "").lower()
+    if mtype:
+        return mtype.startswith("image/")
+    if message_type != MessageType.PHOTO:
+        return False
+    return os.path.splitext(path)[1].lower() in _IMAGE_MEDIA_EXTENSIONS
+
+
 def _build_media_placeholder(event) -> str:
     """Build a text placeholder for media-only events so they aren't dropped.
 
@@ -2546,8 +2666,10 @@ def _build_media_placeholder(event) -> str:
     """
     parts = []
     media_urls = getattr(event, "media_urls", None) or []
+    media_types = getattr(event, "media_types", None) or []
     for i, url in enumerate(media_urls):
-        if _event_media_is_image(event, i):
+        mtype = media_types[i] if i < len(media_types) else ""
+        if _is_inbound_image_media(url, mtype, getattr(event, "message_type", None)):
             parts.append(f"[User sent an image: {url}]")
         elif _event_media_is_audio(event, i):
             parts.append(f"[User sent audio: {url}]")
@@ -3239,6 +3361,62 @@ def _should_clear_resume_pending_after_turn(agent_result: dict) -> bool:
     if agent_result.get("completed") is False:
         return False
     return True
+
+
+_GATEWAY_SYSTEMD_CONTROL_RE = re.compile(
+    r"(?is)"
+    r"(?:^|[;&|\n])\s*"
+    r"(?:sudo\s+(?:-[^\s]+\s+)*)?"
+    r"systemctl\s+"
+    r"(?:(?:--user|--no-pager|--no-block|--wait|--quiet)\s+)*"
+    r"(?:restart|stop|kill)\b"
+    r"[^\n;&|]*\bhermes-gateway(?:-[\w.-]+)?\.service\b"
+)
+
+
+def _terminal_tool_call_command(tool_call: Dict[str, Any]) -> Optional[str]:
+    """Extract a terminal command from an OpenAI-style tool call, if present."""
+    fn = tool_call.get("function") or {}
+    name = str(fn.get("name") or tool_call.get("name") or "")
+    if name not in {"terminal", "terminal_tool"}:
+        return None
+    args = fn.get("arguments", tool_call.get("arguments", {}))
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except Exception:
+            # Last-resort string scan catches persisted malformed tool args.
+            return args
+    if isinstance(args, dict):
+        command = args.get("command")
+        return command if isinstance(command, str) else None
+    return None
+
+
+def _messages_contain_gateway_service_control(messages: list) -> bool:
+    """True when persisted history includes a gateway service-control tool call."""
+    if not isinstance(messages, list):
+        return False
+    # The incident is caused by a replayed terminal tool call.  Scan the tail to
+    # avoid expensive full-history work while still tolerating a few trailing
+    # tool/result rows after the assistant call.
+    for msg in messages[-20:]:
+        if not isinstance(msg, dict):
+            continue
+        for call in msg.get("tool_calls") or []:
+            if not isinstance(call, dict):
+                continue
+            command = _terminal_tool_call_command(call)
+            if command and _GATEWAY_SYSTEMD_CONTROL_RE.search(command):
+                return True
+        # Older providers may persist a single function_call instead of
+        # tool_calls.  Preserve compatibility for those transcripts.
+        call = msg.get("function_call")
+        if isinstance(call, dict):
+            command = _terminal_tool_call_command(call)
+            if command and _GATEWAY_SYSTEMD_CONTROL_RE.search(command):
+                return True
+    return False
 
 
 def _preserve_queued_followup_history_offset(
@@ -7664,6 +7842,48 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         {"restart_timeout", "shutdown_timeout", "restart_interrupted"}
     )
 
+    def _suspend_unsafe_gateway_service_resume(self, entry) -> bool:
+        """Suspend resume-pending sessions whose tail would replay gateway control.
+
+        Restart recovery should resume normal interrupted work, but replaying an
+        old terminal tool call that controls ``hermes-gateway*.service`` can
+        restart the gateway from inside its own service cgroup and loop.  In
+        that case preserve the transcript but force the next user message onto a
+        fresh session lane.
+        """
+        db = getattr(self.session_store, "_db", None)
+        if db is None or not hasattr(db, "get_messages"):
+            return False
+        try:
+            messages = db.get_messages(entry.session_id)
+        except Exception as exc:
+            logger.debug(
+                "Failed to inspect resume-pending transcript %s for unsafe service control: %s",
+                getattr(entry, "session_key", "unknown"),
+                exc,
+            )
+            return False
+        if not _messages_contain_gateway_service_control(messages):
+            return False
+        entry.suspended = True
+        entry.resume_pending = False
+        entry.resume_reason = None
+        entry.last_resume_marked_at = None
+        try:
+            self.session_store._save()  # noqa: SLF001 - durable loop breaker
+        except Exception as exc:
+            logger.debug(
+                "Failed to persist unsafe resume suspension for %s: %s",
+                getattr(entry, "session_key", "unknown"),
+                exc,
+            )
+        logger.warning(
+            "Suspended resume-pending session %s because its transcript contains "
+            "a Hermes gateway service-control terminal command",
+            getattr(entry, "session_key", "unknown"),
+        )
+        return True
+
     async def _run_startup_resume_event(
         self,
         adapter: BasePlatformAdapter,
@@ -7977,6 +8197,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         now = datetime.now()
         scheduled = 0
         for entry in candidates:
+            if self._suspend_unsafe_gateway_service_resume(entry):
+                continue
+
             marker = entry.last_resume_marked_at or entry.updated_at
             if marker is not None and (now - marker).total_seconds() > window:
                 continue
@@ -12998,12 +13221,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             audio_paths = []
             for i, path in enumerate(event.media_urls):
                 mtype = event.media_types[i] if i < len(event.media_types) else ""
-                # Classify images per-attachment: trust this attachment's own
-                # MIME, and only honour the message-level PHOTO type when the
-                # per-attachment MIME is unknown. Otherwise a document (or any
-                # non-image) sent alongside an image in the same message gets
-                # mis-routed here as an image and the provider 400s.
-                if _event_media_is_image(event, i):
+                if _is_inbound_image_media(path, mtype, event.message_type):
                     image_paths.append(path)
                 # MessageType.AUDIO = audio file attachment (e.g. .mp3, .m4a) — never STT
                 # MessageType.VOICE = voice message (Opus/OGG) — always STT
@@ -13158,6 +13376,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 ):
                     continue
                 mtype = event.media_types[i] if i < len(event.media_types) else ""
+                if _is_inbound_image_media(path, mtype, event.message_type):
+                    continue
+                if mtype.startswith("audio/"):
+                    continue
                 if mtype in {"", "application/octet-stream"}:
                     _ext = os.path.splitext(path)[1].lower()
                     if _ext in _TEXT_EXTENSIONS:
@@ -13677,6 +13899,27 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Only inject on NEW sessions — ongoing conversations already have the
         # skill content in their conversation history from the first message.
         _auto = getattr(event, "auto_skill", None)
+        if _is_new_session:
+            try:
+                _pd_one_cfg = _load_gateway_config()
+                _pd_one_platform_key = _platform_config_key(source.platform)
+                from gateway.pd_one_channel_scopes import resolve_pd_one_channel_scope, scoped_skills
+                _pd_one_scope_for_skills = resolve_pd_one_channel_scope(
+                    _pd_one_cfg,
+                    _pd_one_platform_key,
+                    source.chat_id,
+                    user_id=getattr(source, "user_id", None),
+                    text=getattr(event, "text", None),
+                )
+                _scope_skills = scoped_skills(_pd_one_scope_for_skills)
+                if _scope_skills:
+                    if _auto:
+                        _existing = [_auto] if isinstance(_auto, str) else list(_auto)
+                        _auto = _existing + _scope_skills
+                    else:
+                        _auto = _scope_skills
+            except Exception as e:
+                logger.debug("[Gateway] PD One scope skill resolution failed (non-fatal): %s", e)
         if _is_new_session and _auto:
             _skill_names = [_auto] if isinstance(_auto, str) else list(_auto)
             try:
@@ -14495,6 +14738,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # attachments (documents, audio, etc.) are not sent to the vision
         # tool even when they appear in the same message.
         # -----------------------------------------------------------------
+        # Preserve the raw user text before policy/thread/attachment context
+        # is prepended so admin-prefix routing sees the actual command.
+        raw_event_text = event.text or ""
         message_text = await self._prepare_profile_scoped_inbound_message_text(
             event=event,
             source=source,
@@ -14565,7 +14811,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "thread_id": str(getattr(source, "thread_id", None)) if getattr(source, "thread_id", None) else "",
                 "chat_type": getattr(source, "chat_type", "") or "",
                 "session_id": session_entry.session_id,
+                # Stable platform receipt used by deterministic hooks for exact,
+                # idempotent source verification (for example admin approval posts).
+                "message_id": self._reply_anchor_for_event(event) or "",
+                # Keep the historical bounded field for generic telemetry hooks,
+                # but also expose the raw platform text so request-card hooks can
+                # show what the human actually typed instead of the injected
+                # permission/thread preamble.  ``message_text`` can be very large
+                # once policy, history, memory, and attachment notes are added;
+                # truncating it to 500 chars often cuts off the final
+                # ``[New message]`` block.
                 "message": message_text[:500],
+                "raw_message": raw_event_text,
             }
             await self.hooks.emit("agent:start", hook_ctx)
 
@@ -14588,6 +14845,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
                 message_type=event.message_type,
+                raw_event_text=raw_event_text,
             )
 
             # Stop persistent typing indicator now that the agent is done.
@@ -16458,6 +16716,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
             from hermes_cli.tools_config import _get_platform_tools
             enabled_toolsets = sorted(_get_platform_tools(user_config, platform_key))
+            from gateway.pd_one_channel_scopes import (
+                build_scope_prompt,
+                resolve_pd_one_channel_scope,
+                scoped_toolsets,
+            )
+            pd_one_scope = resolve_pd_one_channel_scope(
+                user_config,
+                platform_key,
+                source.chat_id,
+                user_id=getattr(source, "user_id", None),
+                text=prompt,
+            )
+            enabled_toolsets = scoped_toolsets(enabled_toolsets, pd_one_scope)
             agent_cfg = user_config.get("agent") or {}
             disabled_toolsets = agent_cfg.get("disabled_toolsets") or None
 
@@ -16473,6 +16744,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # Enrich the prompt with image descriptions so the background
             # agent can see user-attached images (same as the main flow).
             enriched_prompt = prompt
+            scope_prompt = build_scope_prompt(pd_one_scope, channel_id=source.chat_id)
+            if scope_prompt:
+                enriched_prompt = f"{scope_prompt}\n\n[New background task]\n{enriched_prompt}"
             if media_urls:
                 image_paths = []
                 for i, path in enumerate(media_urls):
@@ -19084,6 +19358,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         message_id = str(watcher.get("message_id") or "").strip() or None
         agent_notify = watcher.get("notify_on_complete", False)
         notify_mode = self._load_background_notifications_mode()
+        completion_notice_enabled = is_truthy_value(
+            os.getenv("HERMES_AGENT_BACKGROUND_COMPLETION_NOTICE"),
+            default=True,
+        )
+        completion_notice_sent = False
 
         logger.debug("Process watcher started: %s (every %ss, notify=%s, agent_notify=%s)",
                       session_id, interval, notify_mode, agent_notify)
@@ -19157,12 +19436,37 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     synth_text = format_process_notification(completion_evt)
                     if not synth_text:
                         break
+                    if completion_notice_enabled and not completion_notice_sent:
+                        adapter = next(
+                            (
+                                candidate
+                                for platform, candidate in self.adapters.items()
+                                if getattr(platform, "value", platform) == platform_name
+                            ),
+                            None,
+                        )
+                        if adapter and chat_id:
+                            try:
+                                notice_prefix = "✅" if session.exit_code == 0 else "⚠️"
+                                notice_state = "successfully" if session.exit_code == 0 else "with an error"
+                                await adapter.send(
+                                    chat_id,
+                                    f"{notice_prefix} Background process `{session_id}` finished {notice_state} "
+                                    f"(exit code {session.exit_code}). I am reviewing the output now and will post "
+                                    "the verified result shortly.",
+                                    metadata={"thread_id": thread_id} if thread_id else None,
+                                )
+                                completion_notice_sent = True
+                            except Exception as notice_err:
+                                logger.warning(
+                                    "Early background completion notice failed for %s: %s",
+                                    session_id,
+                                    notice_err,
+                                )
                     delivered = await self._deliver_completion_notification(
                         synth_text, completion_evt,
                     )
                     if delivered is False:
-                        # The process remains terminal; retry after failed
-                        # adapter injection instead of suppressing the result.
                         continue
                     break
 
@@ -19289,7 +19593,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         "honcho.runtime_peer_prefix",
         "honcho.user_peer_aliases",
     )
-    _HONCHO_CACHE_BUSTING_MEMO: dict[tuple[str, int | None], dict[str, Any]] = {}
+    _HONCHO_CACHE_BUSTING_MEMO: dict[tuple[str, int | None, int | None], dict[str, Any]] = {}
 
     @classmethod
     def _empty_honcho_cache_busting_config(cls) -> dict[str, Any]:
@@ -19303,10 +19607,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
             path = resolve_config_path()
             try:
-                mtime_ns = path.stat().st_mtime_ns
+                stat_result = path.stat()
+                mtime_ns = stat_result.st_mtime_ns
+                size = stat_result.st_size
             except OSError:
                 mtime_ns = None
-            memo_key = (str(path), mtime_ns)
+                size = None
+            memo_key = (str(path), mtime_ns, size)
             cached = cls._HONCHO_CACHE_BUSTING_MEMO.get(memo_key)
             if cached is not None:
                 return dict(cached)
@@ -20839,6 +21146,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         persist_user_message: Optional[Any] = None,
         persist_user_timestamp: Optional[float] = None,
         message_type: Optional[str] = None,
+        raw_event_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Profile-scoping wrapper around the agent run.
 
@@ -20858,6 +21166,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
                 message_type=message_type,
+                raw_event_text=raw_event_text,
             )
 
         profile_home = self._resolve_profile_home_for_source(source)
@@ -20870,6 +21179,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
                 message_type=message_type,
+                raw_event_text=raw_event_text,
             )
 
     def _profile_name_for_source(self, source: SessionSource) -> Optional[str]:
@@ -20992,6 +21302,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         persist_user_message: Optional[Any] = None,
         persist_user_timestamp: Optional[float] = None,
         message_type: Optional[str] = None,
+        raw_event_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Run the agent with the given message and context.
@@ -21031,6 +21342,28 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         from hermes_cli.tools_config import _get_platform_tools
         enabled_toolsets = sorted(_get_platform_tools(user_config, platform_key))
+        from gateway.pd_one_channel_scopes import (
+            build_scope_prompt,
+            resolve_pd_one_channel_scope,
+            scoped_toolsets,
+        )
+        pd_one_scope = resolve_pd_one_channel_scope(
+            user_config,
+            platform_key,
+            source.chat_id,
+            user_id=getattr(source, "user_id", None),
+            text=raw_event_text if raw_event_text is not None else message,
+        )
+        if pd_one_scope and pd_one_scope.get("admin_prefix_invoked"):
+            logger.info(
+                "PD One admin-prefix escalation: platform=%s chat_id=%s user_id=%s agent_id=%s original_agent_id=%s",
+                platform_key,
+                source.chat_id,
+                getattr(source, "user_id", None),
+                pd_one_scope.get("agent_id"),
+                (pd_one_scope.get("original_channel_scope") or {}).get("agent_id"),
+            )
+        enabled_toolsets = scoped_toolsets(enabled_toolsets, pd_one_scope)
         agent_cfg_local = user_config.get("agent") or {}
         disabled_toolsets = agent_cfg_local.get("disabled_toolsets") or None
 
@@ -21182,6 +21515,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # fenced code block — consecutive terminal calls then drop the
         # repeated "💻 terminal" header and render back-to-back blocks.
         last_was_terminal_block = [False]
+        latest_heartbeat_status: Dict[str, Any] = {}
 
         # ── Discord voice "verbal ack before tool calls" ────────────────
         # When the bot is in a voice channel with the continuous mixer
@@ -21354,6 +21688,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # rendered prompt (#52374).
             if tool_name == "clarify":
                 return
+
+            latest_heartbeat_status.clear()
+            latest_heartbeat_status.update({
+                "kind": "tool",
+                "tool_name": tool_name,
+                "message": _gateway_tool_activity_sentence(tool_name, preview),
+                "ts": time.time(),
+            })
 
             # Suppress tool-progress bubbles once the user has sent `stop`.
             # When the LLM response carries N parallel tool calls, the agent
@@ -21530,10 +21872,24 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     )
                 except Exception:
                     _progress_reply_in_thread = True
-        _progress_thread_id = _resolve_progress_thread_id(
-            source.platform, source.thread_id, event_message_id,
-            reply_in_thread=_progress_reply_in_thread,
-        )
+        # Upstream synthetic-thread helper covers Slack/Mattermost root mentions.
+        # Preserve PD One Mattermost reply_to routing so progress/status posts
+        # stay anchored even when source.thread_id is still unset.
+        if source.platform == Platform.MATTERMOST:
+            _progress_thread_id, _progress_reply_to = _mattermost_progress_thread_route(
+                source_thread_id=source.thread_id,
+                event_message_id=event_message_id,
+            )
+        else:
+            _progress_thread_id = _resolve_progress_thread_id(
+                source.platform, source.thread_id, event_message_id,
+                reply_in_thread=_progress_reply_in_thread,
+            )
+            _progress_reply_to = (
+                event_message_id
+                if source.platform == Platform.FEISHU and source.thread_id and event_message_id
+                else None
+            )
         _progress_metadata = (
             self._thread_metadata_for_source(source, event_message_id)
             if _progress_thread_id == source.thread_id
@@ -21546,11 +21902,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             )
         ) if _progress_thread_id else None
         _progress_metadata = _non_conversational_metadata(_progress_metadata, platform=source.platform)
-        _progress_reply_to = (
-            event_message_id
-            if source.platform in (Platform.FEISHU, Platform.MATTERMOST) and source.thread_id and event_message_id
-            else None
-        )
 
         async def write_tool_log():
             """Drain log_queue and append tool-call lines to tool_calls.log.
@@ -22025,6 +22376,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "thread_id": _progress_thread_id,
                 "reply_to_message_id": event_message_id,
             }
+        elif source.platform == Platform.MATTERMOST and _progress_thread_id:
+            # Mattermost root-channel posts may have source.thread_id empty in
+            # older/resumed runs.  Reuse the progress route fallback so status,
+            # interim, clarify, and long-running heartbeat sends do not leak to
+            # the channel root.
+            _status_thread_metadata = {"thread_id": _progress_thread_id}
         else:
             _status_thread_metadata = (
                 self._thread_metadata_for_source(source, event_message_id)
@@ -22054,6 +22411,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     _redact_gateway_user_facing_secrets(str(message or ""))[:160],
                 )
                 return
+            latest_heartbeat_status.clear()
+            latest_heartbeat_status.update({
+                "kind": "status",
+                "event_type": event_type,
+                "message": prepared_message,
+                "ts": time.time(),
+            })
             _fut = safe_schedule_threadsafe(
                 _send_or_update_status_coro(_status_adapter, _status_chat_id, event_type, prepared_message, _status_thread_metadata),
                 _loop_for_step,
@@ -22143,6 +22507,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # channel_overrides system_prompt (or global ephemeral), and gateway
             # ephemeral prompt from _get_system_prompt_for_channel.
             combined_ephemeral = context_prompt or ""
+            scope_prompt = build_scope_prompt(pd_one_scope, channel_id=source.chat_id)
+            if scope_prompt:
+                combined_ephemeral = (combined_ephemeral + "\n\n" + scope_prompt).strip()
             event_channel_prompt = (channel_prompt or "").strip()
             if event_channel_prompt:
                 combined_ephemeral = (combined_ephemeral + "\n\n" + event_channel_prompt).strip()
@@ -22261,6 +22628,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if not _run_still_current():
                     return
                 display_text = text
+                interim_text = str(text or "").strip()
+                if interim_text:
+                    preview = interim_text.replace("\n", " ")
+                    if len(preview) > 160:
+                        preview = preview[:157].rstrip() + "..."
+                    latest_heartbeat_status.clear()
+                    latest_heartbeat_status.update({
+                        "kind": "interim",
+                        "message": f"I have found an interim result and am continuing: {preview}",
+                        "ts": time.time(),
+                    })
                 if _stream_consumer is not None:
                     if already_streamed:
                         _stream_consumer.on_segment_break()
@@ -23566,11 +23944,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         
         interrupt_monitor = asyncio.create_task(monitor_for_interrupt())
 
-        # Periodic "still working" notifications for long-running tasks.
-        # Fires every N seconds so the user knows the agent hasn't died.
-        # Config: agent.gateway_notify_interval in config.yaml, or
-        # HERMES_AGENT_NOTIFY_INTERVAL env var.  Default 180s (3 min).
-        # 0 = disable notifications.
+        # Informative progress heartbeats for long-running tasks.
+        # First fires quickly (agent.gateway_first_notify_after), then every
+        # gateway_notify_interval.  Messages are template-built from existing
+        # gateway state, so this adds no LLM/token cost.
         _NOTIFY_INTERVAL_RAW = _float_env("HERMES_AGENT_NOTIFY_INTERVAL", 180)
         _NOTIFY_INTERVAL = _NOTIFY_INTERVAL_RAW if _NOTIFY_INTERVAL_RAW > 0 else None
         _long_running_mode = _display_surface_mode(
@@ -23580,6 +23957,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
         if _long_running_mode == "off":
             _NOTIFY_INTERVAL = None
+        _FIRST_NOTIFY_RAW = _float_env("HERMES_AGENT_FIRST_NOTIFY_AFTER", 45)
+        _FIRST_NOTIFY_AFTER = _FIRST_NOTIFY_RAW if _FIRST_NOTIFY_RAW > 0 else None
         _notify_start = time.time()
 
         async def _notify_long_running():
@@ -23588,87 +23967,106 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             _notify_adapter = self._adapter_for_source(source)
             if not _notify_adapter:
                 return
-            # Track the heartbeat message id so we can edit-in-place on
-            # platforms that support it (Telegram, Discord, Slack, etc.)
-            # instead of spamming a new "Still working" bubble every
-            # interval. Falls back to send-new when edit fails or isn't
-            # supported by the adapter.
+
             _heartbeat_msg_id: Optional[str] = None
-            while True:
-                await asyncio.sleep(_NOTIFY_INTERVAL)
-                # Stop heartbeating once this run no longer owns the session
-                # slot or the executor has finished — otherwise a stale
-                # "running: delegate_task" bubble can outlive the run that
-                # spawned it (#12029). _executor_task is a closure var bound
-                # just after this task is scheduled; tolerate the brief window
-                # before then (the first wake is _NOTIFY_INTERVAL away anyway).
+            edit_message = getattr(_notify_adapter, "edit_message", None)
+            _heartbeat_can_edit = callable(edit_message)
+            _edit_accepts_metadata = False
+            if _heartbeat_can_edit:
+                try:
+                    _edit_params = inspect.signature(edit_message).parameters
+                    _edit_accepts_metadata = (
+                        "metadata" in _edit_params
+                        or any(
+                            param.kind is inspect.Parameter.VAR_KEYWORD
+                            for param in _edit_params.values()
+                        )
+                    )
+                except (TypeError, ValueError):
+                    _edit_accepts_metadata = False
+
+            def _heartbeat_still_current() -> bool:
+                if not _run_still_current():
+                    return False
                 try:
                     _exec_ref = _executor_task
                 except NameError:
                     _exec_ref = None
-                if not self._should_emit_long_running_notification(
+                return self._should_emit_long_running_notification(
                     session_key, agent_holder[0], _exec_ref
-                ):
+                )
+
+            async def _send_or_edit_heartbeat(content: str) -> None:
+                nonlocal _heartbeat_msg_id, _heartbeat_can_edit
+                if not _heartbeat_still_current():
+                    return
+                if _heartbeat_msg_id and _heartbeat_can_edit:
+                    try:
+                        _kwargs = {
+                            "chat_id": source.chat_id,
+                            "message_id": _heartbeat_msg_id,
+                            "content": content,
+                        }
+                        if _edit_accepts_metadata:
+                            _kwargs["metadata"] = _status_thread_metadata
+                        _edit_res = await _notify_adapter.edit_message(**_kwargs)
+                        if getattr(_edit_res, "success", False):
+                            logger.info(
+                                "Long-running heartbeat edited: platform=%s chat=%s thread=%s message_id=%s",
+                                source.platform.value if source.platform else "unknown",
+                                source.chat_id,
+                                source.thread_id,
+                                _heartbeat_msg_id,
+                            )
+                            return
+                        if not getattr(_edit_res, "retryable", False):
+                            _heartbeat_can_edit = False
+                    except Exception as _edit_err:
+                        logger.debug("Long-running heartbeat edit error: %s", _edit_err)
+                        _heartbeat_can_edit = False
+
+                _notify_res = await _notify_adapter.send(
+                    source.chat_id,
+                    content,
+                    metadata=_status_thread_metadata,
+                )
+                if getattr(_notify_res, "success", False) and getattr(_notify_res, "message_id", None):
+                    _heartbeat_msg_id = str(_notify_res.message_id)
+                    if _cleanup_progress:
+                        _cleanup_msg_ids.append(_heartbeat_msg_id)
+                logger.info(
+                    "Long-running heartbeat sent: platform=%s chat=%s thread=%s success=%s message_id=%s",
+                    source.platform.value if source.platform else "unknown",
+                    source.chat_id,
+                    source.thread_id,
+                    getattr(_notify_res, "success", False),
+                    getattr(_notify_res, "message_id", None),
+                )
+
+            _sleep_for = _FIRST_NOTIFY_AFTER if _FIRST_NOTIFY_AFTER is not None else _NOTIFY_INTERVAL
+            while True:
+                await asyncio.sleep(_sleep_for)
+                _sleep_for = _NOTIFY_INTERVAL
+                if not _heartbeat_still_current():
                     break
                 _elapsed_mins = int((time.time() - _notify_start) // 60)
-                # Include agent activity context if available. Default
-                # heartbeat is terse: elapsed + current tool. Verbose
-                # iteration counter is gated on busy_ack_detail so users
-                # who want it can opt in per platform.
+                _activity: Dict[str, Any] = {}
                 _agent_ref = agent_holder[0]
-                _status_detail = ""
-                _want_iteration_detail = bool(
-                    resolve_display_setting(
-                        user_config,
-                        platform_key,
-                        "busy_ack_detail",
-                        True,
-                    )
-                )
                 if _agent_ref and hasattr(_agent_ref, "get_activity_summary"):
                     try:
-                        _a = _agent_ref.get_activity_summary()
-                        _parts = []
-                        if _want_iteration_detail:
-                            _parts.append(
-                                f"iteration {_a['api_call_count']}/{_a['max_iterations']}"
-                            )
-                        _action = _a.get("current_tool") or _a.get("last_activity_desc")
-                        if _action:
-                            _parts.append(str(_action))
-                        if _parts:
-                            _status_detail = " — " + ", ".join(_parts)
+                        _activity = _agent_ref.get_activity_summary() or {}
                     except Exception:
-                        pass
-                _heartbeat_text = (
-                    _generic_status_phrase("status")
-                    if _long_running_mode == "generic"
-                    else f"⏳ Working — {_elapsed_mins} min{_status_detail}"
-                )
+                        _activity = {}
+                if _long_running_mode == "generic":
+                    _message = _generic_status_phrase("status")
+                else:
+                    _message = _build_gateway_heartbeat_message(
+                        elapsed_mins=_elapsed_mins,
+                        latest_status=dict(latest_heartbeat_status) if latest_heartbeat_status else None,
+                        activity=_activity,
+                    )
                 try:
-                    _notify_res = None
-                    if _heartbeat_msg_id:
-                        try:
-                            _notify_res = await _notify_adapter.edit_message(
-                                source.chat_id,
-                                _heartbeat_msg_id,
-                                _heartbeat_text,
-                            )
-                        except Exception as _ee:
-                            logger.debug("Heartbeat edit failed: %s", _ee)
-                            _notify_res = None
-                    if not (_notify_res and getattr(_notify_res, "success", False)):
-                        _notify_res = await _notify_adapter.send(
-                            source.chat_id,
-                            _heartbeat_text,
-                            metadata=_non_conversational_metadata(_status_thread_metadata, platform=source.platform),
-                        )
-                        if getattr(_notify_res, "success", False) and getattr(
-                            _notify_res, "message_id", None
-                        ):
-                            _heartbeat_msg_id = str(_notify_res.message_id)
-                            if _cleanup_progress:
-                                _cleanup_msg_ids.append(_heartbeat_msg_id)
+                    await _send_or_edit_heartbeat(_message)
                 except Exception as _ne:
                     logger.debug("Long-running notification error: %s", _ne)
 
@@ -24179,6 +24577,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 updated_history = result.get("messages", history)
                 next_source = source
                 next_message = pending
+                next_raw_event_text = pending
                 next_message_id = None
                 next_channel_prompt = None
                 next_session_key = session_key
@@ -24194,11 +24593,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             session_key or "?",
                         )
                         return result
-                    # Resolve the follow-up's session key BEFORE preparing the
-                    # inbound text: _prepare_inbound_message_text buffers native
-                    # image paths under the key it is given, and the recursive
-                    # _run_agent below consumes them under next_session_key.
-                    # The write and consume keys must match or the images drop.
+                    # Resolve the follow-up key before buffering native media;
+                    # the write and consume session keys must match.
                     try:
                         next_session_key = self._session_key_for_source(next_source)
                     except Exception:
@@ -24207,6 +24603,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             session_key or "?",
                             exc_info=True,
                         )
+                    next_raw_event_text = pending_event.text or ""
                     next_message = await self._prepare_profile_scoped_inbound_message_text(
                         event=pending_event,
                         source=next_source,
@@ -24273,6 +24670,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     event_message_id=next_message_id,
                     channel_prompt=next_channel_prompt,
                     message_type=next_message_type,
+                    raw_event_text=next_raw_event_text,
                 )
                 return _preserve_queued_followup_history_offset(result, followup_result)
         finally:
@@ -24434,27 +24832,63 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             _ids_snapshot = list(_cleanup_msg_ids)
             _chat_id_snapshot = source.chat_id
             _adapter_snapshot = _cleanup_adapter
-            _loop_snapshot = asyncio.get_running_loop()
 
-            def _cleanup_temp_bubbles() -> None:
-                async def _delete_all() -> None:
-                    for _mid in _ids_snapshot:
-                        try:
-                            await _adapter_snapshot.delete_message(
-                                _chat_id_snapshot, _mid
+            async def _cleanup_temp_bubbles() -> None:
+                logger.info(
+                    "Temp bubble cleanup starting: platform=%s chat=%s session=%s count=%d",
+                    source.platform.value if source.platform else "unknown",
+                    _chat_id_snapshot,
+                    session_key or "?",
+                    len(_ids_snapshot),
+                )
+                for _mid in _ids_snapshot:
+                    try:
+                        _deleted = await _adapter_snapshot.delete_message(
+                            _chat_id_snapshot, _mid
+                        )
+                        if _deleted:
+                            logger.debug(
+                                "Temp bubble cleanup deleted message: platform=%s chat=%s session=%s message_id=%s",
+                                source.platform.value if source.platform else "unknown",
+                                _chat_id_snapshot,
+                                session_key or "?",
+                                _mid,
                             )
-                        except Exception:
-                            pass
-                try:
-                    safe_schedule_threadsafe(
-                        _delete_all(), _loop_snapshot,
-                        logger=logger,
-                        log_message="Temp bubble cleanup scheduling error",
-                    )
-                except Exception:
-                    pass
+                        else:
+                            logger.warning(
+                                "Temp bubble cleanup delete returned false: platform=%s chat=%s session=%s message_id=%s",
+                                source.platform.value if source.platform else "unknown",
+                                _chat_id_snapshot,
+                                session_key or "?",
+                                _mid,
+                            )
+                    except Exception as _delete_err:
+                        logger.warning(
+                            "Temp bubble cleanup delete raised: platform=%s chat=%s session=%s message_id=%s error=%s",
+                            source.platform.value if source.platform else "unknown",
+                            _chat_id_snapshot,
+                            session_key or "?",
+                            _mid,
+                            _delete_err,
+                            exc_info=True,
+                        )
+                logger.info(
+                    "Temp bubble cleanup finished: platform=%s chat=%s session=%s count=%d",
+                    source.platform.value if source.platform else "unknown",
+                    _chat_id_snapshot,
+                    session_key or "?",
+                    len(_ids_snapshot),
+                )
 
             try:
+                logger.debug(
+                    "Registering temp bubble cleanup callback: platform=%s chat=%s session=%s generation=%s count=%d",
+                    source.platform.value if source.platform else "unknown",
+                    _chat_id_snapshot,
+                    session_key or "?",
+                    run_generation,
+                    len(_ids_snapshot),
+                )
                 _cleanup_adapter.register_post_delivery_callback(
                     session_key,
                     _cleanup_temp_bubbles,
