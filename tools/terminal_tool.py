@@ -318,7 +318,7 @@ def _check_gateway_service_control_guard(command: str) -> Optional[dict]:
         "approved": False,
         "hardline": True,
         "message": (
-            "BLOCKED (hardline): gateway processes cannot restart/stop/kill "
+            "Blocked (hardline): gateway processes cannot restart/stop/kill "
             "Hermes gateway services via systemctl. This prevents self-restart "
             "deactivation/resume loops. Request an external supervisor/PD Neo "
             "restart instead, or run the service-control command manually from "
@@ -2263,7 +2263,7 @@ def terminal_tool(
         if gateway_service_block is not None:
             return json.dumps({
                 "output": "",
-                "exit_code": -1,
+                "exit_code": 1,
                 "error": gateway_service_block["message"],
                 "status": "blocked",
                 "hardline": True,
