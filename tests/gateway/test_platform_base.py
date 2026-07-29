@@ -432,6 +432,13 @@ class TestExtractMedia:
         ]
         assert cleaned == ""
 
+    def test_media_tag_supports_markdown_documents(self):
+        content = "Report attached:\nMEDIA:/tmp/wiki-bridge-review-triage-2026-05-28.md"
+        media, cleaned = BasePlatformAdapter.extract_media(content)
+        assert media == [("/tmp/wiki-bridge-review-triage-2026-05-28.md", False)]
+        assert "MEDIA:" not in cleaned
+        assert "Report attached" in cleaned
+
     def test_media_tag_supports_quoted_paths_with_spaces(self):
         content = "Here\nMEDIA: '/tmp/my image.png'\nAfter"
         media, cleaned = BasePlatformAdapter.extract_media(content)
