@@ -3638,6 +3638,14 @@ class TurnRunner:
         if tool_name == "clarify":
             return
 
+        ctx.latest_heartbeat_status.clear()
+        ctx.latest_heartbeat_status.update({
+            "kind": "tool",
+            "tool_name": tool_name,
+            "message": _gateway_tool_activity_sentence(tool_name, preview),
+            "ts": time.time(),
+        })
+
         # Suppress tool-progress bubbles once the user has sent `stop`.
         # When the LLM response carries N parallel tool calls, the agent
         # fires N "tool.started" events back-to-back before checking for
@@ -22228,6 +22236,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             last_was_terminal_block=last_was_terminal_block,
             repeat_count=repeat_count,
             long_tool_hint_fired=long_tool_hint_fired,
+            latest_heartbeat_status=latest_heartbeat_status,
             _LONG_TOOL_THRESHOLD_S=_LONG_TOOL_THRESHOLD_S,
             _cleanup_progress=_cleanup_progress,
             _cleanup_msg_ids=_cleanup_msg_ids,
