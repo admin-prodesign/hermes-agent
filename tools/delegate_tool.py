@@ -3604,6 +3604,100 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
     }
 
 
+def _resolve_model_provider_override(
+    *,
+    model_input: Optional[str],
+    provider_input: Optional[str],
+    parent_agent,
+) -> dict:
+    """Resolve an explicit delegate_task model/provider override.
+
+    Uses the same model-switching pipeline as the /model command so aliases,
+    provider catalogs, custom providers, and ``--provider`` syntax stay
+    consistent. The result matches _resolve_delegation_credentials() so it can
+    flow directly into _build_child_agent().
+    """
+    raw_model = str(model_input or "").strip()
+    explicit_provider = str(provider_input or "").strip()
+    if not raw_model and not explicit_provider:
+        raise ValueError("model/provider override is empty")
+
+    try:
+        from hermes_cli.model_switch import parse_model_flags, switch_model
+    except Exception as exc:
+        raise ValueError(
+            f"Cannot import model switch resolver for delegation override: {exc}"
+        ) from exc
+
+    parsed_flags = parse_model_flags(raw_model)
+    parsed_model = parsed_flags[0] if len(parsed_flags) > 0 else ""
+    parsed_provider = parsed_flags[1] if len(parsed_flags) > 1 else None
+    if explicit_provider and parsed_provider and explicit_provider != parsed_provider:
+        raise ValueError(
+            f"Conflicting provider overrides: provider={explicit_provider!r} "
+            f"but model contains --provider {parsed_provider!r}."
+        )
+    provider_for_switch = explicit_provider or parsed_provider
+    if not parsed_model and not provider_for_switch:
+        raise ValueError(f"Could not parse model/provider override: {raw_model!r}")
+
+    user_providers = None
+    custom_providers = None
+    try:
+        from hermes_cli.config import load_config
+
+        full_cfg = load_config()
+        user_providers = full_cfg.get("providers")
+        custom_providers = full_cfg.get("custom_providers")
+    except Exception:
+        pass
+
+    result = switch_model(
+        raw_input=parsed_model,
+        current_provider=getattr(parent_agent, "provider", "") or "",
+        current_model=getattr(parent_agent, "model", "") or "",
+        current_base_url=getattr(parent_agent, "base_url", "") or "",
+        current_api_key=getattr(parent_agent, "api_key", "") or "",
+        is_global=False,
+        explicit_provider=provider_for_switch,
+        user_providers=user_providers,
+        custom_providers=custom_providers,
+    )
+    if not result.success:
+        raise ValueError(
+            f"Cannot resolve delegation model/provider override "
+            f"{raw_model or provider_for_switch!r}: "
+            f"{result.error_message or 'unknown error'}"
+        )
+
+    creds = {
+        "model": result.new_model or None,
+        "provider": result.target_provider or None,
+        "base_url": result.base_url or None,
+        "api_key": result.api_key or None,
+        "api_mode": result.api_mode or None,
+        "command": None,
+        "args": [],
+    }
+
+    # Preserve runtime-provider metadata that switch_model does not expose
+    # directly, such as ACP command/args for subprocess-backed providers.
+    if creds["provider"]:
+        try:
+            from hermes_cli.runtime_provider import resolve_runtime_provider
+
+            runtime = resolve_runtime_provider(
+                requested=creds["provider"],
+                target_model=creds["model"],
+            )
+            creds["command"] = runtime.get("command")
+            creds["args"] = list(runtime.get("args") or [])
+        except Exception:
+            pass
+
+    return creds
+
+
 def _load_config() -> dict:
     """Load delegation config from the active Hermes config.
 

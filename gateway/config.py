@@ -1560,6 +1560,8 @@ def load_gateway_config() -> GatewayConfig:
                     bridged["allowed_topics"] = platform_cfg["allowed_topics"]
                 if "free_response_channels" in platform_cfg:
                     bridged["free_response_channels"] = platform_cfg["free_response_channels"]
+                if "ignored_channels" in platform_cfg:
+                    bridged["ignored_channels"] = platform_cfg["ignored_channels"]
                 if "mention_patterns" in platform_cfg:
                     bridged["mention_patterns"] = platform_cfg["mention_patterns"]
                 if "exclusive_bot_mentions" in platform_cfg:
@@ -1590,6 +1592,14 @@ def load_gateway_config() -> GatewayConfig:
                         bridged["channel_prompts"] = {str(k): v for k, v in channel_prompts.items()}
                     else:
                         bridged["channel_prompts"] = channel_prompts
+                if plat == Platform.MATTERMOST and "pd_one_channel_scopes" in platform_cfg:
+                    scopes = platform_cfg["pd_one_channel_scopes"]
+                    if isinstance(scopes, dict):
+                        bridged["pd_one_channel_scopes"] = {str(k): v for k, v in scopes.items()}
+                    else:
+                        bridged["pd_one_channel_scopes"] = scopes
+                if plat == Platform.MATTERMOST and "pd_one_admin_prefix" in platform_cfg:
+                    bridged["pd_one_admin_prefix"] = platform_cfg["pd_one_admin_prefix"]
                 if "gateway_restart_notification" in platform_cfg:
                     bridged["gateway_restart_notification"] = platform_cfg["gateway_restart_notification"]
                 if "typing_indicator" in platform_cfg:

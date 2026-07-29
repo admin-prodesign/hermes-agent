@@ -3189,6 +3189,23 @@ def create_task(
                     },
                 )
                 _inherit_notify_subs(conn, task_id, parents, created_at=now)
+                if task_status == "blocked":
+                    # ``recompute_ready`` treats a blocked row without a recent
+                    # sticky ``blocked`` event as a legacy dependency wait and
+                    # may promote it automatically.  An explicit
+                    # ``initial_status='blocked'`` is a human/controller gate,
+                    # so persist the same sticky lifecycle signal emitted by
+                    # ``block_task``.  Only ``unblock_task`` may release it.
+                    _append_event(
+                        conn,
+                        task_id,
+                        "blocked",
+                        {
+                            "reason": "created in explicitly blocked state",
+                            "kind": None,
+                            "initial": True,
+                        },
+                    )
             return task_id
         except sqlite3.IntegrityError:
             if attempt == 1:
