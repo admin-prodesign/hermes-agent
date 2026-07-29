@@ -384,6 +384,11 @@ class HonchoClientConfig:
     user_peer_aliases: dict[str, str] = field(default_factory=dict)
     # Optional prefix for unknown gateway runtime user IDs, e.g. "telegram_".
     runtime_peer_prefix: str = ""
+    # How gateway runtime user IDs are converted into Honcho peer IDs when no
+    # explicit alias matches.  ``legacy`` preserves the raw runtime ID fallback;
+    # ``platform`` scopes it by platform; ``platform-hash`` scopes it by platform
+    # while avoiding raw platform ID disclosure in Honcho peer names.
+    runtime_peer_scope: str = "legacy"
     # Toggles
     enabled: bool = False
     save_messages: bool = True
@@ -617,6 +622,15 @@ class HonchoClientConfig:
                 host_block,
                 raw,
                 "runtimePeerPrefix",
+            ),
+            runtime_peer_scope=(
+                _parse_optional_string(
+                    host_block,
+                    raw,
+                    "runtimePeerScope",
+                    "legacy",
+                )
+                or "legacy"
             ),
             enabled=enabled,
             save_messages=save_messages,

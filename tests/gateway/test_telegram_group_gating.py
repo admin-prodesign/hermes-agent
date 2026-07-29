@@ -946,7 +946,8 @@ def test_top_level_require_mention_bridges_to_telegram(monkeypatch, tmp_path):
     config = load_gateway_config()
 
     assert config is not None
-    assert __import__("os").environ.get("TELEGRAM_REQUIRE_MENTION") == "true"
+    assert config.platforms[Platform.TELEGRAM].extra["require_mention"] is True
+    assert __import__("os").environ.get("TELEGRAM_REQUIRE_MENTION") is None
 
     # The adapter's extra dict must also carry the setting so that
     # _telegram_require_mention() works even without the env var.
