@@ -16,7 +16,7 @@ def test_live_action_magic_phrase_still_requires_human_gate(monkeypatch):
     )
     monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")))
     out = json.loads(mod.worker_scheduling_execute(
-        action="solve_and_write_live",
+        action="write_generated_schedule",
         confirm_live_write=mod.LIVE_CONFIRM_PHRASE,
     ))
     assert out["success"] is False
