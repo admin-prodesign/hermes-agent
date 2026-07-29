@@ -153,6 +153,7 @@ def resolve_pd_one_channel_scope(
         return None
     scope = dict(raw_scope)
     scope.setdefault("channel_id", str(channel_id))
+    scope["sender_user_id"] = str(user_id or "")
     if _is_admin_prefix(text) and _admin_prefix_authorized(user_config, user_id):
         admin_scope = _admin_scope_from(scopes, scope)
         if admin_scope is not None:
@@ -162,15 +163,29 @@ def resolve_pd_one_channel_scope(
     return scope
 
 
-def scoped_toolsets(platform_toolsets: Iterable[Any], scope: dict[str, Any] | None) -> list[str]:
-    """Return effective toolsets after applying a channel scope allowlist."""
+# Scoped-only extensions are an explicit code-reviewed capability ceiling.
+# Channel YAML may select among them but cannot invent arbitrary toolsets that
+# the platform baseline did not already authorize.
+_PD_ONE_SCOPED_EXTENSION_TOOLSETS = frozenset({
+    "pd_one_wiki",
+    "pdone_safe_ops",
+    "pdone_worker_scheduling",
+    "freecad_spkane",
+    "freecad_neka",
+})
 
+
+def scoped_toolsets(platform_toolsets: Iterable[Any], scope: dict[str, Any] | None) -> list[str]:
+    """Narrow platform tools to the channel allowlist and reviewed extensions."""
+
+    baseline = _dedupe_strings(platform_toolsets)
     if not isinstance(scope, dict):
-        return _dedupe_strings(platform_toolsets)
+        return baseline
     allowed = scope.get("allowed_toolsets")
     if not isinstance(allowed, list):
-        return _dedupe_strings(platform_toolsets)
-    return _dedupe_strings(allowed)
+        return baseline
+    ceiling = set(baseline) | set(_PD_ONE_SCOPED_EXTENSION_TOOLSETS)
+    return [name for name in _dedupe_strings(allowed) if name in ceiling]
 
 
 def scoped_skills(scope: dict[str, Any] | None) -> list[str]:
@@ -249,6 +264,9 @@ def scope_signature_fragment(scope: dict[str, Any] | None) -> str:
         return ""
     relevant = {
         "agent_id": scope.get("agent_id"),
+        "channel_id": scope.get("channel_id"),
+        "sender_user_id": scope.get("sender_user_id"),
+        "admin_prefix_invoked": bool(scope.get("admin_prefix_invoked")),
         "workspace": scope.get("workspace"),
         "allowed_toolsets": _dedupe_strings(scope.get("allowed_toolsets") or []),
         "skills": scoped_skills(scope),

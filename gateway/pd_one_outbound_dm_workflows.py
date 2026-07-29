@@ -416,6 +416,9 @@ def _is_routable(record: dict[str, Any] | None, *, now: str | None, exact_link: 
     if not record:
         return False
     status = str(record.get("status") or "")
+    workflow_status = str(record.get("workflow_status") or "")
+    if workflow_status in {"closed", "cancelled"}:
+        return False
     if status in CLOSED_TARGET_STATUSES or status not in ROUTABLE_TARGET_STATUSES:
         return False
     if exact_link:
@@ -561,7 +564,12 @@ def format_outreach_message(*, tracker_code: str, title: str, body: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manage PD One outbound DM workflow registry")
-    parser.add_argument("--db", type=Path, default=Path.home() / ".hermes" / "profiles" / "pdone" / "state" / "outbound_dm_workflows.sqlite")
+    from hermes_constants import get_hermes_home
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=get_hermes_home() / "state" / "outbound_dm_workflows.sqlite",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("init-db")
     sub.add_parser("status")

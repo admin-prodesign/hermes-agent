@@ -13,12 +13,16 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from agent.secret_scope import get_secret
 from tools.environments.local import build_subprocess_env
 from tools.registry import registry
 
 TOOLSET = "worker_scheduling_execution"
 TOOL_NAME = "worker_scheduling_execute"
-PROJECT_DIR = Path("/home/prodesign/.openclaw/workspace/projects/automatic-worker-scheduling")
+_PROJECT_OVERRIDE = get_secret("PD_ONE_WORKER_SCHEDULING_PROJECT_DIR", "") or ""
+PROJECT_DIR = Path(_PROJECT_OVERRIDE).expanduser() if _PROJECT_OVERRIDE else (
+    Path.home() / ".openclaw" / "workspace" / "projects" / "automatic-worker-scheduling"
+)
 SCRIPT_PATH = PROJECT_DIR / "scripts" / "shift_scheduler_phase1.py"
 VENV_PYTHON = PROJECT_DIR / ".venv" / "bin" / "python"
 DEFAULT_TIMEOUT_SECONDS = 900
@@ -112,16 +116,33 @@ def worker_scheduling_execute(
             detail=f"Expected project/script/python under {PROJECT_DIR}",
         )
 
-    if action in LIVE_ACTIONS and confirm_live_write != LIVE_CONFIRM_PHRASE:
-        return _json_result(
-            success=False,
-            error="live_write_confirmation_required",
-            detail=(
-                f"Live sheet mutations require confirm_live_write exactly equal to "
-                f"{LIVE_CONFIRM_PHRASE!r}. Run solve_preview/preflight first unless the user explicitly approved live writes."
-            ),
-            action=action,
+    if action in LIVE_ACTIONS:
+        if confirm_live_write != LIVE_CONFIRM_PHRASE:
+            return _json_result(
+                success=False,
+                error="live_write_confirmation_required",
+                detail=(
+                    f"Live sheet mutations require confirm_live_write exactly equal to "
+                    f"{LIVE_CONFIRM_PHRASE!r}. Run solve_preview/preflight first."
+                ),
+                action=action,
+            )
+        # The phrase is intent metadata, not authorization. Bind the write to
+        # Hermes' actual session-scoped human approval gate so an LLM cannot
+        # self-authorize by copying a magic string into its own tool call.
+        from tools.approval import request_tool_approval
+        decision = request_tool_approval(
+            TOOL_NAME,
+            f"Run live PD One worker-scheduling action: {action}",
+            rule_key=f"pd-one-worker-scheduling:{action}",
         )
+        if not decision.get("approved"):
+            return _json_result(
+                success=False,
+                error="human_approval_required",
+                detail=decision.get("message") or "Live write was not approved.",
+                action=action,
+            )
 
     if timeout_seconds < 30 or timeout_seconds > 3600:
         return _json_result(
@@ -142,7 +163,7 @@ def worker_scheduling_execute(
     except ValueError as exc:
         return _json_result(success=False, error="invalid_request", detail=str(exc))
 
-    env = build_subprocess_env(scrub_secrets=False, inherit_profile_home=False)
+    env = build_subprocess_env(scrub_secrets=True, inherit_profile_home=True)
     env["PYTHONUNBUFFERED"] = "1"
 
     try:

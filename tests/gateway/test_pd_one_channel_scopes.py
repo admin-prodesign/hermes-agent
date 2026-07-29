@@ -82,7 +82,7 @@ def test_authorized_admin_prefix_overrides_employee_channel_scope():
     assert scope["agent_id"] == "admin"
     assert scope["admin_prefix_invoked"] is True
     assert scope["original_channel_scope"]["agent_id"] == "employee-assistant"
-    assert scoped_toolsets(["skills"], scope) == ["terminal", "file"]
+    assert scoped_toolsets(["skills", "terminal", "file"], scope) == ["terminal", "file"]
 
 
 def test_admin_prefix_escalation_uses_raw_text_not_prepared_context():
@@ -249,14 +249,18 @@ def test_scoped_skills_accepts_string_list_and_dedupes():
     assert scoped_skills({"skills": ["a", "b", "a", ""]}) == ["a", "b"]
     assert scoped_skills({"agent_id": "work-manual"}) == []
 
-def test_scoped_toolsets_replace_platform_toolsets_and_preserve_order():
-    scope = {"allowed_toolsets": ["skills", "file", "skills", "clarify"]}
+def test_scoped_toolsets_intersect_platform_ceiling_and_preserve_order():
+    scope = {"allowed_toolsets": ["skills", "file", "skills", "clarify", "arbitrary_root"]}
 
-    assert scoped_toolsets(["terminal", "web", "file"], scope) == [
+    assert scoped_toolsets(["terminal", "web", "file", "skills"], scope) == [
         "skills",
         "file",
-        "clarify",
     ]
+
+
+def test_scoped_toolsets_allow_only_reviewed_pd_one_extensions():
+    scope = {"allowed_toolsets": ["pd_one_wiki", "pdone_safe_ops", "evil_plugin"]}
+    assert scoped_toolsets(["web"], scope) == ["pd_one_wiki", "pdone_safe_ops"]
 
 
 def test_scoped_toolsets_leave_platform_toolsets_when_scope_has_no_allowlist():
@@ -315,3 +319,21 @@ def test_scope_signature_fragment_changes_with_agent_toolsets_and_prompt():
 
     assert scope_signature_fragment(a) != scope_signature_fragment(b)
     assert scope_signature_fragment(a) == scope_signature_fragment(dict(a))
+
+
+def test_scope_signature_includes_channel_sender_and_admin_state():
+    base = {
+        "agent_id": "employee-assistant",
+        "channel_id": "channel-a",
+        "sender_user_id": "user-a",
+        "admin_prefix_invoked": False,
+        "allowed_toolsets": ["file"],
+    }
+    for key, value in (
+        ("channel_id", "channel-b"),
+        ("sender_user_id", "user-b"),
+        ("admin_prefix_invoked", True),
+    ):
+        changed = dict(base)
+        changed[key] = value
+        assert scope_signature_fragment(base) != scope_signature_fragment(changed)

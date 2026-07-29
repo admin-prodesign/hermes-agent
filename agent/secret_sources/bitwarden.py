@@ -670,7 +670,7 @@ def _run_bws_list(
     # bws child intentionally receives the access token; exact preservation
     # (BWS_SERVER_URL manual overrides etc. must survive untouched).
     from tools.environments.local import build_subprocess_env
-    env = build_subprocess_env(scrub_secrets=False, inherit_profile_home=False)
+    env = build_subprocess_env(scrub_secrets=True, inherit_profile_home=False)
     env["BWS_ACCESS_TOKEN"] = access_token
     # Make sure we're not echoing telemetry / colour codes into json.
     env.setdefault("NO_COLOR", "1")
@@ -774,6 +774,17 @@ def apply_bitwarden_secrets(
     result = FetchResult()
 
     if not enabled:
+        return result
+
+    # Applying one profile's fetched values to process-global os.environ is
+    # forbidden in multiplex mode. Multiplex callers must use
+    # build_profile_secret_scope()/set_secret_scope() instead.
+    from agent.secret_scope import is_multiplex_active
+    if is_multiplex_active():
+        result.error = (
+            "apply_bitwarden_secrets cannot mutate process-global os.environ "
+            "while gateway multiplexing is active"
+        )
         return result
 
     access_token = os.environ.get(access_token_env, "").strip()
