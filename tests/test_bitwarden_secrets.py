@@ -521,3 +521,62 @@ def test_stale_fallback_skipped_on_auth_failure(monkeypatch, tmp_path):
 
 
 
+def test_stale_fallback_skipped_when_cache_ttl_zero(monkeypatch, tmp_path):
+    """cache_ttl_seconds=0 means the caller opted out of caching entirely —
+    the stale fallback must honor that even though it explicitly asks the
+    disk cache for a stale (not-fresh) hit via ttl_seconds=inf internally."""
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    fake_binary = tmp_path / "bws"
+    fake_binary.write_text("")
+    bw._reset_cache_for_tests(home)
+
+    _seed_stale_disk_cache(home, secrets={"K1": "v1"}, age_seconds=3600)
+
+    monkeypatch.setattr(
+        bw.subprocess, "run",
+        lambda *a, **kw: mock.Mock(returncode=1, stdout="",
+                                   stderr="Error: connection refused"),
+    )
+
+    with pytest.raises(RuntimeError, match="connection refused"):
+        bw.fetch_bitwarden_secrets(
+            access_token="0.t", project_id="proj-1", binary=fake_binary,
+            cache_ttl_seconds=0, home_path=home,
+        )
+
+
+def test_apply_fails_closed_without_global_mutation_in_multiplex(monkeypatch):
+    from agent import secret_scope
+
+    monkeypatch.setenv("BWS_ACCESS_TOKEN", "0.t")
+    monkeypatch.delenv("MULTIPLEX_SECRET", raising=False)
+    secret_scope.set_multiplex_active(True)
+    try:
+        result = bw.apply_bitwarden_secrets(enabled=True, project_id="p", auto_install=False)
+    finally:
+        secret_scope.set_multiplex_active(False)
+    assert not result.ok
+    assert "process-global" in result.error
+    assert "MULTIPLEX_SECRET" not in os.environ
+
+
+def test_fetch_bws_child_env_scrubs_unrelated_profile_secrets(monkeypatch, tmp_path):
+    fake_binary = tmp_path / "bws"
+    fake_binary.write_text("")
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-leak")
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        captured.update(kwargs["env"])
+        return mock.Mock(returncode=0, stdout=_fake_bws_payload([]), stderr="")
+
+    monkeypatch.setattr(bw.subprocess, "run", fake_run)
+    bw.fetch_bitwarden_secrets(
+        access_token="0.bootstrap",
+        project_id="p",
+        binary=fake_binary,
+        use_cache=False,
+    )
+    assert captured["BWS_ACCESS_TOKEN"] == "0.bootstrap"
+    assert "OPENAI_API_KEY" not in captured
