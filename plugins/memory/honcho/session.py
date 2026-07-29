@@ -83,6 +83,7 @@ class HonchoSessionManager:
         config: Any | None = None,
         runtime_user_peer_name: str | None = None,
         runtime_user_peer_name_alt: str | None = None,
+        runtime_platform: str | None = None,
     ):
         """
         Initialize the session manager.
@@ -94,12 +95,14 @@ class HonchoSessionManager:
                     write_frequency, observation, etc.).
             runtime_user_peer_name: Gateway user identity for per-user memory scoping.
             runtime_user_peer_name_alt: Optional stable alternate gateway identity.
+            runtime_platform: Gateway/platform name used to scope generated user peers.
         """
         self._honcho = honcho
         self._context_tokens = context_tokens
         self._config = config
         self._runtime_user_peer_name = runtime_user_peer_name
         self._runtime_user_peer_name_alt = runtime_user_peer_name_alt
+        self._runtime_platform = runtime_platform
         self._cache: dict[str, HonchoSession] = {}
         self._cache_lock = threading.RLock()
         self._peers_cache: dict[str, Any] = {}
@@ -286,6 +289,28 @@ class HonchoSessionManager:
                 candidates.append(candidate)
         return candidates
 
+    def _runtime_platform_prefix(self) -> str:
+        """Return a sanitized platform prefix suitable for generated peer IDs."""
+        platform = str(self._runtime_platform or "").strip().lower()
+        if not platform:
+            return ""
+        sanitized = self._sanitize_id(platform).strip("-_").lower()
+        return f"{sanitized}_" if sanitized else ""
+
+    def _runtime_alias_keys(self, runtime_id: str) -> list[str]:
+        """Return exact alias lookup keys for a runtime user ID.
+
+        ``platform:id`` keys let multi-platform deployments map the same raw
+        platform ID differently by source without losing backwards-compatible
+        raw-ID aliases.
+        """
+        keys: list[str] = []
+        platform = str(self._runtime_platform or "").strip().lower()
+        if platform:
+            keys.append(f"{platform}:{runtime_id}")
+        keys.append(runtime_id)
+        return keys
+
     def _session_key_fallback_peer_id(self, key: str) -> str:
         parts = key.split(":", 1)
         channel = parts[0] if len(parts) > 1 else "default"
@@ -327,6 +352,36 @@ class HonchoSessionManager:
             return f"{sanitized_peer_id}-{digest}"
         return sanitized_peer_id
 
+    def _generated_scoped_runtime_peer_id(self, runtime_id: str) -> str:
+        """Return a stable generated peer ID for an unmapped runtime user.
+
+        By default this preserves the legacy raw-ID behaviour. Deployments can
+        opt into ``runtimePeerScope: platform`` to avoid cross-platform raw-ID
+        collisions, or ``runtimePeerScope: platform-hash`` to avoid exposing raw
+        gateway IDs as Honcho peer names while still keeping one profile per
+        exact platform user ID.
+        """
+        prefix = getattr(self._config, "runtime_peer_prefix", "") if self._config else ""
+        prefix = prefix.strip() if isinstance(prefix, str) else ""
+        if prefix:
+            return self._generated_runtime_peer_id(prefix, runtime_id)
+
+        scope = getattr(self._config, "runtime_peer_scope", "legacy") if self._config else "legacy"
+        scope = str(scope or "legacy").strip().lower()
+
+        if scope in {"platform", "platform-scoped", "platform_scoped"}:
+            platform_prefix = self._runtime_platform_prefix()
+            if platform_prefix:
+                return self._generated_runtime_peer_id(platform_prefix, runtime_id)
+
+        if scope in {"platform-hash", "platform_hash", "hashed", "hash"}:
+            platform_prefix = self._runtime_platform_prefix() or "user_"
+            digest_input = f"{self._runtime_platform or 'unknown'}:{runtime_id}"
+            digest = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()[:16]
+            return self._generated_runtime_peer_id(platform_prefix, digest)
+
+        return self._sanitize_id(runtime_id)
+
     def _resolve_user_peer_id(self, key: str) -> str:
         """Resolve the Honcho user peer ID for this manager/session."""
         pin_peer_name = (
@@ -343,16 +398,13 @@ class HonchoSessionManager:
             if not isinstance(aliases, dict):
                 aliases = {}
             for runtime_id in runtime_ids:
-                alias = aliases.get(runtime_id)
-                if isinstance(alias, str) and alias.strip():
-                    return self._sanitize_id(alias.strip())
+                for alias_key in self._runtime_alias_keys(runtime_id):
+                    alias = aliases.get(alias_key)
+                    if isinstance(alias, str) and alias.strip():
+                        return self._sanitize_id(alias.strip())
 
             primary_runtime_id = runtime_ids[0]
-            prefix = getattr(self._config, "runtime_peer_prefix", "") if self._config else ""
-            prefix = prefix.strip() if isinstance(prefix, str) else ""
-            if prefix:
-                return self._generated_runtime_peer_id(prefix, primary_runtime_id)
-            return self._sanitize_id(primary_runtime_id)
+            return self._generated_scoped_runtime_peer_id(primary_runtime_id)
 
         if self._config and self._config.peer_name:
             return self._sanitize_id(self._config.peer_name)

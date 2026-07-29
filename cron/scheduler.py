@@ -1509,11 +1509,13 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
         task_name = job.get("name", job["id"])
         job_id = job.get("id", "")
         delivery_content = (
-            f"Cronjob Response: {task_name}\n"
-            f"(job_id: {job_id})\n"
-            f"-------------\n\n"
+            f"## Cronjob Response: {task_name}\n\n"
+            f"**Job ID:** `{job_id}`\n\n"
+            f"---\n\n"
             f"{content}\n\n"
-            f"To stop or manage this job, send me a new message (e.g. \"stop reminder {task_name}\")."
+            f"---\n\n"
+            f"_To stop or manage this job, send me a new message (for example: "
+            f"`stop reminder {task_name}`)._"
         )
     else:
         delivery_content = content
@@ -2547,6 +2549,9 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:
         "to the user — do NOT use send_message or try to deliver "
         "the output yourself. Just produce your report/output as your "
         "final response and the system handles the rest. "
+        "FORMAT: The delivered final response must be valid Markdown. "
+        "Use Markdown headings, bullets, bold labels, links, and fenced code blocks for raw logs/JSON/errors; "
+        "do not emit unformatted plain text or raw JSON as the whole response. "
         "SILENT: If there is genuinely nothing new to report, respond "
         "with exactly \"[SILENT]\" (nothing else) to suppress delivery. "
         "Never combine [SILENT] with content — either report your "

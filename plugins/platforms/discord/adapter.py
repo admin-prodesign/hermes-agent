@@ -1316,12 +1316,34 @@ class DiscordAdapter(BasePlatformAdapter):
                     self._client = None
                     self._ready_event.clear()
 
-            self._client = commands.Bot(
-                command_prefix="!",  # Not really used, we handle raw messages
-                intents=intents,
-                allowed_mentions=_build_allowed_mentions(),
+            bot_kwargs = {
+                "command_prefix": "!",  # Not really used, we handle raw messages
+                "intents": intents,
+                "allowed_mentions": _build_allowed_mentions(),
                 **proxy_kwargs_for_bot(proxy_url),
-            )
+            }
+            # Explicitly publish native slash commands for guild installs.
+            # Without this, discord.py can inherit the application's
+            # user-install default and register commands with
+            # integration_types=[1], which makes them invisible in guilds
+            # even though the bot itself can read/send messages there.
+            # Older discord.py versions and lightweight test doubles do not
+            # expose these constructors, so add them only when available.
+            _app_install_type = getattr(discord.app_commands, "AppInstallationType", None)
+            if _app_install_type is not None:
+                bot_kwargs["allowed_installs"] = _app_install_type(
+                    guild=True,
+                    user=True,
+                )
+            _app_context = getattr(discord.app_commands, "AppCommandContext", None)
+            if _app_context is not None:
+                bot_kwargs["allowed_contexts"] = _app_context(
+                    guild=True,
+                    dm_channel=True,
+                    private_channel=True,
+                )
+
+            self._client = commands.Bot(**bot_kwargs)
             adapter_self = self  # capture for closure
 
             # Register event handlers

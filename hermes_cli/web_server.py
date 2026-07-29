@@ -491,6 +491,21 @@ def should_require_auth(host: str, allow_public: bool = False) -> bool:
     return host not in _LOOPBACK_HOST_VALUES
 
 
+def _normalise_host_header(host_header: str) -> str:
+    """Return lower-case hostname from a Host/X-Forwarded-Host value."""
+    if not host_header:
+        return ""
+    h = host_header.strip()
+    # X-Forwarded-Host may contain a comma-separated proxy chain; the original
+    # browser-facing host is first.
+    if "," in h:
+        h = h.split(",", 1)[0].strip()
+    if h.startswith("["):
+        close = h.find("]")
+        return (h[1:close] if close != -1 else h.strip("[]")).lower()
+    return (h.rsplit(":", 1)[0] if ":" in h else h).lower()
+
+
 def _is_accepted_host(host_header: str, bound_host: str) -> bool:
     """True if the Host header targets the interface we bound to.
 
@@ -552,7 +567,23 @@ async def host_header_middleware(request: Request, call_next):
     bound_host = getattr(app.state, "bound_host", None)
     if bound_host:
         host_header = request.headers.get("host", "")
-        if not _is_accepted_host(host_header, bound_host):
+        accepted = _is_accepted_host(host_header, bound_host)
+        if not accepted and bound_host.lower() in _LOOPBACK_HOST_VALUES:
+            # Reverse-proxy case: the dashboard remains safely bound to
+            # loopback, but a local tunnel/proxy (cloudflared, Tailscale Serve,
+            # nginx on localhost, etc.) forwards browser requests whose Host is
+            # the public hostname.  DNS-rebinding remains blocked because we
+            # only accept this when the immediate TCP peer is loopback and the
+            # proxy preserves the same public host in X-Forwarded-Host.
+            peer_host = getattr(request.client, "host", "") if request.client else ""
+            forwarded_host = request.headers.get("x-forwarded-host", "")
+            if (
+                peer_host in _LOOPBACK_HOST_VALUES
+                and forwarded_host
+                and _normalise_host_header(forwarded_host) == _normalise_host_header(host_header)
+            ):
+                accepted = True
+        if not accepted:
             return JSONResponse(
                 status_code=400,
                 content={
@@ -14605,6 +14636,21 @@ def _ws_host_origin_reason(ws: "WebSocket") -> Optional[str]:
         return f"origin_mismatch origin={origin} bound={bound_host}"
 
     if not _is_accepted_host(parsed.netloc, bound_host):
+        # Reverse-proxy case: a loopback-bound dashboard may be safely exposed
+        # through a local trusted tunnel (Cloudflare Access / Tailscale Serve)
+        # that rewrites the upstream Host header to localhost so the HTTP
+        # DNS-rebinding guard passes. Browser WebSocket handshakes still carry
+        # Origin: https://public.example, so accept that public origin only when
+        # the proxy also supplies a matching X-Forwarded-Host and the immediate
+        # peer is loopback. This preserves the loopback bind while allowing
+        # authenticated tunnel access without --insecure / all-interface binds.
+        bound_lc = str(bound_host).strip().lower()
+        peer = ws.client.host if ws.client else ""
+        xf_host = ws.headers.get("x-forwarded-host", "")
+        if bound_lc in _LOOPBACK_HOSTS and peer in _LOOPBACK_HOSTS and xf_host:
+            xf_first = xf_host.split(",", 1)[0].strip()
+            if _is_accepted_host(parsed.netloc, xf_first):
+                return None
         return f"origin_mismatch origin={origin} bound={bound_host}"
     return None
 
