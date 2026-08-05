@@ -674,7 +674,7 @@ def _run_bws_list(
     if source_env is os.environ:
         from tools.environments.local import build_subprocess_env
 
-        env = build_subprocess_env(scrub_secrets=False, inherit_profile_home=False)
+        env = build_subprocess_env(scrub_secrets=True, inherit_profile_home=False)
     else:
         env = dict(source_env)
     env["BWS_ACCESS_TOKEN"] = access_token
