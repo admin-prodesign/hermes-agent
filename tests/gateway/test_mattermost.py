@@ -64,6 +64,9 @@ class TestMattermostDisplayHygiene:
 # ---------------------------------------------------------------------------
 
 class TestMattermostConfigLoading:
+    def test_apply_env_overrides_mattermost(self, monkeypatch):
+        monkeypatch.setenv("MATTERMOST_TOKEN", "mm-tok-abc123")
+        monkeypatch.setenv("MATTERMOST_URL", "https://mm.example.com")
 
         from gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
