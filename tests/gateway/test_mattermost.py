@@ -2312,6 +2312,25 @@ class TestMattermostMentionTranslation:
         adapter._generate_mention_translation.assert_not_awaited()
         adapter._api_put.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_skips_pdapp_approval_decision_posts(self):
+        adapter = _make_adapter()
+        adapter.config.extra["auto_translate_mentioned_channel_messages"] = True
+        adapter._generate_mention_translation = AsyncMock(return_value="admin：核准 PDAPP-20260819-4A79502C")
+        adapter._api_put = AsyncMock(return_value={"id": "post125"})
+
+        await adapter._maybe_append_mention_translation(
+            {
+                "id": "post125",
+                "message": "admin: approve PDAPP-20260819-4A79502C @pd_one_bot",
+            },
+            has_mention=True,
+            channel_type_raw="O",
+        )
+
+        adapter._generate_mention_translation.assert_not_awaited()
+        adapter._api_put.assert_not_awaited()
+
     def test_mixed_chinese_heading_with_english_instructions_targets_chinese(self):
         adapter = _make_adapter()
         message = (
