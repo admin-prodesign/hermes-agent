@@ -1051,6 +1051,27 @@ class MattermostAdapter(BasePlatformAdapter):
     def _mention_translation_marker_present(cls, message: str) -> bool:
         return "**Translation / 翻譯 (utility-agent):**" in str(message or "")
 
+    @classmethod
+    def _is_protected_approval_decision_message(cls, message: str) -> bool:
+        """Do not auto-edit PDAPP approve/reject commands.
+
+        Mention translation patches the original post, which sets edit_at and
+        breaks fail-closed approval parsers that only accept the original
+        standalone command or the bilingual-autoedit:v1 envelope.
+        """
+        text = str(message or "")
+        if cls._mention_translation_marker_present(text):
+            text = text.split("**Translation / 翻譯 (utility-agent):**", 1)[0]
+        text = re.sub(r"@[\w.-]+", " ", text)
+        text = re.sub(r"---+", " ", text)
+        text = " ".join(text.split())
+        return bool(
+            re.fullmatch(
+                r"(?i)(?:admin\s*[:：]\s*)?(?:approve|reject|核准|駁回|批准|拒絕)\s+PDAPP-\d{8}-[A-Z0-9]{8}",
+                text,
+            )
+        )
+
     @staticmethod
     def _truncate_translation_text(text: str, max_chars: int = 1600) -> str:
         cleaned = str(text or "").strip()
@@ -1150,6 +1171,12 @@ class MattermostAdapter(BasePlatformAdapter):
         post_id = str(post.get("id") or "").strip()
         message = str(post.get("message") or "")
         if not post_id or not message.strip() or self._mention_translation_marker_present(message):
+            return
+        if self._is_protected_approval_decision_message(message):
+            logger.info(
+                "Mattermost: skipped mention translation for approval decision post %s",
+                post_id,
+            )
             return
 
         translation = await self._generate_mention_translation(message)
