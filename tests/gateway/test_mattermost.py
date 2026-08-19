@@ -808,6 +808,50 @@ class TestMattermostWebSocketParsing:
         self.adapter._maybe_append_mention_translation.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_posted_mention_sends_original_prompt_before_translation(self):
+        """PD One must receive the original human post, not the translated edit."""
+        self.adapter.config.extra["auto_translate_mentioned_channel_messages"] = True
+        self.adapter._fetch_thread_context = AsyncMock(return_value=(None, []))
+        order: list[str] = []
+
+        async def handle(event):
+            order.append("handle")
+            assert event.text == "please check today's schedule."
+            assert "Translation" not in event.text
+            assert "Translation" not in str(event.raw_message.get("message") or "")
+
+        async def translate(post, *, has_mention, channel_type_raw):
+            order.append("translate")
+            assert has_mention is True
+            assert channel_type_raw == "O"
+            assert post["message"] == "@hermes-bot please check today's schedule."
+            post["message"] = (
+                post["message"]
+                + "\n\n**Translation / 翻譯 (utility-agent):**\n請檢查今天的排程。"
+            )
+
+        self.adapter.handle_message = handle
+        self.adapter._maybe_append_mention_translation = translate
+        post_data = {
+            "id": "post_abc",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": "@hermes-bot please check today's schedule.",
+        }
+        event = {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        assert order == ["handle", "translate"]
+
+    @pytest.mark.asyncio
     async def test_ignore_own_messages(self):
         """Messages from the bot's own user_id should be ignored."""
         post_data = {

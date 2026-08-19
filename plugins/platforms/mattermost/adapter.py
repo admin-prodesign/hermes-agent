@@ -1156,7 +1156,12 @@ class MattermostAdapter(BasePlatformAdapter):
         has_mention: bool,
         channel_type_raw: str,
     ) -> None:
-        """Best-effort: append a clearly labeled utility-agent translation to channel mentions."""
+        """Best-effort: append a labeled utility-agent translation after dispatch.
+
+        Call this only after handle_message() has already queued the original
+        human post as the PD One prompt. Never patch the live post dict that
+        was passed into the MessageEvent.
+        """
         if channel_type_raw == "D" or not has_mention:
             return
         enabled_raw = None
@@ -2060,6 +2065,7 @@ class MattermostAdapter(BasePlatformAdapter):
 
         # For DMs, user_id is sufficient.  For channels, check for @mention.
         message_text = post.get("message", "")
+        mention_translation_job: Optional[Dict[str, str]] = None
 
         # Mention-gating for non-DM channels.
         # Config (config.yaml `mattermost.*` with env-var fallback):
@@ -2130,12 +2136,15 @@ class MattermostAdapter(BasePlatformAdapter):
                 for pattern in mention_patterns
             )
 
+            # Capture the original human text now. Translation must not run
+            # until after handle_message() has queued PD One on this original
+            # prompt; patching the Mattermost post first can leak the
+            # translated body back through thread context or raw_message.
             if has_mention:
-                await self._maybe_append_mention_translation(
-                    post,
-                    has_mention=has_mention,
-                    channel_type_raw=channel_type_raw,
-                )
+                mention_translation_job = {
+                    "id": post_id,
+                    "message": str(message_text or ""),
+                }
 
             if require_mention and not is_free_channel and not has_mention:
                 logger.debug(
@@ -2256,6 +2265,12 @@ class MattermostAdapter(BasePlatformAdapter):
         )
 
         await self.handle_message(msg_event)
+        if mention_translation_job is not None:
+            await self._maybe_append_mention_translation(
+                mention_translation_job,
+                has_mention=True,
+                channel_type_raw=channel_type_raw,
+            )
 
 
 
