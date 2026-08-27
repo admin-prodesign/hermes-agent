@@ -324,6 +324,25 @@ def test_recompute_ready_cascades_through_chain(kanban_home):
         assert kb.get_task(conn, c).status == "ready"
 
 
+def test_recompute_ready_keeps_explicit_initial_block_sticky(kanban_home):
+    """initial_status=blocked is a controller/human gate, not a dependency wait."""
+    with kb.connect() as conn:
+        task_id = kb.create_task(
+            conn,
+            title="approval-gated",
+            assignee="a",
+            initial_status="blocked",
+        )
+        assert kb.get_task(conn, task_id).status == "blocked"
+
+        promoted = kb.recompute_ready(conn)
+        assert promoted == 0
+        assert kb.get_task(conn, task_id).status == "blocked"
+
+        assert kb.unblock_task(conn, task_id) is True
+        assert kb.get_task(conn, task_id).status == "ready"
+
+
 def test_recompute_ready_promotes_blocked_with_done_parents(kanban_home):
     """blocked tasks with all parents done should be promoted to ready,
     unless the circuit-breaker failure limit has been reached."""
