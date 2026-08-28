@@ -171,6 +171,49 @@ class TestGatewayPidState:
 
 
 class TestGatewayRuntimeStatus:
+    def test_clear_all_platforms_drops_stale_entries_from_prior_process(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        (tmp_path / "gateway_state.json").write_text(
+            json.dumps({
+                "platforms": {
+                    "mattermost": {"state": "connected", "writer_pid": 111},
+                    "google_chat": {"state": "fatal", "writer_pid": 222},
+                    "reviewer:discord": {"state": "retrying", "writer_pid": 333},
+                }
+            }),
+            encoding="utf-8",
+        )
+
+        status.write_runtime_status(
+            gateway_state="starting",
+            clear_all_platforms=True,
+        )
+
+        payload = status.read_runtime_status()
+        assert payload["gateway_state"] == "starting"
+        assert payload["platforms"] == {}
+
+    def test_clear_all_platforms_and_new_write_are_one_atomic_update(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        (tmp_path / "gateway_state.json").write_text(
+            json.dumps({"platforms": {"stale": {"state": "fatal"}}}),
+            encoding="utf-8",
+        )
+
+        status.write_runtime_status(
+            platform="telegram",
+            platform_state="connected",
+            clear_all_platforms=True,
+        )
+
+        platforms = status.read_runtime_status()["platforms"]
+        assert set(platforms) == {"telegram"}
+        assert platforms["telegram"]["state"] == "connected"
+
     def test_clear_profile_platforms_preserves_primary_entries(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         (tmp_path / "gateway_state.json").write_text(
