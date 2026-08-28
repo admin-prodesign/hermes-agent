@@ -449,6 +449,36 @@ async def test_rename_thread_edits_only_when_current_name_matches(adapter):
     )
 
 
+@pytest.mark.asyncio
+async def test_rename_thread_accepts_gateway_relay_kwargs(adapter):
+    """Native Discord must accept the gateway's shared rename_thread kwargs.
+
+    ``gateway/run.py`` always passes ``prefer_connector_created`` and
+    ``parent_chat_id`` (native lane sets them False/None). Rejecting those
+    kwargs TypeError's after the rename is logged and Discord never retitles.
+    """
+    thread = SimpleNamespace(
+        id=999,
+        name="How come Discord auto-titling isn't working?",
+        edit=AsyncMock(),
+    )
+    adapter._client.get_channel = lambda _id: thread
+
+    result = await adapter.rename_thread(
+        "999",
+        "Discord auto-titling not working",
+        prefer_connector_created=False,
+        only_if_current_name="How come Discord auto-titling isn't working?",
+        parent_chat_id=None,
+    )
+
+    assert result is True
+    thread.edit.assert_awaited_once_with(
+        name="Discord auto-titling not working",
+        reason="Hermes semantic session title",
+    )
+
+
 # ------------------------------------------------------------------
 # Auto-thread integration in _handle_message
 # ------------------------------------------------------------------
