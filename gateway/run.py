@@ -13806,7 +13806,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             write_runtime_status(
                 gateway_state="starting",
                 exit_reason=None,
-                clear_profile_platforms=True,
+                clear_all_platforms=True,
             )
         except Exception:
             pass

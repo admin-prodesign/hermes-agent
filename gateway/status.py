@@ -1182,6 +1182,7 @@ def write_runtime_status(
     served_profiles: Any = _UNSET,
     session_store: Any = _UNSET,
     clear_profile_platforms: bool = False,
+    clear_all_platforms: bool = False,
 ) -> None:
     """Persist gateway runtime health information for diagnostics/status."""
     path = _get_runtime_status_path()
@@ -1189,7 +1190,14 @@ def write_runtime_status(
     previous_payload = copy.deepcopy(payload)
     current_record = _build_pid_record()
     payload.setdefault("platforms", {})
-    if clear_profile_platforms:
+    if clear_all_platforms:
+        # A fresh gateway process must not inherit any adapter state from the
+        # prior process. Active/enabled adapters repopulate their entries with
+        # the current writer PID/start-time as they connect; disabled/removed
+        # platforms therefore disappear instead of staying connected/fatal
+        # forever in gateway_state.json and dashboard health.
+        payload["platforms"] = {}
+    elif clear_profile_platforms:
         # Secondary-profile adapter health is stored in the process-level
         # status file as ``<profile>:<platform>``.  A fresh gateway process
         # must not inherit those entries from the prior process: they would
