@@ -23253,7 +23253,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 bool(renamed),
             )
         except Exception:
-            logger.debug("Failed to rename Discord auto-thread for generated session title", exc_info=True)
+            logger.warning(
+                "Failed to rename Discord auto-thread for generated session title (thread=%s)",
+                target_thread_id,
+                exc_info=True,
+            )
 
     def _schedule_discord_semantic_thread_rename(
         self,
