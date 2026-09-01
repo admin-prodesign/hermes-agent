@@ -2,9 +2,9 @@
 
 The PD One migration keeps a single Hermes profile, but OpenClaw used
 channel-bound agents to constrain behavior.  These helpers resolve a
-Mattermost channel to a compact scope object, build the per-turn system
-prompt, and hard-limit the toolsets passed to AIAgent when a scope defines
-an allowlist.
+Mattermost channel to a compact scope object and build the per-turn
+audience/write-target prompt.  Channel YAML ``allowed_toolsets`` do not
+replace the session toolbox; tools follow the exact sender.
 """
 
 from __future__ import annotations
@@ -224,7 +224,6 @@ def build_scope_prompt(scope: dict[str, Any] | None, *, channel_id: str | None =
     name = str(scope.get("name") or agent_id)
     resolved_channel = str(channel_id or scope.get("channel_id") or "unknown")
     workspace = str(scope.get("workspace") or "")
-    toolsets = _dedupe_strings(scope.get("allowed_toolsets") or [])
     skills = scoped_skills(scope)
     custom_prompt = str(scope.get("prompt") or "").strip()
 
@@ -246,26 +245,22 @@ def build_scope_prompt(scope: dict[str, Any] | None, *, channel_id: str | None =
             ]
         )
     if workspace:
-        lines.append(f"workspace: {workspace}")
-    if toolsets:
-        lines.append(f"allowed_toolsets: {', '.join(toolsets)}")
+        lines.append(f"workspace: {workspace} (preferred documents for this room, not a tool lock)")
     if skills:
         lines.append(f"preferred_skills: {', '.join(skills)}")
     lines.extend(
         [
-            "This is a hard channel boundary for PD One/OpenClaw parity.",
-            "Only perform work within this channel scope and the exact sender-id policy context.",
-            "If the request exceeds this channel scope, refuse briefly or ask for an admin-approved handoff instead of using broader tools.",
+            "This channel is an audience and write-target, not a toolbox.",
+            "Tools follow the exact sender (pairing + pd_one_sender_tool_gate + generated user policy cache).",
+            "Do not refuse a tool or task because this room's agent_id or YAML allowed_toolsets looks narrower than the sender.",
+            "Channel policy only gates: disclosure of data this room's audience must not see, routing of the reply, and writes that would land in this room or in source systems.",
+            "If the answer would leak out-of-audience data into this room, refuse that disclosure or move it to an approved private/admin lane — do not claim the sender lacks tools.",
+            "Employee senders still cannot use terminal/cron/gateway/raw execute_code (plugin). Andy/admin senders keep their tools in every Mattermost room.",
+            "Wiki candidate workflow: when an in-scope answer finds source-backed durable company knowledge, call emit_wiki_update_candidate before the final reply.",
+            "Use the current Mattermost channel_id from this scope/policy context as source_channel_id; use opaque post/thread/message IDs only, never raw URLs.",
+            "Emit candidates only for concise durable facts with evidence, not for private/sensitive data, raw transcripts, speculation, or routine chat.",
         ]
     )
-    if "pd_one_wiki" in toolsets:
-        lines.extend(
-            [
-                "Wiki candidate workflow: when an in-scope answer finds source-backed durable company knowledge, call emit_wiki_update_candidate before the final reply.",
-                "Use the current Mattermost channel_id from this scope/policy context as source_channel_id; use opaque post/thread/message IDs only, never raw URLs.",
-                "Emit candidates only for concise durable facts with evidence, not for private/sensitive data, raw transcripts, speculation, or routine chat.",
-            ]
-        )
     if custom_prompt:
         lines.extend(["Channel-specific instructions:", custom_prompt])
     return "\n".join(lines)

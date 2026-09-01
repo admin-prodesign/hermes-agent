@@ -279,32 +279,38 @@ def test_scoped_toolsets_leave_platform_toolsets_when_scope_has_no_allowlist():
     assert "pdone_safe_ops" in got
 
 
-def test_build_scope_prompt_contains_hard_boundary_and_paths():
+def test_build_scope_prompt_is_audience_gate_not_toolbox():
     scope = {
-        "agent_id": "finance",
-        "name": "PD One Finance",
-        "workspace": "/home/prodesign/.openclaw/workspace-finance",
+        "agent_id": "employee-assistant",
+        "name": "PD One Employee Assistant",
+        "workspace": "/home/prodesign/.openclaw/workspace-employee",
         "allowed_toolsets": ["file", "skills"],
         "skills": ["excel-author"],
-        "prompt": "Finance only.",
+        "prompt": "Keep payroll out of this room.",
     }
 
-    prompt = build_scope_prompt(scope, channel_id="finance-channel")
+    prompt = build_scope_prompt(scope, channel_id="showcase-channel")
 
     assert "PD One channel scope" in prompt
-    assert "finance" in prompt
-    assert "finance-channel" in prompt
-    assert "/home/prodesign/.openclaw/workspace-finance" in prompt
-    assert "file, skills" in prompt
-    assert "Finance only." in prompt
-    assert "If the request exceeds this channel scope" in prompt
+    assert "employee-assistant" in prompt
+    assert "showcase-channel" in prompt
+    assert "/home/prodesign/.openclaw/workspace-employee" in prompt
+    assert "excel-author" in prompt
+    assert "Keep payroll out of this room." in prompt
+    assert "audience and write-target, not a toolbox" in prompt
+    assert "Tools follow the exact sender" in prompt
+    assert "Do not refuse a tool or task because this room" in prompt
+    assert "hard channel boundary" not in prompt
+    assert "If the request exceeds this channel scope" not in prompt
+    assert "allowed_toolsets:" not in prompt
+    assert "file, skills" not in prompt
 
 
-def test_build_scope_prompt_instructs_wiki_candidate_emission_when_toolset_enabled():
+def test_build_scope_prompt_always_instructs_wiki_candidate_emission():
     scope = {
         "agent_id": "senior-staff",
         "name": "PD One Inter-Department Discussion",
-        "allowed_toolsets": ["skills", "pd_one_wiki"],
+        "allowed_toolsets": ["skills"],
     }
 
     prompt = build_scope_prompt(scope, channel_id="miiyt4zm9frexdbhxokxqgyxeo")
