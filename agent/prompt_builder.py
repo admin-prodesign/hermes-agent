@@ -2131,7 +2131,7 @@ def _build_skills_system_prompt_inner(
             + "\n".join(index_lines) + "\n"
             "</available_skills>\n"
             "\n"
-            "Only proceed without loading a skill if genuinely none are relevant to the task."
+            "Proceed without a skill only when genuinely none apply."
             + hidden_note
         )
 
