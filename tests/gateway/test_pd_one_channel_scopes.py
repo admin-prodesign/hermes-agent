@@ -304,6 +304,9 @@ def test_build_scope_prompt_is_audience_gate_not_toolbox():
     assert "If the request exceeds this channel scope" not in prompt
     assert "allowed_toolsets:" not in prompt
     assert "file, skills" not in prompt
+    assert "directional filter on the user-visible reply" in prompt
+    assert "Do not narrate implementation internals" in prompt
+    assert "Cloudflare Access" in prompt
 
 
 def test_build_scope_prompt_always_instructs_wiki_candidate_emission():
@@ -318,6 +321,8 @@ def test_build_scope_prompt_always_instructs_wiki_candidate_emission():
     assert "Wiki candidate workflow" in prompt
     assert "emit_wiki_update_candidate" in prompt
     assert "source_channel_id" in prompt
+    assert "Tools follow the exact sender" in prompt
+    assert "directional filter on the user-visible reply" in prompt
 
 
 def test_scope_signature_fragment_changes_with_agent_toolsets_and_prompt():
