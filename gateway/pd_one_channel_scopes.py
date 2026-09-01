@@ -169,23 +169,37 @@ def resolve_pd_one_channel_scope(
 _PD_ONE_SCOPED_EXTENSION_TOOLSETS = frozenset({
     "pd_one_wiki",
     "pdone_safe_ops",
+    "mcp-pdone_safe_ops",
     "pdone_worker_scheduling",
+    "mcp-pdone_worker_scheduling",
     "freecad_spkane",
     "freecad_neka",
 })
+_PD_ONE_SCOPED_EXTENSION_ORDER = (
+    "pd_one_wiki",
+    "pdone_safe_ops",
+    "mcp-pdone_safe_ops",
+    "pdone_worker_scheduling",
+    "mcp-pdone_worker_scheduling",
+    "freecad_spkane",
+    "freecad_neka",
+)
 
 
 def scoped_toolsets(platform_toolsets: Iterable[Any], scope: dict[str, Any] | None) -> list[str]:
-    """Narrow platform tools to the channel allowlist and reviewed extensions."""
+    """Keep the platform toolbox; attach reviewed PD One MCP extensions.
+
+    Channel ``allowed_toolsets`` no longer replace the session toolbox.
+    Tools follow the exact sender (pairing + ``pd_one_sender_tool_gate``).
+    Channel policy still gates disclosure, routing, and writes into the room.
+    """
 
     baseline = _dedupe_strings(platform_toolsets)
     if not isinstance(scope, dict):
         return baseline
-    allowed = scope.get("allowed_toolsets")
-    if not isinstance(allowed, list):
-        return baseline
-    ceiling = set(baseline) | set(_PD_ONE_SCOPED_EXTENSION_TOOLSETS)
-    return [name for name in _dedupe_strings(allowed) if name in ceiling]
+    seen = set(baseline)
+    extras = [name for name in _PD_ONE_SCOPED_EXTENSION_ORDER if name not in seen]
+    return baseline + extras
 
 
 def scoped_skills(scope: dict[str, Any] | None) -> list[str]:

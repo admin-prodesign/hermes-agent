@@ -249,25 +249,31 @@ def test_scoped_skills_accepts_string_list_and_dedupes():
     assert scoped_skills({"skills": ["a", "b", "a", ""]}) == ["a", "b"]
     assert scoped_skills({"agent_id": "work-manual"}) == []
 
-def test_scoped_toolsets_intersect_platform_ceiling_and_preserve_order():
+def test_scoped_toolsets_ignore_channel_allowlist_keep_platform_and_reviewed_extensions():
     scope = {"allowed_toolsets": ["skills", "file", "skills", "clarify", "arbitrary_root"]}
 
-    assert scoped_toolsets(["terminal", "web", "file", "skills"], scope) == [
-        "skills",
-        "file",
-    ]
+    got = scoped_toolsets(["terminal", "web", "file", "skills"], scope)
+    assert got[:4] == ["terminal", "web", "file", "skills"]
+    assert "pdone_safe_ops" in got
+    assert "mcp-pdone_safe_ops" in got
+    assert "pdone_worker_scheduling" in got
+    assert "arbitrary_root" not in got
+    assert "clarify" not in got
 
 
-def test_scoped_toolsets_allow_only_reviewed_pd_one_extensions():
+def test_scoped_toolsets_never_invent_unreviewed_extensions():
     scope = {"allowed_toolsets": ["pd_one_wiki", "pdone_safe_ops", "evil_plugin"]}
-    assert scoped_toolsets(["web"], scope) == ["pd_one_wiki", "pdone_safe_ops"]
+    got = scoped_toolsets(["web"], scope)
+    assert got[0] == "web"
+    assert "pd_one_wiki" in got
+    assert "pdone_safe_ops" in got
+    assert "evil_plugin" not in got
 
 
 def test_scoped_toolsets_leave_platform_toolsets_when_scope_has_no_allowlist():
-    assert scoped_toolsets(["terminal", "web"], {"agent_id": "finance"}) == [
-        "terminal",
-        "web",
-    ]
+    got = scoped_toolsets(["terminal", "web"], {"agent_id": "finance"})
+    assert got[:2] == ["terminal", "web"]
+    assert "pdone_safe_ops" in got
 
 
 def test_build_scope_prompt_contains_hard_boundary_and_paths():
