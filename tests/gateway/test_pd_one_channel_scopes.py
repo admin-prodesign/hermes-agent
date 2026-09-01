@@ -82,7 +82,10 @@ def test_authorized_admin_prefix_overrides_employee_channel_scope():
     assert scope["agent_id"] == "admin"
     assert scope["admin_prefix_invoked"] is True
     assert scope["original_channel_scope"]["agent_id"] == "employee-assistant"
-    assert scoped_toolsets(["skills", "terminal", "file"], scope) == ["terminal", "file"]
+    got = scoped_toolsets(["skills", "terminal", "file"], scope)
+    assert got[:3] == ["skills", "terminal", "file"]
+    assert "pdone_safe_ops" in got
+    assert "clarify" not in got
 
 
 def test_admin_prefix_escalation_uses_raw_text_not_prepared_context():
