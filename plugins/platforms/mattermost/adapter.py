@@ -145,6 +145,21 @@ class MattermostAdapter(BasePlatformAdapter):
 
     splits_long_messages = True  # send() chunks via truncate_message(MAX_POST_LENGTH)
 
+    @staticmethod
+    def truncate_message(content: str, max_length: int = MAX_POST_LENGTH, len_fn=None):
+        """Split long posts by language first, then markdown-safe blocks.
+
+        Fenced code and GFM tables stay atomic. ``len_fn`` other than ``len``
+        falls back to the shared platform splitter.
+        """
+        if len_fn is not None and len_fn is not len:
+            return BasePlatformAdapter.truncate_message(
+                content, max_length, len_fn=len_fn
+            )
+        from .message_split import split_mattermost_message
+
+        return split_mattermost_message(content, max_length)
+
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.MATTERMOST)
 
