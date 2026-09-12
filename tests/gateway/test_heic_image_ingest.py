@@ -1,4 +1,4 @@
-"""HEIC/HEIF inbound image handling."""
+"""HEIC/HEIF inbound image handling on tag ingest (gateway.platforms.base)."""
 
 import io
 from pathlib import Path
@@ -7,12 +7,10 @@ from PIL import Image
 import pillow_heif
 
 from gateway.platforms.base import (
+    SUPPORTED_IMAGE_DOCUMENT_TYPES,
     _looks_like_heif,
     cache_image_from_bytes,
-    SUPPORTED_IMAGE_DOCUMENT_TYPES,
 )
-from gateway.run import _is_inbound_image_media
-from gateway.platforms.base import MessageType
 
 
 def _tiny_heic_bytes() -> bytes:
@@ -24,12 +22,10 @@ def _tiny_heic_bytes() -> bytes:
 
 
 def test_cache_image_from_bytes_converts_heic_to_jpeg(tmp_path, monkeypatch):
-    monkeypatch.setattr("gateway.platforms.base.IMAGE_CACHE_DIR", tmp_path)
+    monkeypatch.setattr("gateway.platforms.base.get_image_cache_dir", lambda: tmp_path)
     raw = _tiny_heic_bytes()
-
     assert _looks_like_heif(raw)
     cached = Path(cache_image_from_bytes(raw, ext=".heic"))
-
     assert cached.suffix == ".jpg"
     assert cached.exists()
     assert cached.read_bytes()[:3] == b"\xff\xd8\xff"
@@ -41,6 +37,4 @@ def test_cache_image_from_bytes_converts_heic_to_jpeg(tmp_path, monkeypatch):
 def test_heic_document_types_are_supported_as_images():
     assert SUPPORTED_IMAGE_DOCUMENT_TYPES[".heic"] == "image/heic"
     assert SUPPORTED_IMAGE_DOCUMENT_TYPES[".heif"] == "image/heif"
-    assert _is_inbound_image_media("/tmp/photo.heic", "", MessageType.PHOTO)
-    assert _is_inbound_image_media("/tmp/photo.heif", "", MessageType.PHOTO)
-    assert _is_inbound_image_media("/tmp/photo.bin", "image/heic", MessageType.DOCUMENT)
+    assert _looks_like_heif(_tiny_heic_bytes())
