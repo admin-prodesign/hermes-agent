@@ -263,6 +263,8 @@ class MattermostAdapter(BasePlatformAdapter):
         logger.info(
             "Mattermost: authenticated as @%s (%s) on %s", self._bot_username, self._bot_user_id, self._base_url)
         self._ws_task = asyncio.create_task(self._ws_loop())
+        if getattr(self, "_backfill_enabled", False) and self._backfill_task is None:
+            self._backfill_task = asyncio.create_task(self._backfill_loop())
         self._mark_connected()
         self._wire_plugin_handlers(None)  # plugin-registered native handlers
         return True
