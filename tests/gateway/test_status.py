@@ -1730,3 +1730,18 @@ def test_retained_gateway_state_keeps_watchdog_degraded_like_startup_failed():
     assert status.retained_gateway_state({**watchdog, "desired_state": "stopped"}) == "stopped"
     assert status.retained_gateway_state({"gateway_state": "degraded", "exit_reason": None}) == "stopped"
     assert status.retained_gateway_state({"gateway_state": "startup_failed", "exit_reason": "x"}) == "startup_failed"
+
+
+def test_clear_all_platforms_wipes_primary_and_profile_entries(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    import json
+    from gateway import status
+    (tmp_path / "gateway_state.json").write_text(json.dumps({
+        "platforms": {
+            "telegram": {"state": "connected"},
+            "reviewer:discord": {"state": "fatal"},
+        }
+    }))
+    status.write_runtime_status(clear_all_platforms=True)
+    payload = json.loads((tmp_path / "gateway_state.json").read_text())
+    assert payload.get("platforms") == {}

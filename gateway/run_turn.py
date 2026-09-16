@@ -3135,7 +3135,11 @@ class GatewayTurnMixin:
         for status / approval / stream sends (Feishu topics need the triggering message id via the
         reply API, so carry it as a fallback). Slack and Buzz honour the user's reply_in_thread
         opt-out: never synthesise a thread for progress, or every later reply inherits it."""
-        from gateway.run import _non_conversational_metadata, _resolve_progress_thread_id
+        from gateway.run import (
+            _mattermost_progress_thread_route,
+            _non_conversational_metadata,
+            _resolve_progress_thread_id,
+        )
         is_buzz = str(getattr(source.platform, "value", source.platform) or "").lower() == "buzz"
         _progress_reply_in_thread = True
         _adapter = self._delivery_adapter_for(source) if source.platform == Platform.SLACK or is_buzz else None
@@ -3151,9 +3155,16 @@ class GatewayTurnMixin:
                     )
             except Exception:
                 _progress_reply_in_thread = True
-        _progress_thread_id = _resolve_progress_thread_id(
-            source.platform, source.thread_id, event_message_id, reply_in_thread=_progress_reply_in_thread,
-        )
+        _mm_reply_to = None
+        if source.platform == Platform.MATTERMOST:
+            _progress_thread_id, _mm_reply_to = _mattermost_progress_thread_route(
+                source_thread_id=source.thread_id,
+                event_message_id=event_message_id,
+            )
+        else:
+            _progress_thread_id = _resolve_progress_thread_id(
+                source.platform, source.thread_id, event_message_id, reply_in_thread=_progress_reply_in_thread,
+            )
         # Relay Discord auto-thread lane: the connector stamps prospective_thread_id at ingest.
         _relay_prospective_thread_id = (
             str(getattr(source, "prospective_thread_id", None))
@@ -3185,6 +3196,8 @@ class GatewayTurnMixin:
             or _relay_prospective_thread_id
             else None
         )
+        if source.platform == Platform.MATTERMOST and _mm_reply_to:
+            _progress_reply_to = _mm_reply_to
         if source.platform == Platform.FEISHU and source.thread_id and event_message_id:
             _status_thread_metadata = {"thread_id": _progress_thread_id, "reply_to_message_id": event_message_id}
         else:
