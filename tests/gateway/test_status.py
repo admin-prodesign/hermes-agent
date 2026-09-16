@@ -1506,3 +1506,18 @@ def test_strict_gateway_identity_rejects_reused_pid(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="identity changed"):
         status.get_running_pid_identity_strict(pid_path)
+
+
+def test_clear_all_platforms_wipes_primary_and_profile_entries(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    import json
+    from gateway import status
+    (tmp_path / "gateway_state.json").write_text(json.dumps({
+        "platforms": {
+            "telegram": {"state": "connected"},
+            "reviewer:discord": {"state": "fatal"},
+        }
+    }))
+    status.write_runtime_status(clear_all_platforms=True)
+    payload = json.loads((tmp_path / "gateway_state.json").read_text())
+    assert payload.get("platforms") == {}

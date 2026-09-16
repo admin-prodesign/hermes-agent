@@ -787,6 +787,23 @@ def _clarify_send_then_wait(fut, *, clarify_id: str, session_key: str, clarify_m
     return response
 
 
+
+def _mattermost_progress_thread_route(
+    *,
+    source_thread_id: Optional[str],
+    event_message_id: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Return Mattermost progress/status route as (thread_id, reply_to).
+
+    Mattermost only sets ``source.thread_id`` for posts that are already replies.
+    A root-channel mention has no source thread yet, but synthetic progress/status
+    posts must still use the triggering post as ``root_id``.
+    """
+    thread_id = source_thread_id or event_message_id
+    reply_to = event_message_id if event_message_id else None
+    return thread_id, reply_to
+
+
 def _resolve_progress_thread_id(
     platform: Any, source_thread_id: Any, event_message_id: Any, *, reply_in_thread: bool = True
 ) -> Optional[str]:

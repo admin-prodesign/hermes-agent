@@ -27,10 +27,12 @@ import os
 import re
 import secrets
 import sys
+import shutil
 import tempfile
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from urllib.parse import quote as _urlquote
@@ -392,6 +394,16 @@ class LineAdapter(BasePlatformAdapter):
         self.allowed_users = allowlist("LINE_ALLOWED_USERS", "allowed_users")
         self.allowed_groups = allowlist("LINE_ALLOWED_GROUPS", "allowed_groups")
         self.allowed_rooms = allowlist("LINE_ALLOWED_ROOMS", "allowed_rooms")
+        self.capture_only_groups = allowlist("LINE_CAPTURE_ONLY_GROUPS", "capture_only_groups")
+        capture_dir = (
+            env_or("LINE_CAPTURE_LOG_DIR", "capture_log_dir")
+            or str(Path(os.getenv("HERMES_HOME", "~/.hermes")).expanduser() / "line_captures")
+        )
+        self.capture_log_dir = Path(capture_dir).expanduser() if capture_dir else None
+        self.capture_transcribe_audio = _truthy_env(
+            "LINE_CAPTURE_TRANSCRIBE_AUDIO",
+            bool(extra.get("capture_transcribe_audio", True)),
+        )
         # Slow-LLM postback button threshold + user-overridable copy
         threshold = env_or("LINE_SLOW_RESPONSE_THRESHOLD", "slow_response_threshold", DEFAULT_SLOW_RESPONSE_THRESHOLD)
         self.slow_response_threshold = _coerce(float, threshold, DEFAULT_SLOW_RESPONSE_THRESHOLD)
@@ -560,9 +572,99 @@ class LineAdapter(BasePlatformAdapter):
         source_obj = self.build_source(
             chat_id=chat_id, chat_type=chat_type, user_id=user_id, user_name=user_id, chat_name=chat_id,
             message_id=message_id)
-        await self.handle_message(MessageEvent(
+        event_obj = MessageEvent(
             text=text, message_type=_LINE_MESSAGE_TYPES.get(msg_type, MessageType.TEXT), source=source_obj,
-            raw_message=event, message_id=message_id, media_urls=media_urls, media_types=media_types))
+            raw_message=event, message_id=message_id, media_urls=media_urls, media_types=media_types)
+        if chat_type == "group" and chat_id in self.capture_only_groups:
+            self._capture_event(event_obj, msg_type=msg_type, chat_id=chat_id, user_id=user_id)
+            logger.info("LINE: captured read-only group event from %s in %s", user_id, chat_id)
+            return
+        await self.handle_message(event_obj)
+
+    def _capture_event(
+        self,
+        event_obj: MessageEvent,
+        *,
+        msg_type: str,
+        chat_id: str,
+        user_id: str,
+    ) -> None:
+        """Persist an allowed read-only group event as JSONL plus durable media copies."""
+        if not self.capture_log_dir:
+            return
+        now = datetime.now(timezone.utc).astimezone()
+        root = self.capture_log_dir / chat_id
+        media_records: List[Dict[str, Any]] = []
+        media_month = now.strftime("%Y-%m")
+        transcription: Optional[Dict[str, Any]] = None
+        for idx, media_path in enumerate(event_obj.media_urls or []):
+            src = Path(str(media_path)).expanduser()
+            media_type = (
+                (event_obj.media_types or [msg_type])[idx]
+                if idx < len(event_obj.media_types or [])
+                else msg_type
+            )
+            record: Dict[str, Any] = {"type": media_type, "cache_path": str(src)}
+            try:
+                if src.exists():
+                    media_dir = root / "media" / media_month
+                    media_dir.mkdir(parents=True, exist_ok=True)
+                    suffix = src.suffix or ".bin"
+                    safe_message_id = re.sub(
+                        r"[^A-Za-z0-9_.-]+",
+                        "_",
+                        event_obj.message_id or uuid.uuid4().hex,
+                    )
+                    dest = media_dir / (
+                        f"{now.strftime('%Y%m%d-%H%M%S')}-{safe_message_id}-{idx}{suffix}"
+                    )
+                    shutil.copy2(src, dest)
+                    record.update({"path": str(dest), "bytes": dest.stat().st_size})
+                    is_audio_media = media_type in {"audio", "voice"} or str(media_type).startswith("audio/")
+                    if self.capture_transcribe_audio and is_audio_media and transcription is None:
+                        try:
+                            from tools.transcription_tools import transcribe_audio
+                            result = transcribe_audio(str(src))
+                            transcription = {
+                                "success": bool(result.get("success")),
+                                "provider": result.get("provider"),
+                                "transcript": result.get("transcript", ""),
+                            }
+                            if not transcription["success"]:
+                                transcription["error"] = result.get("error", "unknown transcription error")
+                        except Exception as exc:
+                            transcription = {
+                                "success": False,
+                                "provider": None,
+                                "transcript": "",
+                                "error": str(exc),
+                            }
+                            logger.warning("LINE: failed to transcribe captured audio %s: %s", src, exc)
+            except Exception as exc:
+                record["copy_error"] = str(exc)
+                logger.warning("LINE: failed to persist captured media %s: %s", src, exc)
+            media_records.append(record)
+        raw = dict(event_obj.raw_message or {})
+        raw.pop("replyToken", None)
+        row = {
+            "captured_at": now.isoformat(),
+            "platform": "line",
+            "chat_type": "group",
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "message_id": event_obj.message_id,
+            "webhook_event_id": raw.get("webhookEventId"),
+            "message_type": msg_type,
+            "text": event_obj.text,
+            "media": media_records,
+            "raw_event": raw,
+        }
+        if transcription is not None:
+            row["transcription"] = transcription
+        log_path = root / f"{media_month}.jsonl"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
     async def _handle_postback_event(self, event: Dict[str, Any]) -> None:
         """User tapped the slow-LLM postback button — deliver the cached payload. READY replies (push
