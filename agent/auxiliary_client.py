@@ -3310,6 +3310,11 @@ _POOL_PROVIDER_BY_HOST = (
 _AUTH_REFRESH_PROVIDER_BY_HOST = (
     ("api.githubcopilot.com", "copilot"), ("chatgpt.com", "openai-codex"),
     ("api.anthropic.com", "anthropic"), ("inference-api.nousresearch.com", "nous"),
+    # xAI returns 403 unauthenticated:bad-credentials for a stale OAuth bearer.
+    # Auto-routed aux tasks (Mattermost titles, mention translation, …) keep
+    # resolved_provider == "auto"; without this host map the credential rung
+    # skips singleton refresh and retries the dead cached client.
+    ("api.x.ai", "xai-oauth"),
 )
 
 
@@ -7020,6 +7025,11 @@ def _ladder_credential_rungs(
             if recovery_err is None:
                 return resp, None
         if _recover_provider_pool(pool_provider, recovery_err, failed_api_key=_client_api_key):
+            if _normalize_aux_provider(pool_provider) != _normalize_aux_provider(resolved_provider):
+                # Pool recovery evicts the backend key (e.g. xai-oauth). Auto-routed
+                # calls cache the stale client under "auto"; drop that too or the
+                # retry rebuilds from the dead bearer.
+                _evict_cached_clients(resolved_provider)
             logger.info("Auxiliary %s%s: recovered %s via credential-pool rotation after %s",
                         task or "call", tag, pool_provider, type(recovery_err).__name__)
             try:
