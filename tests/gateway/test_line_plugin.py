@@ -448,6 +448,22 @@ class TestAdapterInit:
         assert ad.public_base_url == "https://x.example.com"
         assert ad.allowed_users == {"U1", "U2"}
 
+    def test_capture_only_groups_from_extra(self, monkeypatch):
+        for k in ("LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET", "LINE_CAPTURE_ONLY_GROUPS"):
+            monkeypatch.delenv(k, raising=False)
+        from gateway.config import PlatformConfig
+        cfg = PlatformConfig(
+            enabled=True,
+            extra={
+                "channel_access_token": "tok",
+                "channel_secret": "sec",
+                "capture_only_groups": ["Ccapture"],
+            },
+        )
+        ad = LineAdapter(cfg)
+        assert "Ccapture" in ad.capture_only_groups
+        assert hasattr(ad, "_capture_event")
+
 
 # ---------------------------------------------------------------------------
 # 9. Inbound message-type classification
