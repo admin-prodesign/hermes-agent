@@ -223,3 +223,54 @@ class WebhookRouteProcessor:
             return False, None
         silenced = transformed.get("[SILENT]") is True or transformed.get("__hermes_ignore__") is True
         return (False, None) if silenced else (True, transformed)
+
+    def run_post_script(self, script_value: Any, envelope: dict) -> None:
+        """Fire-and-forget post-agent script under HERMES_HOME/scripts (does not affect delivery).
+
+        Stdin is the JSON envelope (payload/response/route/chat_id). Non-zero exit is logged only.
+        """
+        path, error = _resolve_script_path(script_value)
+        if error or path is None:
+            logger.warning("[webhook] post_script skipped: %s", error)
+            return
+        is_shell = path.suffix.lower() in {".sh", ".bash"}
+        interpreter = (shutil.which("bash") or ("/bin/bash" if os.path.isfile("/bin/bash") else None)) if is_shell else sys.executable
+        if interpreter is None:
+            logger.warning("[webhook] post_script skipped: bash not found")
+            return
+        try:
+            from tools.environments.local import build_subprocess_env
+            popen_kwargs = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
+            result = subprocess.run(
+                [interpreter, str(path)],
+                input=json.dumps(envelope if isinstance(envelope, dict) else {}),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self.script_timeout_seconds,
+                cwd=str(path.parent),
+                env=build_subprocess_env(),
+                **popen_kwargs,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("[webhook] post_script timed out: %s", path)
+            return
+        except Exception as exc:
+            logger.warning("[webhook] post_script execution failed: %s", exc)
+            return
+        stderr = (result.stderr or "").strip()
+        try:
+            from agent.redact import redact_sensitive_text
+            stderr = redact_sensitive_text(stderr)
+        except Exception:
+            stderr = "[REDACTED - redaction failed]"
+        if result.returncode != 0:
+            logger.warning(
+                "[webhook] post_script failed path=%s code=%s stderr=%s",
+                path.name,
+                result.returncode,
+                stderr[:200],
+            )
+        else:
+            logger.info("[webhook] post_script ok path=%s", path.name)
