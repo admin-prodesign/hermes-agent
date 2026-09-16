@@ -261,13 +261,15 @@ class WebhookAdapter(BasePlatformAdapter):
         # Autonomous lane (no human reader): the loose marker matcher shared with cron (marker on its own
         # first/last line), because models add a sentence explaining why they stayed quiet, which the
         # interactive exact-match rule would deliver.
+        delivery = self._delivery_info.get(chat_id, {})
         if is_autonomous_silence_response(content):
             logger.info("[webhook] Response for %s is a silence marker — not delivering", chat_id)
+            self._maybe_run_webhook_post_script(chat_id, content, delivery)
             return SendResult(success=True)
-        delivery = self._delivery_info.get(chat_id, {})
         deliver_type = delivery.get("deliver", "log")
         if deliver_type == "log":
             logger.info("[webhook] Response for %s: %s", chat_id, content[:200])
+            self._maybe_run_webhook_post_script(chat_id, content, delivery)
             return SendResult(success=True)
         if deliver_type == "github_comment":
             return await self._deliver_github_comment(content, delivery)
@@ -650,6 +652,9 @@ class WebhookAdapter(BasePlatformAdapter):
         # THIS profile's adapter, home channel and secrets — not the first profile that has the platform.
         self._delivery_info[session_chat_id] = {
             "deliver": route_config.get("deliver", "log"), "profile": profile,
+            "payload": payload if isinstance(payload, dict) else {},
+            "route": route_name,
+            "post_script": route_config.get("post_script"),
             "deliver_extra": self._render_delivery_extra(route_config.get("deliver_extra", {}), payload)}
         self._delivery_info_created[session_chat_id] = now
         self._delivery_info_order.append((now, session_chat_id))
@@ -666,6 +671,22 @@ class WebhookAdapter(BasePlatformAdapter):
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
         return task
+
+    def _maybe_run_webhook_post_script(self, chat_id: str, content: str, delivery: Dict[str, Any]) -> None:
+        """Run optional route ``post_script`` after the agent response is available (stable scripts only)."""
+        post_script = delivery.get("post_script") if isinstance(delivery, dict) else None
+        if not post_script:
+            return
+        envelope = {
+            "payload": delivery.get("payload") if isinstance(delivery.get("payload"), dict) else {},
+            "response": content or "",
+            "route": delivery.get("route") or "",
+            "chat_id": chat_id,
+        }
+        try:
+            self._route_processor.run_post_script(post_script, envelope)
+        except Exception:
+            logger.exception("[webhook] post_script crashed route=%s chat=%s", envelope.get("route"), chat_id)
 
     async def on_processing_complete(self, event: "MessageEvent", outcome: Any) -> None:
         """Close the one-shot per-delivery session: ``prune_sessions`` only reaps rows with ``ended_at`` set, so
