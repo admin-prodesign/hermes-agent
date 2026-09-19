@@ -181,3 +181,34 @@ class TestRefreshProviderCredentialsXaiOAuth:
         """Unknown providers fall through to return False."""
         result = self.refresh("unknown-provider-xyz")
         assert result is False
+
+
+# ── retry_same_provider must not reuse the failed bearer ─────────────────────
+
+class TestRetrySameProviderDropsStaleApiKey:
+    """After xAI 403 recovery, retry must rebuild from the refreshed store/pool."""
+
+    def test_retry_same_provider_clears_resolved_api_key(self):
+        from agent.auxiliary_client import _LadderStep, _ladder_step_call
+
+        class Req:
+            resolved_provider = "auto"
+            resolved_api_mode = "chat_completions"
+
+        retry_kwargs = {
+            "resolved_api_key": "expired-bearer",
+            "resolved_base_url": "https://api.x.ai/v1",
+            "final_model": "grok-4.6",
+        }
+        kind, args, kw = _ladder_step_call(
+            _LadderStep("retry_same_provider", ("xai-oauth", "grok-4.6")),
+            Req(),
+            retry_kwargs,
+            {},
+        )
+        assert kind == "retry"
+        assert args == ()
+        assert kw["resolved_provider"] == "xai-oauth"
+        assert kw["resolved_model"] == "grok-4.6"
+        assert kw["resolved_api_key"] is None
+        assert retry_kwargs["resolved_api_key"] == "expired-bearer"
