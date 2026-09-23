@@ -1231,36 +1231,6 @@ class MattermostAdapter(BasePlatformAdapter):
         return title
 
     @classmethod
-    def _fallback_thread_root_heading_title(cls, root_message: str, reply_message: str = "") -> str:
-        source = root_message or reply_message or ""
-        candidate = ""
-        for line in str(source).splitlines():
-            candidate = line.strip()
-            if candidate:
-                break
-        candidate = re.sub(r"^#+\s*", "", candidate).strip()
-        candidate = re.sub(r"https?://\S+", "", candidate)
-        candidate = re.sub(r"@[\w.-]+", "", candidate)
-        candidate = re.sub(r"[`*_>\[\]()]", " ", candidate)
-        candidate = " ".join(candidate.split()).strip(" -–—:：。.")
-        if not candidate:
-            return "一般討論 / General Discussion"
-        if len(candidate) > 48:
-            candidate = candidate[:45].rstrip() + "..."
-        if re.search(r"[\u3400-\u9fff]", candidate):
-            return cls._sanitize_root_heading_title(f"{candidate} / Thread Discussion")
-        return cls._sanitize_root_heading_title(f"討論串 / {candidate}")
-
-    @classmethod
-    def _fallback_bilingual_heading_title(cls, heading_title: str) -> str:
-        candidate = cls._sanitize_root_heading_title(heading_title)
-        if not candidate:
-            return "一般討論 / General Discussion"
-        if re.search(r"[\u3400-\u9fff]", candidate):
-            return cls._sanitize_root_heading_title(f"{candidate} / Thread Discussion")
-        return cls._sanitize_root_heading_title(f"{candidate} / 討論串")
-
-    @classmethod
     def _mention_translation_marker_present(cls, message: str) -> bool:
         return "**Translation / 翻譯 (utility-agent):**" in str(message or "")
 
@@ -1445,13 +1415,8 @@ class MattermostAdapter(BasePlatformAdapter):
         except Exception as exc:
             logger.warning("Mattermost: auto thread root heading generation failed: %s", exc)
             logger.debug("Mattermost auto-heading traceback", exc_info=True)
-            fallback = (
-                self._fallback_bilingual_heading_title(existing_heading_title)
-                if existing_heading_title
-                else self._fallback_thread_root_heading_title(root_message, reply_message)
-            )
-            logger.info("Mattermost: using fallback auto-heading title")
-            return fallback
+            logger.info("Mattermost: skipped auto-heading after title generation failure")
+            return None
         try:
             content = response.choices[0].message.content
         except Exception:
@@ -1469,13 +1434,8 @@ class MattermostAdapter(BasePlatformAdapter):
                 title = ""
         if title:
             return title
-        fallback = (
-            self._fallback_bilingual_heading_title(existing_heading_title)
-            if existing_heading_title
-            else self._fallback_thread_root_heading_title(root_message, reply_message)
-        )
-        logger.info("Mattermost: using fallback auto-heading title after empty/invalid utility response")
-        return fallback
+        logger.info("Mattermost: skipped auto-heading after empty/invalid utility response")
+        return None
 
     async def _maybe_auto_heading_thread_root(self, post: Dict[str, Any], channel_type_raw: str) -> None:
         """Best-effort: when a Mattermost thread gets a reply, title its root post.
