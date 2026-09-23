@@ -18,9 +18,7 @@ from typing import List, Sequence, Tuple
 
 INDICATOR_RESERVE = 12  # room for "\n(XX/XX)" on its own line
 FENCE_CLOSE = "\n```"
-TABLE_SEP_RE = re.compile(
-    r"^\s*\|?\s*:?-{3,}\s*(\|\s*:?-{3,}\s*)+\|?\s*$"
-)
+_SEP_CELL_RE = re.compile(r":?-{3,}:?")
 HR_RE = re.compile(r"(?m)^\s*-{3,}\s*$")
 FENCE_LINE_RE = re.compile(r"^\s*```")
 
@@ -56,12 +54,17 @@ def split_mattermost_message(content: str, max_length: int = 4000) -> List[str]:
 
     if len(chunks) > 1:
         total = len(chunks)
-        # Keep the marker off fences and table rows so markdown stays valid.
-        chunks = [
-            f"{_isolate_gfm_tables(chunk).rstrip()}\n({i + 1}/{total})"
-            for i, chunk in enumerate(chunks)
-        ]
+        chunks = [_with_continuation_marker(chunk, i + 1, total) for i, chunk in enumerate(chunks)]
     return chunks
+
+
+def _with_continuation_marker(chunk: str, index: int, total: int) -> str:
+    """Put ``(n/m)`` on its own line, with a blank line after a trailing table."""
+    body = _isolate_gfm_tables(chunk).rstrip()
+    lines = body.splitlines()
+    if lines and _is_table_row(lines[-1]):
+        body += "\n"
+    return f"{body}\n({index}/{total})"
 
 
 def _language_sections(content: str) -> List[str] | None:
@@ -210,12 +213,27 @@ def _starts_special(lines: Sequence[str], index: int) -> bool:
     return _is_table_start(lines, index)
 
 
+def _is_table_separator(line: str) -> bool:
+    """True for a GFM delimiter row, including alignment colons.
+
+    ``| --- | --- |``, ``| :--- | ---: |``, and ``| :---: |`` are separators.
+    A plain ``---`` rule is not — it has no pipe.
+    """
+    candidate = line.strip()
+    if "|" not in candidate:
+        return False
+    cells = [cell.strip() for cell in candidate.strip("|").split("|")]
+    if not cells or any(not cell for cell in cells):
+        return False
+    return all(_SEP_CELL_RE.fullmatch(cell) for cell in cells)
+
+
 def _is_table_start(lines: Sequence[str], index: int) -> bool:
     if index + 1 >= len(lines):
         return False
     header = lines[index]
     sep = lines[index + 1]
-    return "|" in header and bool(TABLE_SEP_RE.match(sep.rstrip("\n")))
+    return "|" in header and _is_table_separator(sep)
 
 
 def _is_table_row(line: str) -> bool:
@@ -241,10 +259,17 @@ def _isolate_gfm_tables(text: str) -> str:
         return text
 
     pieces: List[str] = []
+    # The trailing blank line after a table is also the leading blank of the
+    # next block. Drop that overlap so a second pass does not grow the text.
+    pending_blank = False
     for start, end, kind in blocks:
         piece = text[start:end]
         if kind != "table":
-            pieces.append(piece)
+            if pending_blank:
+                piece = piece.lstrip("\n")
+            if piece:
+                pieces.append(piece)
+                pending_blank = False
             continue
         body = piece.strip("\n")
         prefix = ""
@@ -255,6 +280,7 @@ def _isolate_gfm_tables(text: str) -> str:
             elif not prev.endswith("\n\n"):
                 prefix = "\n"
         pieces.append(f"{prefix}{body}\n\n")
+        pending_blank = True
 
     isolated = "".join(pieces)
     if text.endswith("\n") and not isolated.endswith("\n"):
@@ -262,6 +288,23 @@ def _isolate_gfm_tables(text: str) -> str:
     elif not text.endswith("\n"):
         isolated = isolated.rstrip("\n")
     return isolated
+
+
+def _join_markdown_parts(parts: Sequence[Tuple[str, str]]) -> str:
+    """Join blocks. A GFM table keeps a blank line on either side."""
+    rendered: List[str] = []
+    prev_kind = ""
+    for kind, text in parts:
+        body = text.strip("\n")
+        if not body:
+            continue
+        if rendered and (kind == "table" or prev_kind == "table"):
+            rendered.append("\n\n")
+        elif rendered:
+            rendered.append("\n")
+        rendered.append(body)
+        prev_kind = kind
+    return "".join(rendered)
 
 
 def _pack_markdown(text: str, budget: int) -> List[str]:
@@ -274,13 +317,13 @@ def _pack_markdown(text: str, budget: int) -> List[str]:
     blocks = _parse_blocks(text)
     chunks: List[str] = []
     cursor = 0
-    current_parts: List[str] = []
+    current_parts: List[Tuple[str, str]] = []
     current_len = 0
 
     def flush() -> None:
         nonlocal current_parts, current_len
         if current_parts:
-            chunks.append("\n".join(part.strip("\n") for part in current_parts if part.strip("\n") or part).strip("\n"))
+            chunks.append(_join_markdown_parts(current_parts))
             current_parts = []
             current_len = 0
 
@@ -296,11 +339,15 @@ def _pack_markdown(text: str, budget: int) -> List[str]:
             flush()
             chunks.extend(_split_oversize(piece_stripped, kind, budget))
             continue
-        extra = len(piece_stripped) if not current_parts else len(piece_stripped) + 1
-        if current_parts and current_len + extra > budget:
+        sep = 0
+        if current_parts:
+            prev_kind = current_parts[-1][0]
+            sep = 2 if kind == "table" or prev_kind == "table" else 1
+        if current_parts and current_len + sep + len(piece_stripped) > budget:
             flush()
-        current_parts.append(piece_stripped)
-        current_len = len("\n".join(current_parts))
+            sep = 0
+        current_parts.append((kind, piece_stripped))
+        current_len += sep + len(piece_stripped)
 
     flush()
     return [chunk for chunk in chunks if chunk]
@@ -344,7 +391,7 @@ def _split_code_block(text: str, budget: int) -> List[str]:
 
 def _split_table(text: str, budget: int) -> List[str]:
     lines = text.split("\n")
-    if len(lines) < 2 or not TABLE_SEP_RE.match(lines[1]):
+    if len(lines) < 2 or not _is_table_separator(lines[1]):
         return _split_prose(text, budget)
     header, sep, rows = lines[0], lines[1], lines[2:]
     prefix = f"{header}\n{sep}"
