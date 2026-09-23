@@ -151,6 +151,82 @@ class TestMarkdownAtomicSplit(unittest.TestCase):
             )
             self.assertNotIn(f" a ({index}/{len(chunks)})", chunk)
 
+    def test_keeps_distinct_tables_separated_after_packing(self):
+        first = "| A | B |\n| --- | --- |\n| 1 | 2 |"
+        second = "| C | D |\n| --- | --- |\n| 3 | 4 |"
+        text = f"Intro\n\n{first}\n\n{second}\n\n{_english(5000)}"
+        chunks = split_mattermost_message(text, 4000)
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertIn("| 1 | 2 |\n\n| C | D |", "\n".join(chunks))
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk), 4000)
+
+    def test_alignment_separators_repeat_header(self):
+        header = "| Name | Qty |\n| :---: | ---: |"
+        rows = "\n".join(f"| item-{i:02d} | {i} |" for i in range(40))
+        chunks = split_mattermost_message(f"{header}\n{rows}", 220)
+        data_chunks = [chunk for chunk in chunks if "item-" in chunk]
+        self.assertGreaterEqual(len(data_chunks), 2)
+        for chunk in data_chunks:
+            self.assertLessEqual(len(chunk), 220)
+            self.assertIn("| Name | Qty |", chunk)
+            self.assertIn("| :---: | ---: |", chunk)
+
+    def test_left_and_right_alignment_is_isolated(self):
+        text = "### Heading\n| Name | Qty |\n| :--- | ---: |\n| a | 1 |"
+        chunks = split_mattermost_message(text, 4000)
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("### Heading\n\n| Name | Qty |", chunks[0])
+        self.assertIn("| :--- | ---: |\n| a | 1 |", chunks[0])
+
+    def test_long_reply_isolates_heading_from_table(self):
+        table = "| A | B |\n| --- | --- |\n| 1 | 2 |"
+        text = f"### Heading\n{table}\n{_english(5000)}"
+        chunks = split_mattermost_message(text, 4000)
+        self.assertGreaterEqual(len(chunks), 2)
+        found = False
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk), 4000)
+            if "| A | B |" not in chunk:
+                continue
+            found = True
+            self.assertIn("### Heading\n\n| A | B |", chunk)
+            self.assertIn("| 1 | 2 |\n\n", chunk)
+            last = chunk.rstrip().splitlines()[-1]
+            self.assertTrue(last.startswith("(") and "/" in last, msg=repr(last))
+        self.assertTrue(found)
+
+    def test_several_tables_stay_within_limit(self):
+        tables = [
+            f"| H{i} | V |\n| --- | --- |\n| r{i} | {i} |"
+            for i in range(6)
+        ]
+        text = "\n\n".join(tables) + "\n\n" + _english(4500)
+        chunks = split_mattermost_message(text, 4000)
+        self.assertGreaterEqual(len(chunks), 2)
+        blob = "\n".join(chunks)
+        for index in range(5):
+            self.assertIn(
+                f"| r{index} | {index} |\n\n| H{index + 1} | V |",
+                blob,
+            )
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk), 4000)
+
+    def test_reopens_fence_when_code_block_exceeds_budget(self):
+        fence = "```python\n" + ("print('x')\n" * 80) + "```"
+        chunks = split_mattermost_message(fence, 400)
+        self.assertGreaterEqual(len(chunks), 2)
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk), 400)
+            lines = chunk.rstrip().splitlines()
+            if lines and lines[-1].startswith("(") and "/" in lines[-1]:
+                lines = lines[:-1]
+            code = "\n".join(lines).strip()
+            self.assertTrue(code.startswith("```"), msg=repr(code[:40]))
+            self.assertTrue(code.endswith("```"), msg=repr(code[-40:]))
+            self.assertEqual(code.count("```") % 2, 0)
+
 
 class TestAdapterHook(unittest.TestCase):
     def test_adapter_truncate_uses_language_first_splitter(self):
@@ -170,6 +246,11 @@ class TestAdapterHook(unittest.TestCase):
         self.assertEqual(len(chunks), 2)
         self.assertIn(english, chunks[0])
         self.assertIn(chinese, chunks[1])
+
+    def test_max_post_length_is_not_raised(self):
+        from plugins.platforms.mattermost.adapter import MAX_POST_LENGTH
+
+        self.assertLessEqual(MAX_POST_LENGTH, 4000)
 
 
 if __name__ == "__main__":
