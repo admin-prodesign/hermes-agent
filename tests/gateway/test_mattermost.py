@@ -771,10 +771,6 @@ class TestMattermostAutoThreadRootHeading:
         assert self.adapter._heading_title_is_bilingual("PD One 測試") is False
         assert self.adapter._heading_title_is_bilingual("Shipping Delay Review") is False
 
-    def test_fallback_thread_root_heading_title_is_bilingual(self):
-        assert self.adapter._fallback_thread_root_heading_title("請幫忙確認出貨延遲") == "請幫忙確認出貨延遲 / Thread Discussion"
-        assert self.adapter._fallback_thread_root_heading_title("Shipping delay needs review") == "討論串 / Shipping delay needs review"
-
     @pytest.mark.asyncio
     async def test_existing_heading_utility_output_must_preserve_source_text(self):
         class _Message:
@@ -793,8 +789,43 @@ class TestMattermostAutoThreadRootHeading:
                 existing_heading_title="Existing Thread Title",
             )
 
-        assert title == "Existing Thread Title / 討論串"
+        assert title is None
         llm.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_title_generation_failure_skips_heading(self):
+        with patch(
+            "plugins.platforms.mattermost.adapter.async_call_llm",
+            new=AsyncMock(side_effect=RuntimeError("title api down")),
+        ):
+            title = await self.adapter._generate_thread_root_heading_title(
+                "Can someone look at this?",
+                "I can help",
+            )
+
+        assert title is None
+
+    @pytest.mark.asyncio
+    async def test_empty_utility_response_skips_heading(self):
+        class _Message:
+            content = ""
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        with patch(
+            "plugins.platforms.mattermost.adapter.async_call_llm",
+            new=AsyncMock(return_value=_Response()),
+        ):
+            title = await self.adapter._generate_thread_root_heading_title(
+                "Can someone look at this?",
+                "I can help",
+            )
+
+        assert title is None
 
     @pytest.mark.asyncio
     async def test_existing_heading_accepts_utility_translation_that_preserves_source_text(self):
@@ -916,6 +947,21 @@ class TestMattermostAutoThreadRootHeading:
         await self.adapter._handle_ws_event(self._reply_event("another reply"))
 
         self.adapter._api_get.assert_not_awaited()
+        self.adapter._api_put.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_patch_when_title_generation_fails(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "Can someone look at this?",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value=None)
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("I can help"))
+
+        self.adapter._generate_thread_root_heading_title.assert_awaited_once()
         self.adapter._api_put.assert_not_awaited()
 
 
