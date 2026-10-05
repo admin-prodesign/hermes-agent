@@ -74,6 +74,37 @@ def _url_filename(url: str, fallback: str) -> str:
     return url.rsplit("/", 1)[-1].split("?")[0] or fallback
 
 
+def _mattermost_upload_filename(filename: str) -> str:
+    """Drop header controls so an unquoted multipart filename cannot inject CR/LF."""
+    return re.sub(r"[\x00-\x1f\x7f]", "_", filename or "file")
+
+
+def _build_file_upload_form(
+    channel_id: str,
+    file_data: bytes,
+    filename: str,
+    content_type: Optional[str] = None,
+):
+    """Build a Mattermost upload form that keeps Unicode filenames readable.
+
+    aiohttp's default ``quote_fields=True`` percent-encodes non-ASCII
+    characters and spaces in the multipart ``filename`` parameter.
+    Mattermost stores that encoded value literally, so ``良器.docx`` is
+    saved as ``%E8%89%AF%E5%99%A8.docx``. Mattermost accepts UTF-8 names
+    when the field is not quoted. Header controls are stripped first.
+    """
+    import aiohttp
+
+    safe_filename = _mattermost_upload_filename(filename)
+    form = aiohttp.FormData(quote_fields=False)
+    form.add_field("channel_id", channel_id)
+    file_kwargs: Dict[str, Any] = {"filename": safe_filename}
+    if content_type:
+        file_kwargs["content_type"] = content_type
+    form.add_field("files", file_data, **file_kwargs)
+    return form
+
+
 def _url_and_token(config) -> Tuple[str, str]:
     """(server URL, token): ``config`` first, MATTERMOST_URL / MATTERMOST_TOKEN env fallback."""
     extra = getattr(config, "extra", {}) or {}
@@ -307,9 +338,7 @@ class MattermostAdapter(BasePlatformAdapter):
                            content_type: str = "application/octet-stream") -> Optional[str]:
         """Upload a file and return its file ID, or None on failure."""
         import aiohttp
-        form = aiohttp.FormData()
-        form.add_field("channel_id", channel_id)
-        form.add_field("files", file_data, filename=filename, content_type=content_type)
+        form = _build_file_upload_form(channel_id, file_data, filename, content_type)
         async with self._session.post(f"{self._base_url}/api/v4/files", headers=self._auth_header(), data=form,
                                       timeout=aiohttp.ClientTimeout(total=60)) as resp:
             if resp.status >= 400:
@@ -1842,10 +1871,8 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
                 file_path = media.get("path") if isinstance(media, dict) else media
                 if not file_path or not os.path.exists(file_path):
                     continue
-                form = aiohttp.FormData()
-                form.add_field("channel_id", chat_id)  # required so the server can attribute the upload
                 with open(file_path, "rb") as fh:
-                    form.add_field("files", fh.read(), filename=os.path.basename(file_path))
+                    form = _build_file_upload_form(chat_id, fh.read(), os.path.basename(file_path))
                 async with session.post(f"{base_url}/api/v4/files", data=form, headers=upload_headers,
                                         **_req_kw) as upload_resp:
                     if upload_resp.status not in {200, 201}:
