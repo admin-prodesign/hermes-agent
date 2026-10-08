@@ -912,8 +912,15 @@ class AIAgent(
                 sync_kwargs["turn_author"] = turn_author
             self._memory_manager.sync_all(user_text, response_text, **sync_kwargs)
             # Sibling of the build_turn_context() prefetch gate: don't key recall on zero-signal prompts.
-            if not is_trivial_prompt(user_text):
-                self._memory_manager.queue_prefetch_all(user_text, session_id=self.session_id or "")
+            # sync_all keeps the full turn (bridge included). queue_prefetch gets the bounded
+            # recall query: the new message, then recent thread posts, never the bridge.
+            from agent.memory_recall_query import prepare_memory_recall_query, recall_gate_text
+
+            _recall = getattr(self, "_memory_recall", None)
+            if not is_trivial_prompt(recall_gate_text(user_text, _recall)):
+                _recall_query = prepare_memory_recall_query(user_text, _recall)
+                if _recall_query:
+                    self._memory_manager.queue_prefetch_all(_recall_query, session_id=self.session_id or "")
         except Exception:
             pass
 
