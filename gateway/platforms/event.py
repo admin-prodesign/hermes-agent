@@ -88,6 +88,11 @@ class MessageEvent:
     # May this event resolve gateway commands / control prompts? Proactive plugin events set False
     # so untrusted payload text stays conversational. Kept last for positional compat.
     allow_gateway_control: bool = True
+    # Chronological thread/channel posts for memory recall. Authorization evidence stays in
+    # ``channel_context`` (the model prompt) and is not copied here. None: the gateway may fall
+    # back to ``channel_context``. An empty list: the adapter split that evidence out and there
+    # are no recall posts. Keyword-only in practice; appended so positional callers are stable.
+    recall_posts: Optional[List[str]] = None
 
     # Process-local admission receipt, never routing metadata or execution acknowledgement.
     _gateway_accepted: bool = field(default=False, init=False, repr=False, compare=False)

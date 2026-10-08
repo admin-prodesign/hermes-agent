@@ -852,25 +852,35 @@ def _memory_query_text(original_user_message: Any) -> str:
 
 def _memory_turn_start_and_prefetch(
     agent: Any, original_user_message: Any, turn_author: Optional[Dict[str, Any]] = None,
+    memory_recall: Any = None,
 ) -> str:
     """Notify memory providers of the new turn, then prefetch external memory once
     before the tool loop (skipped on trivial prompts with no semantic signal).
-    Returns the prefetch text (``""`` when nothing was injected)."""
+    Returns the prefetch text (``""`` when nothing was injected).
+
+    Prefetch is keyed on the bounded recall query (new message, then recent
+    thread posts). ``original_user_message`` stays the model/history text.
+    """
     if not agent._memory_manager:
         return ""
+    from agent.memory_recall_query import prepare_memory_recall_query, recall_gate_text
+
     _query = _memory_query_text(original_user_message)
+    _recall_query = prepare_memory_recall_query(_query, memory_recall)
     # The author rides along so a provider can attribute THIS turn, not whoever opened the session.
     _author = turn_author if isinstance(turn_author, dict) else {}
     with suppress(Exception):
         agent._memory_manager.on_turn_start(
-            agent._user_turn_count, _query,
+            agent._user_turn_count, _recall_query or _query,
             author_id=_author.get("id") or None, author_name=_author.get("name") or None,
             author_is_bot=bool(_author.get("is_bot")),
         )
     ext_prefetch_cache = ""
     with suppress(Exception):
-        if not is_trivial_prompt(_query):
-            ext_prefetch_cache = agent._memory_manager.prefetch_all(_query, session_id=agent.session_id) or ""
+        # Gate on the new message alone so a one-word reply is not made
+        # "substantive" by the thread backfill wrapped around it.
+        if _recall_query and not is_trivial_prompt(recall_gate_text(_query, memory_recall)):
+            ext_prefetch_cache = agent._memory_manager.prefetch_all(_recall_query, session_id=agent.session_id) or ""
     # Deterministic recall indicator via _emit_status so the model can't silently
     # drop injected memory.
     if ext_prefetch_cache:
@@ -983,6 +993,7 @@ def build_turn_context(
     persist_user_message: Optional[Any], persist_user_timestamp: Optional[float]=None,
     persist_user_platform_id: Optional[str]=None, *, persist_user_display_kind: Optional[str]=None,
     persist_user_display_metadata: Optional[Dict[str, Any]]=None, turn_author: Optional[Dict[str, Any]]=None,
+    memory_recall: Any=None,
     restore_or_build_system_prompt,
     install_safe_stdio, sanitize_surrogates, summarize_user_message_for_log, set_session_context,
     set_current_write_origin, ra, moa_active: bool=False,
@@ -1001,6 +1012,8 @@ def build_turn_context(
     # Reset first: a cached gateway agent must never carry the previous turn's bot author into a human turn.
     turn_author = parse_turn_author(turn_author)
     agent._turn_author = turn_author
+    # Recall input is per-turn. None on the next turn must not reuse this wrap.
+    agent._memory_recall = memory_recall
 
     # Recover a rotated session before binding log/turn ids or copying client history so
     # everything in this turn belongs to the canonical child.
@@ -1129,7 +1142,9 @@ def build_turn_context(
     )
 
     _bind_interrupt_scope(agent, ra)
-    ext_prefetch_cache = _memory_turn_start_and_prefetch(agent, original_user_message, turn_author)
+    ext_prefetch_cache = _memory_turn_start_and_prefetch(
+        agent, original_user_message, turn_author, memory_recall,
+    )
 
     # Title the session now: titling depends only on the user's ask (before any injected
     # context lands on list content), so it runs concurrently with the turn. Daemon thread,
