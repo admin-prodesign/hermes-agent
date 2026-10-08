@@ -263,6 +263,41 @@ def test_prefetch_runs_for_substantive_user_message():
     assert ctx.ext_prefetch_cache == "REMEMBERED CONTEXT"
 
 
+def test_gateway_wrap_prefetch_uses_recall_input_and_leaves_the_model_message():
+    """The permission bridge stays in the prompt and the stored user row.
+
+    Prefetch sees the new message plus the nearest thread posts, not the bridge.
+    """
+    from agent.memory_recall_query import RECALL_QUERY_MAX_CHARS, MemoryRecallInput
+
+    bridge = "[PD One Hermes permission bridge]\nAuthorize by exact sender id only.\nPolicy JSON: {\"found\":true}"
+    posts = tuple(f"[user-{i}] post {i} about T18 " + ("context " * 40) for i in range(30))
+    new = "T18-未領取具無須收回"
+    wrapped = bridge + "\n\n[Mattermost thread context: root=abc]\n" + "\n".join(posts) + f"\n\n[New message]\n{new}"
+    recall = MemoryRecallInput(user_text=new, posts=posts)
+
+    agent, mm = _agent_with_memory_manager()
+    ctx = _build(
+        agent,
+        user_message=wrapped,
+        persist_user_message=wrapped,
+        memory_recall=recall,
+    )
+
+    assert ctx.user_message == wrapped
+    assert ctx.original_user_message == wrapped
+    assert ctx.messages[-1]["content"] == wrapped
+    assert "permission bridge" in ctx.messages[-1]["content"]
+    sent = mm.prefetch_all.call_args.args[0]
+    assert sent.startswith(new + "\n")
+    assert "permission bridge" not in sent
+    assert "Policy JSON" not in sent
+    assert "[user-29]" in sent
+    assert "[user-0]" not in sent
+    assert len(sent) <= RECALL_QUERY_MAX_CHARS
+    assert agent._memory_recall is recall
+
+
 # ── Per-turn author ──────────────────────────────────────────────────────────
 
 
