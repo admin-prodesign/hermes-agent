@@ -446,7 +446,7 @@ class MemoryManager:
 
     def prefetch_all(self, query: str, *, session_id: str = "") -> str:
         """Merge non-empty prefetch context from all providers (failures are non-fatal)."""
-        clean_query = self._strip_skill_scaffolding(query)
+        clean_query = self._recall_query(query)
         if not clean_query:
             return ""
         parts = self._each_provider(
@@ -513,10 +513,20 @@ class MemoryManager:
             segments.append(f"{status.glyph} {status.provider_label} — {detail}")
         return "  ".join(segments)
 
+    def _recall_query(self, query: str) -> str:
+        """Skill-strip, then bound the recall query. ``sync_all`` must not use this.
+
+        The model prompt and the stored turn keep the full text, including a
+        permission bridge. Recall gets the new message plus recent thread posts.
+        """
+        from agent.memory_recall_query import prepare_memory_recall_query
+
+        return prepare_memory_recall_query(query)
+
     def queue_prefetch_all(self, query: str, *, session_id: str = "") -> None:
         """Queue background prefetch on all providers for the next turn (see ``sync_all``)."""
         providers = list(self._providers)
-        clean_query = self._strip_skill_scaffolding(query) if providers else None
+        clean_query = self._recall_query(query) if providers else ""
         if not clean_query:
             return
         self._submit_background(lambda: self._each_provider(

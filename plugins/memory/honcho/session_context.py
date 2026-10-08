@@ -12,6 +12,13 @@ logger = logging.getLogger("plugins.memory.honcho.session")
 
 _FAILED = object()  # sentinel: a guarded call raised (distinct from a legitimately empty/None result)
 
+
+def _bounded_embedding_query(query: str | None) -> str:
+    """Cap an embedding query without dropping the tail (the new user message)."""
+    from agent.memory_recall_query import bound_embedding_query
+
+    return bound_embedding_query(query or "")
+
 # Reasoning-channel markers a summarizer model can leave inside a persisted session summary.
 _THINK_BLOCK_RE = re.compile(
     r"<\s*(?:think|thinking|reasoning|thought|reasoning_scratchpad)\s*>.*?"
@@ -94,7 +101,7 @@ class SessionContextMixin:
         auth is dead or a 401 survives the forced refresh; the fallback chain would just repeat it."""
         context_kwargs: dict[str, Any] = self._target_kwargs(target)
         if search_query is not None:
-            context_kwargs["search_query"] = search_query
+            context_kwargs["search_query"] = _bounded_embedding_query(search_query)
         peer = lambda: self._get_or_create_peer(peer_id)  # noqa: E731
         failed = "Direct %s failed for '%%s': %%s"
         ctx = self._guarded_authed(
@@ -146,14 +153,17 @@ class SessionContextMixin:
             if current_query_only:
                 # The legacy fallback getters do not accept search_query. An empty
                 # or failed current-query lookup must not silently become generic recall.
+                _search_query = _bounded_embedding_query(user_message) if user_message else user_message
                 ctx = self._authed_call("peer context fetch", lambda: self._get_or_create_peer(observer_peer_id).context(
-                    search_query=user_message, target=target_peer_id or session.user_peer_id,
+                    search_query=_search_query, target=target_peer_id or session.user_peer_id,
                 ))
                 result["representation"] = getattr(ctx, "representation", None) or getattr(ctx, "peer_representation", None) or ""
                 result["card"] = "\n".join(self._normalize_card(getattr(ctx, "peer_card", None)))
                 return
             result["representation"], result["card"] = self._peer_context_strings(
-                observer_peer_id, search_query=user_message or None, target=target_peer_id or session.user_peer_id,
+                observer_peer_id,
+                search_query=_bounded_embedding_query(user_message) if user_message else None,
+                target=target_peer_id or session.user_peer_id,
             )
 
         def _ai() -> None:
@@ -226,7 +236,7 @@ class SessionContextMixin:
         accumulate until ``max_tokens`` (~4 chars/token) is exhausted. Returns "" when nothing matches;
         raises HonchoAuthError on rejected credentials."""
         session = self._cached_session(session_key)
-        q = (query or "").strip()[:4000]  # Honcho caps query length for the embedding model.
+        q = _bounded_embedding_query(query)  # Embedder cap; keep the tail so the new message survives.
         if not session or not q:
             return ""
         peer_id = self._resolve_peer_id(session, peer)
@@ -394,8 +404,9 @@ class SessionContextMixin:
         target_peer_id = self._resolve_peer_id(session, peer) if session else None
         if target_peer_id is None:
             return ""
-        if len(query) > self._dialectic_max_input_chars:
-            query = query[:self._dialectic_max_input_chars].rsplit(" ", 1)[0]
+        from agent.memory_recall_query import bound_dialectic_input
+
+        query = bound_dialectic_input(query, self._dialectic_max_input_chars)
         level = reasoning_level if (self._dialectic_dynamic and reasoning_level) else self._dialectic_reasoning_level
 
         def _chat_once() -> str:
