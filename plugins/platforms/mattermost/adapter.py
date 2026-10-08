@@ -890,7 +890,7 @@ class MattermostAdapter(BasePlatformAdapter):
         root_id: Optional[str],
         triggering_post_id: Optional[str],
         session_key: Optional[str] = None,
-    ) -> Tuple[Optional[str], List[str]]:
+    ) -> Tuple[Optional[str], List[str], List[str]]:
         """Fetch and format Mattermost thread history before the triggering post.
 
         Hermes already uses Mattermost root_id as thread_id for session keys.
@@ -899,16 +899,16 @@ class MattermostAdapter(BasePlatformAdapter):
         was not mentioned at the root.
         """
         if not root_id:
-            return None, []
+            return None, [], []
         try:
             thread = await self._api_get(f"posts/{root_id}/thread")
         except Exception as exc:
             logger.warning("Mattermost: failed to fetch thread context for %s: %s", root_id, exc)
-            return None, []
+            return None, [], []
 
         posts_by_id = thread.get("posts") if isinstance(thread, dict) else None
         if not isinstance(posts_by_id, dict):
-            return None, []
+            return None, [], []
         order = thread.get("order") if isinstance(thread, dict) else None
         if not isinstance(order, list):
             order = sorted(
@@ -963,8 +963,9 @@ class MattermostAdapter(BasePlatformAdapter):
                 loaded_posts.add(str(triggering_post_id))
             loaded_files.update(thread_file_ids)
 
+        recall_posts = [formatted for _, formatted in selected]
         if not selected:
-            return None, thread_file_ids
+            return None, thread_file_ids, recall_posts
 
         body = "\n".join(line for _, line in selected)
         if len(body) > max_chars:
@@ -973,7 +974,7 @@ class MattermostAdapter(BasePlatformAdapter):
         if omitted:
             header += f"; omitted_older_posts={omitted}"
         header += "]"
-        return f"{header}\n{body}", thread_file_ids
+        return f"{header}\n{body}", thread_file_ids, recall_posts
 
     def _load_pd_one_user_policy(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Load an OpenClaw/PD One effective Mattermost policy cache entry."""
@@ -1791,8 +1792,9 @@ class MattermostAdapter(BasePlatformAdapter):
         from gateway.platforms.base import resolve_channel_prompt
         session_key = build_session_key(source)
         thread_context = None
+        thread_posts: List[str] = []
         if thread_id:
-            thread_context, thread_file_ids = await self._fetch_thread_context(
+            thread_context, thread_file_ids, thread_posts = await self._fetch_thread_context(
                 thread_id, post_id, session_key=session_key,
             )
             extra = [fid for fid in thread_file_ids if fid not in (post.get("file_ids") or [])]
@@ -1805,11 +1807,14 @@ class MattermostAdapter(BasePlatformAdapter):
             sender_id, channel_id, chat_type, message_text, post,
         )
         channel_context = self._combine_channel_context(policy_context, workflow_context, thread_context)
+        # Recall sees thread posts only. The bridge and outbound-workflow blocks stay on
+        # channel_context for the model and are not a search query.
+        recall_posts = list(thread_posts) if (policy_context or workflow_context or thread_posts) else None
         await self.handle_message(MessageEvent(
             text=message_text, message_type=msg_type, source=source, raw_message=post, message_id=post_id,
             media_urls=media_urls or None, media_types=media_types or None,
             channel_prompt=resolve_channel_prompt(self.config.extra, channel_id, None),
-            channel_context=channel_context))
+            channel_context=channel_context, recall_posts=recall_posts))
 
 
 # --- Plugin standalone-send (out-of-process cron delivery via Mattermost REST) ---
