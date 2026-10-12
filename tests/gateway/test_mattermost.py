@@ -453,6 +453,120 @@ class TestMattermostFileUpload:
         assert result.success is True
         assert result.message_id == "post_with_file"
 
+    def test_unicode_filename_is_not_percent_encoded(self):
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        name = "01-良器-工作規則 Pro-Design Work Rules.docx"
+        form = _build_file_upload_form("chan", b"docx", name)
+        header = form()._parts[1][0].headers["Content-Disposition"]
+        assert name in header
+        assert "%E8%89%AF" not in header
+        assert "%20" not in header
+
+    def test_ascii_filename_is_unchanged(self):
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        form = _build_file_upload_form("chan", b"pdf", "preview.pdf", "application/pdf")
+        header = form()._parts[1][0].headers["Content-Disposition"]
+        assert 'filename="preview.pdf"' in header
+
+    def test_header_controls_are_replaced_before_unquoted_filename(self):
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        form = _build_file_upload_form("chan", b"x", "bad\r\nname\x00.docx")
+        header = form()._parts[1][0].headers["Content-Disposition"]
+        assert "\r" not in header
+        assert "\n" not in header
+        assert "\x00" not in header
+        assert "bad__name_.docx" in header
+
+    @pytest.mark.asyncio
+    async def test_upload_file_posts_shared_form(self):
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        mock_upload_resp = AsyncMock()
+        mock_upload_resp.status = 200
+        mock_upload_resp.json = AsyncMock(return_value={"file_infos": [{"id": "file_zh"}]})
+        mock_upload_resp.text = AsyncMock(return_value="")
+        mock_upload_resp.__aenter__ = AsyncMock(return_value=mock_upload_resp)
+        mock_upload_resp.__aexit__ = AsyncMock(return_value=False)
+        self.adapter._session.post = MagicMock(return_value=mock_upload_resp)
+        self.adapter._base_url = "https://mm.example.com"
+
+        file_id = await self.adapter._upload_file("chan", b"docx", "良器.docx")
+
+        assert file_id == "file_zh"
+        posted = self.adapter._session.post.call_args.kwargs["data"]
+        assert posted is not None
+        header = posted()._parts[1][0].headers["Content-Disposition"]
+        assert "良器.docx" in header
+        assert "%E8%89%AF" not in header
+        assert posted()._parts[0][0].headers["Content-Disposition"]
+        built = _build_file_upload_form("chan", b"docx", "良器.docx")
+        assert "良器.docx" in built()._parts[1][0].headers["Content-Disposition"]
+
+    @pytest.mark.asyncio
+    async def test_standalone_send_uses_shared_form_builder(self, tmp_path, monkeypatch):
+        from plugins.platforms.mattermost import adapter as mm
+
+        path = tmp_path / "良器.docx"
+        path.write_bytes(b"docx")
+        seen = {}
+
+        def fake_builder(channel_id, file_data, filename, content_type=None):
+            seen["call"] = (channel_id, file_data, filename, content_type)
+            return _sentinel
+
+        _sentinel = object()
+        monkeypatch.setattr(mm, "_build_file_upload_form", fake_builder)
+
+        class _Resp:
+            def __init__(self, payload):
+                self.status = 201
+                self._payload = payload
+
+            async def text(self):
+                return ""
+
+            async def json(self):
+                return self._payload
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _Session:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            def post(self, url, **kwargs):
+                seen.setdefault("posts", []).append((url, kwargs.get("data")))
+                if url.endswith("/files"):
+                    return _Resp({"file_infos": [{"id": "fid"}]})
+                return _Resp({"id": "postid"})
+
+        monkeypatch.setattr("aiohttp.ClientSession", _Session)
+        result = await mm._standalone_send(
+            PlatformConfig(enabled=True, token="tok", extra={"url": "https://mm.example.com"}),
+            "chan",
+            "msg",
+            media_files=[str(path)],
+        )
+
+        assert result["success"] is True
+        assert seen["call"][0] == "chan"
+        assert seen["call"][1] == b"docx"
+        assert seen["call"][2] == "良器.docx"
+        assert seen["posts"][0][1] is _sentinel
+
 
 # ---------------------------------------------------------------------------
 # Dedup cache
