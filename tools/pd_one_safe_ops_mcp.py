@@ -367,8 +367,10 @@ def _register_release_tools(
 
 
 def _register_read(server: Any, name: str, description: str) -> None:
-    def tool(table: str, query: str = "", _name: str = name) -> dict[str, Any]:
-        result = call_mcp_tool(_name, {"table": table, "query": query})
+    # The tool name is closed over. mcp 2.0 rejects a parameter whose name
+    # starts with "_" (InvalidSignature), so it cannot be a default argument.
+    def tool(table: str, query: str = "") -> dict[str, Any]:
+        result = call_mcp_tool(name, {"table": table, "query": query})
         if not isinstance(result, dict):
             return {"ok": False, "error": "safe-ops command returned no object"}
         return result
@@ -379,16 +381,25 @@ def _register_read(server: Any, name: str, description: str) -> None:
 
 
 def _public_signature(fn: Callable[..., Any]) -> inspect.Signature:
-    """Schema signature. Varargs and keyword-only extras stay off the tool schema."""
+    """Input schema for a wrapped tool.
+
+    Varargs, keyword-only extras, and private names stay off the schema.
+    mcp 2.0 rejects a parameter whose name starts with "_". Annotations are
+    evaluated here because assigning ``__signature__`` skips the SDK's
+    ``eval_str`` pass. The return annotation is ``dict[str, Any]`` because
+    that is the value the wrapper hands back for structured output.
+    """
+    original = inspect.signature(fn, eval_str=True)
     visible = [
-        param for param in inspect.signature(fn).parameters.values()
+        param for param in original.parameters.values()
         if param.kind not in {
             inspect.Parameter.VAR_KEYWORD,
             inspect.Parameter.VAR_POSITIONAL,
             inspect.Parameter.KEYWORD_ONLY,
         }
+        and not param.name.startswith("_")
     ]
-    return inspect.Signature(visible)
+    return original.replace(parameters=visible, return_annotation=dict[str, Any])
 
 
 def _as_tool_object(result: Any) -> dict[str, Any]:
@@ -415,8 +426,8 @@ def _json_object(result: Any) -> Any:
 def _register_profile(server: Any, name: str, fn: Callable[..., Any]) -> None:
     description = inspect.getdoc(fn) or name
 
-    def tool(_name: str = name, **kwargs: Any) -> dict[str, Any]:
-        return _as_tool_object(call_mcp_tool(_name, kwargs))
+    def tool(**kwargs: Any) -> dict[str, Any]:
+        return _as_tool_object(call_mcp_tool(name, kwargs))
 
     tool.__name__ = name
     tool.__doc__ = description

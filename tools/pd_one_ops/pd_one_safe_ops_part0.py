@@ -519,8 +519,17 @@ def OFFICE_DEB_ALLOWED_ROOT():
 OFFICE_DEB_CONTENT_MAX_LINES = 2000
 OFFICE_TOOLCHAIN_BINARIES = ('ssconvert', 'gnumeric', 'soffice', 'libreoffice', 'pdftoppm', 'pdfinfo', 'python3')
 
+def _path_text(value: object) -> str:
+    """Coerce a path entry to str. ``resolve_configured_path`` returns a Path."""
+    if value is None:
+        return ''
+    if isinstance(value, os.PathLike):
+        return os.fspath(value)
+    return str(value)
+
 def PATH_BASE():
-    return ':'.join([str(ROOT() / 'home/.local/bin'), resolve_configured_path('~/.local/bin'), '/usr/local/bin', '/usr/bin', '/bin'])
+    entries = (ROOT() / 'home/.local/bin', resolve_configured_path('~/.local/bin'), '/usr/local/bin', '/usr/bin', '/bin')
+    return os.pathsep.join(_path_text(entry) for entry in entries)
 
 def TYPHOON_AUTOMATION_SCRIPT():
     return ROOT() / 'scripts/pd_one_typhoon_automation.py'
@@ -612,15 +621,16 @@ def enforce_drive_acl(file_id: str, requester_user_id: str | None, *, need: str)
 
 def safe_env() -> dict[str, str]:
     env = os.environ.copy()
-    env['PATH'] = PATH_BASE() + os.pathsep + env.get('PATH', '')
+    env['PATH'] = _path_text(PATH_BASE()) + os.pathsep + _path_text(env.get('PATH', ''))
     env.setdefault('HOME', str(ROOT() / 'home'))
     return env
 
 def find_bin(name: str, extra: list[str] | None=None) -> str | None:
     for c in extra or []:
-        if c and Path(c).exists() and os.access(c, os.X_OK):
-            return c
-    return shutil.which(name, path=PATH_BASE() + os.pathsep + site_text('PATH'))
+        candidate = _path_text(c)
+        if candidate and Path(candidate).exists() and os.access(candidate, os.X_OK):
+            return candidate
+    return shutil.which(name, path=_path_text(PATH_BASE()) + os.pathsep + _path_text(site_text('PATH')))
 
 def run_json(cmd: list[str], timeout: int=120) -> Any:
     proc = subprocess.run(cmd, text=True, capture_output=True, env=safe_env(), shell=False, timeout=timeout)
