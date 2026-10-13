@@ -1432,6 +1432,75 @@ def build_company_announcement_from_spec(spec: dict[str, Any], out: Path) -> dic
         temp_path.unlink(missing_ok=True)
     return {'output': str(out), 'sha256': hashlib.sha256(out.read_bytes()).hexdigest(), 'template': 'company_announcement', 'template_path': str(template), 'source_sha256': source_sha256, 'replacement_count': len(normalized), 'paragraphs_scanned': len(paragraphs), 'safety': {'fixed_template': True, 'source_read_only': True, 'local_artifact_write_only': True, 'source_system_writes': False, 'external_delivery': False, 'office_integrity_gate_required': True}}
 
+def _docx_paragraph_alignment(name: str):
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    table = {
+        'left': WD_ALIGN_PARAGRAPH.LEFT,
+        'center': WD_ALIGN_PARAGRAPH.CENTER,
+        'right': WD_ALIGN_PARAGRAPH.RIGHT,
+    }
+    return table.get(str(name or 'left').lower(), WD_ALIGN_PARAGRAPH.LEFT)
+
+def _append_docx_heading(doc, section: dict[str, Any], idx: int):
+    level = int(section.get('level', 1))
+    if level < 1 or level > 3:
+        fail(f'sections[{idx}].level must be between 1 and 3')
+    doc.add_heading(_require_str(section.get('text'), f'sections[{idx}].text'), level=level)
+
+def _append_docx_paragraph(doc, section: dict[str, Any], idx: int):
+    paragraph = doc.add_paragraph()
+    paragraph.alignment = _docx_paragraph_alignment(str(section.get('align', 'left')))
+    text = _require_str(section.get('text'), f'sections[{idx}].text')
+    run = paragraph.add_run(text)
+    if section.get('bold'):
+        run.bold = True
+    if section.get('italic'):
+        run.italic = True
+    return paragraph
+
+def _append_docx_bullets(doc, section: dict[str, Any], idx: int):
+    items = _require_list(section.get('items'), f'sections[{idx}].items')
+    if len(items) > 100:
+        fail(f'sections[{idx}].items exceeds safe limit')
+    paragraph = None
+    for item in items:
+        paragraph = doc.add_paragraph(style='List Bullet')
+        paragraph.add_run(_require_str(item, f'sections[{idx}].items[]'))
+    return paragraph
+
+def _append_docx_page_break(doc, section: dict[str, Any], idx: int):
+    del section, idx
+    doc.add_page_break()
+
+def _append_docx_table(doc, section: dict[str, Any], idx: int):
+    rows = _require_list(section.get('rows'), f'sections[{idx}].rows')
+    if not rows:
+        fail(f'sections[{idx}].rows cannot be empty')
+    normalized_rows: list[list[Any]] = []
+    max_cols = 0
+    for row_idx, row in enumerate(rows, start=1):
+        row_list = _require_list(row, f'sections[{idx}].rows[{row_idx}]')
+        if len(row_list) > 20:
+            fail(f'sections[{idx}].rows[{row_idx}] exceeds safe column limit')
+        normalized_rows.append(row_list)
+        max_cols = max(max_cols, len(row_list))
+    if len(normalized_rows) > 100:
+        fail(f'sections[{idx}].rows exceeds safe row limit')
+    table = doc.add_table(rows=len(normalized_rows), cols=max_cols)
+    table.style = str(section.get('style') or 'Table Grid')
+    header_rows = int(section.get('header_rows', 0))
+    if header_rows < 0 or header_rows > len(normalized_rows):
+        fail(f'sections[{idx}].header_rows is out of range')
+    _apply_table(table, normalized_rows, header_rows=header_rows)
+
+_DOCX_SECTION_BUILDERS = {
+    'heading': _append_docx_heading,
+    'paragraph': _append_docx_paragraph,
+    'bullet_list': _append_docx_bullets,
+    'page_break': _append_docx_page_break,
+    'table': _append_docx_table,
+}
+
 def build_docx_from_spec(spec: dict[str, Any], out: Path) -> dict[str, Any]:
     doc = _PdUnset
     p = _PdUnset
@@ -1476,51 +1545,12 @@ def build_docx_from_spec(spec: dict[str, Any], out: Path) -> dict[str, Any]:
             if not isinstance(section, dict):
                 fail(f'sections[{idx}] must be an object')
             kind = _require_str(section.get('type'), f'sections[{idx}].type').lower()
-            if kind == 'heading':
-                level = int(section.get('level', 1))
-                if level < 1 or level > 3:
-                    fail(f'sections[{idx}].level must be between 1 and 3')
-                doc.add_heading(_require_str(section.get('text'), f'sections[{idx}].text'), level=level)
-            elif kind == 'paragraph':
-                p = doc.add_paragraph()
-                p.alignment = {'left': WD_ALIGN_PARAGRAPH.LEFT, 'center': WD_ALIGN_PARAGRAPH.CENTER, 'right': WD_ALIGN_PARAGRAPH.RIGHT}.get(str(section.get('align', 'left')).lower(), WD_ALIGN_PARAGRAPH.LEFT)
-                text = _require_str(section.get('text'), f'sections[{idx}].text')
-                run = p.add_run(text)
-                if section.get('bold'):
-                    run.bold = True
-                if section.get('italic'):
-                    run.italic = True
-            elif kind == 'bullet_list':
-                items = _require_list(section.get('items'), f'sections[{idx}].items')
-                if len(items) > 100:
-                    fail(f'sections[{idx}].items exceeds safe limit')
-                for item in items:
-                    p = doc.add_paragraph(style='List Bullet')
-                    p.add_run(_require_str(item, f'sections[{idx}].items[]'))
-            elif kind == 'page_break':
-                doc.add_page_break()
-            elif kind == 'table':
-                rows = _require_list(section.get('rows'), f'sections[{idx}].rows')
-                if not rows:
-                    fail(f'sections[{idx}].rows cannot be empty')
-                normalized_rows: list[list[Any]] = []
-                max_cols = 0
-                for row_idx, row in enumerate(rows, start=1):
-                    row_list = _require_list(row, f'sections[{idx}].rows[{row_idx}]')
-                    if len(row_list) > 20:
-                        fail(f'sections[{idx}].rows[{row_idx}] exceeds safe column limit')
-                    normalized_rows.append(row_list)
-                    max_cols = max(max_cols, len(row_list))
-                if len(normalized_rows) > 100:
-                    fail(f'sections[{idx}].rows exceeds safe row limit')
-                table = doc.add_table(rows=len(normalized_rows), cols=max_cols)
-                table.style = str(section.get('style') or 'Table Grid')
-                header_rows = int(section.get('header_rows', 0))
-                if header_rows < 0 or header_rows > len(normalized_rows):
-                    fail(f'sections[{idx}].header_rows is out of range')
-                _apply_table(table, normalized_rows, header_rows=header_rows)
-            else:
+            builder = _DOCX_SECTION_BUILDERS.get(kind)
+            if builder is None:
                 fail(f'sections[{idx}].type unsupported: {kind!r}')
+            written = builder(doc, section, idx)
+            if written is not None:
+                p = written
         out.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(out))
         gate_script = Path(resolve_configured_path('~/.hermes/skills/pd-one/pd-one-admin/scripts/office_no_corruption_gate.py'))

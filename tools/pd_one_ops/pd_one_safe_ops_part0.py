@@ -412,9 +412,6 @@ ITEM_NUMBER_SMOKE_COMMENTS = 'TEST FIXTURE ONLY'
 SIP_THREAD_INDEX_INPUT_GLOBS = ('sip_threads_pd0_*.json', 'sip_threads_pd1_*.json', 'sip_threads_pd2_*.json')
 SIP_THREAD_INDEX_NOISE_MARKERS = ('請協助', '發行', '謝謝', '異常回報', '修改', '新增', '增加', '刪除')
 
-def ITEM_NUMBER_WORKFLOW_ROOT():
-    return ROOT() / 'legacy-openclaw/workspace-employee/item-number-workflow'
-
 def ITEM_NUMBER_WORKFLOW_ENGINE():
     return ITEM_NUMBER_WORKFLOW_ROOT() / 'engine'
 

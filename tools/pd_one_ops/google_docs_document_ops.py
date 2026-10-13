@@ -1083,16 +1083,16 @@ def execute_document_ops(*, action: str='list_registered_documents', document_ke
 
         def _pd_phase_6():
             nonlocal result, revision_error
-            if action_key == 'unique_text_patch':
-                plan, requests, skipped = _unique_text_patch_plan(module, doc, old_text, new_text, resolved_tab_id, expected_match_count=expected_match_count)
-            elif action_key == 'insert_section_before_heading':
-                plan, requests, skipped = _insert_section_plan(module, doc, anchor_heading, parent_heading, section_heading, body_paragraphs, heading_style, resolved_tab_id)
-            elif action_key == 'set_header_text':
-                plan, requests, skipped = _set_header_plan(module, doc, header_text, header_types, resolved_tab_id)
-            elif action_key == 'append_changelog':
-                plan, requests, skipped = _append_changelog_plan(module, doc, changelog_date, changelog_summary, section_heading, changelog_heading, resolved_tab_id)
-            else:
+            planners = {
+                'unique_text_patch': lambda: _unique_text_patch_plan(module, doc, old_text, new_text, resolved_tab_id, expected_match_count=expected_match_count),
+                'insert_section_before_heading': lambda: _insert_section_plan(module, doc, anchor_heading, parent_heading, section_heading, body_paragraphs, heading_style, resolved_tab_id),
+                'set_header_text': lambda: _set_header_plan(module, doc, header_text, header_types, resolved_tab_id),
+                'append_changelog': lambda: _append_changelog_plan(module, doc, changelog_date, changelog_summary, section_heading, changelog_heading, resolved_tab_id),
+            }
+            planner = planners.get(action_key)
+            if planner is None:
                 raise AssertionError(action_key)
+            plan, requests, skipped = planner()
             fingerprint_sha256: Optional[str] = None
             fingerprint: Optional[dict[str, Any]] = None
             postcondition: Optional[dict[str, Any]] = None

@@ -296,26 +296,21 @@ class RecordOpsPlanner:
         if created_by:
             parsed['created_by'] = created_by
         intent = parsed['intent']
-        if intent == 'create_incident_report':
-            plan = self._plan_create_incident(parsed, execute)
-        elif intent == 'query_unresolved_incident_reports':
-            plan = self._plan_query_unresolved(parsed, execute)
-        elif intent == 'resolve_activitylog_incident':
-            plan = self._plan_resolve_activity(parsed, execute, sync_parent_status)
-        elif intent == 'update_activitylog_field':
-            plan = self._plan_update_activity(parsed, execute)
-        elif intent == 'delete_activitylog':
-            plan = self._plan_delete_activity(parsed, execute)
-        elif intent == 'create_case':
-            plan = self._plan_create_case(parsed, execute)
-        elif intent == 'add_case_update':
-            plan = self._plan_add_case_update(parsed, execute, sync_case_status=False)
-        elif intent == 'change_case_status':
-            plan = self._plan_add_case_update(parsed, execute, sync_case_status=sync_parent_status)
-        elif intent == 'query_cases':
-            plan = self._plan_query_cases(parsed, execute)
-        else:
+        planners = {
+            'create_incident_report': lambda: self._plan_create_incident(parsed, execute),
+            'query_unresolved_incident_reports': lambda: self._plan_query_unresolved(parsed, execute),
+            'resolve_activitylog_incident': lambda: self._plan_resolve_activity(parsed, execute, sync_parent_status),
+            'update_activitylog_field': lambda: self._plan_update_activity(parsed, execute),
+            'delete_activitylog': lambda: self._plan_delete_activity(parsed, execute),
+            'create_case': lambda: self._plan_create_case(parsed, execute),
+            'add_case_update': lambda: self._plan_add_case_update(parsed, execute, sync_case_status=False),
+            'change_case_status': lambda: self._plan_add_case_update(parsed, execute, sync_case_status=sync_parent_status),
+            'query_cases': lambda: self._plan_query_cases(parsed, execute),
+        }
+        planner = planners.get(intent)
+        if planner is None:
             raise SystemExit(f'Unhandled intent: {intent}')
+        plan = planner()
         plan.parsed = parsed
         return plan
 
