@@ -50,6 +50,7 @@ ANCHORS: dict[str, str | tuple[str, ...]] = {
     "wecom": "defusedxml",
     "teams": "microsoft_teams.apps",
     "modal": "modal",
+    "nemo": ("honcho", "yaml"),
     "daytona": "daytona",
     "vercel": "vercel",
     "google": ("googleapiclient", "google.auth", "google_auth_oauthlib.flow", "google_auth_httplib2"),
