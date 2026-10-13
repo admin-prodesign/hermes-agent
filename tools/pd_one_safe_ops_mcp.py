@@ -1,33 +1,27 @@
 """stdio MCP server for PD One safe ops.
 
-The pdone profile on nemo launched ``profiles/pdone/tools/pd_one_safe_ops_mcp.py``,
-which imported the sibling ``profiles/pdone/tools/pd_one_safe_ops.py``. That
-copy is not this repo, and its AppSheet probe returns every private HRS
-column. This server loads the filtered module beside this file for
-``pd_one_appsheet_table_probe`` and ``pd_one_appsheet_row_get``.
+Every ``pd_one_*`` command and ``call_function_twin`` is registered from the
+release module beside this file. HRS and HR-employee row payloads go through
+the private-column denylist before the result is returned. Private HR lookup
+stays on the in-process tool, which can see the bound Mattermost session; an
+MCP child cannot.
 
-Other ``pd_one_*`` callables still live only in the profile module (Docs,
-Sheets, groups, SQL ACL, pptx, doc extract). They are loaded from
-``<profile home>/tools/pd_one_safe_ops.py`` when that file is a different
-path from the release module, and any HRS rows in their results go through
-the same denylist. The probe names in that file are not called. Their
-bodies are not in git, so they cannot be copied here until the profile
-file is available to port into ``mcp_read_handlers``.
+The profile ``tools/`` directory is not imported unless
+``pd_one.load_profile_tools`` is true. That flag is off by default. Names the
+release already owns are never taken from the profile file.
 
 Deploy, after the nemo release is rebuilt from main (the ``nemo`` extra
 supplies honcho-ai and PyYAML):
 
 1. Point the pdone profile ``mcp_servers.pdone_safe_ops`` command at
    ``tools/pd_one_safe_ops_mcp.py`` in the release checkout, using the
-   release interpreter. The child must see the pdone profile as its Hermes
-   home so the not-yet-ported commands resolve. Do not copy this file into
-   the profile ``tools/`` directory: a script's ``sys.path[0]`` is its own
-   directory, and a copy beside the old module would import that module.
-2. Retire ``profiles/pdone/tools/pd_one_safe_ops_mcp.py`` so nothing still
-   imports the unfiltered sibling as the probe.
-3. Move the remaining ``pd_one_*`` functions into ``mcp_read_handlers`` in
-   the release module (each HRS read through ``_appsheet_read``), then
-   delete ``profiles/pdone/tools/pd_one_safe_ops.py``.
+   release interpreter. Do not copy this file into the profile ``tools/``
+   directory: a script's ``sys.path[0]`` is its own directory, and a copy
+   beside an old module would import that module.
+2. Set the ``pd_one`` config values (channels, owner, drive ids, emails,
+   external paths). See ``website/docs/user-guide/pd-one-safe-ops.md``.
+3. Retire ``profiles/pdone/tools/pd_one_safe_ops.py`` and
+   ``profiles/pdone/tools/pd_one_safe_ops_mcp.py``.
 """
 from __future__ import annotations
 
@@ -129,10 +123,11 @@ def _profile_module_path() -> Path | None:
     return path
 
 
-def _profile_exports(module: Any) -> dict[str, Callable[..., Any]]:
+def _profile_exports(module: Any, owned: frozenset[str] | None = None) -> dict[str, Callable[..., Any]]:
+    blocked = _REPO_OWNED if owned is None else owned
     found: dict[str, Callable[..., Any]] = {}
     for name, obj in vars(module).items():
-        if name.startswith("_") or name in _REPO_OWNED or not inspect.isfunction(obj):
+        if name.startswith("_") or name in blocked or not inspect.isfunction(obj):
             continue
         if name.startswith("pd_one_") or name == "call_function_twin":
             found[name] = obj
@@ -162,7 +157,15 @@ def _load_profile_module(path: Path) -> Any:
 
 
 def profile_command_handlers() -> dict[str, Callable[..., Any]]:
-    """``pd_one_*`` commands that exist only in the profile module."""
+    """Profile ``pd_one_*`` commands. Empty unless ``pd_one.load_profile_tools`` is true.
+
+    Release-owned names are excluded, so a profile file cannot replace the
+    filtered probe or any command that now ships in the repo.
+    """
+    from tools.pd_one_ops.site_config import profile_tools_enabled
+
+    if not profile_tools_enabled():
+        return {}
     path = _profile_module_path()
     if path is None:
         return {}
@@ -170,18 +173,37 @@ def profile_command_handlers() -> dict[str, Callable[..., Any]]:
     cached = _PROFILE_CACHE.get(key)
     if cached is not None:
         return cached
-    handlers = _profile_exports(_load_profile_module(path))
+    handlers = _profile_exports(_load_profile_module(path), _release_owned_names())
     _PROFILE_CACHE[key] = handlers
     return handlers
 
 
-def ensure_hrs_redacted(table: str, payload: Any) -> Any:
+def _release_owned_names() -> frozenset[str]:
+    from tools.pd_one_safe_ops import mcp_read_handlers
+
+    return frozenset(_REPO_OWNED) | frozenset(mcp_read_handlers())
+
+
+def ensure_hrs_redacted(
+    table: str,
+    payload: Any,
+    *,
+    tool_name: str = "",
+    arguments: dict | None = None,
+) -> Any:
     """Second gate for MCP results. An already-filtered payload is unchanged.
 
-    A profile command that still hands back ``rows``, ``Rows``, ``data``, or
-    ``row`` cannot return private HRS cells. JSON text is parsed and written
-    back only when a cell was removed.
+    HRS tables and HR-employee row payloads lose private columns. JSON text is
+    parsed and written back only when a cell was removed. A clean object is
+    returned as the same object.
     """
+    from tools.pd_one_ops.hr_guard import guard_hr_payload
+
+    guarded = guard_hr_payload(
+        payload, table=table, tool_name=tool_name, arguments=arguments,
+    )
+    if guarded is not payload:
+        return guarded
     if isinstance(payload, str):
         return _redact_json_text(table, payload)
     if isinstance(payload, list):
@@ -287,22 +309,22 @@ def _invoke_profile(fn: Callable[..., Any], args: dict[str, Any]) -> Any:
 def call_mcp_tool(name: str, arguments: dict | None = None) -> Any:
     """Run one MCP-exposed safe-ops command.
 
-    Probe and row-get always use the release module, with only ``table`` and
-    ``query`` forwarded. Any other name is a profile command. Unknown names
-    do not fetch rows.
+    Release handlers win. A profile command is used only when
+    ``pd_one.load_profile_tools`` is true and the name is not in the release.
+    Unknown names do not fetch rows. The result goes through the HR denylist.
     """
     ops = load_filtered_safe_ops()
     handlers = _read_handlers(ops)
     args = arguments if isinstance(arguments, dict) else {}
-    if name in handlers:
-        table = str(args.get("table") or "")
-        query = str(args.get("query") or "")
-        return ensure_hrs_redacted(table, handlers[name](table, query))
-    fn = profile_command_handlers().get(name)
+    fn = handlers.get(name)
+    if fn is None:
+        fn = profile_command_handlers().get(name)
     if fn is None:
         return {"ok": False, "error": "unknown safe-ops command"}
     payload = _invoke_profile(fn, args)
-    return ensure_hrs_redacted(_table_name(args, payload), payload)
+    return ensure_hrs_redacted(
+        _table_name(args, payload), payload, tool_name=name, arguments=args,
+    )
 
 
 def _descriptions() -> dict[str, str]:
@@ -318,18 +340,30 @@ def _descriptions() -> dict[str, str]:
 
 
 def build_server() -> Any:
-    """Expose the filtered reads, then any not-yet-ported profile commands."""
+    """Expose every release command, then profile commands when the flag is on."""
     from mcp.server.mcpserver import MCPServer
 
     ops = load_filtered_safe_ops()
     assert_filtered_implementation(ops)
     server = MCPServer("pdone_safe_ops")
     descriptions = _descriptions()
-    for name in _read_handlers(ops):
-        _register_read(server, name, descriptions.get(name, name))
+    _register_release_tools(server, _read_handlers(ops), descriptions)
     for name, fn in profile_command_handlers().items():
         _register_profile(server, name, fn)
     return server
+
+
+def _register_release_tools(
+    server: Any,
+    handlers: dict[str, Callable[..., Any]],
+    descriptions: dict[str, str],
+) -> None:
+    row_get = "pd_one_appsheet_row_get"
+    _register_read(server, row_get, descriptions.get(row_get, row_get))
+    for name, fn in handlers.items():
+        if name == row_get:
+            continue
+        _register_profile(server, name, fn)
 
 
 def _register_read(server: Any, name: str, description: str) -> None:
@@ -344,19 +378,50 @@ def _register_read(server: Any, name: str, description: str) -> None:
     server.add_tool(tool, name=name, description=description, structured_output=True)
 
 
+def _public_signature(fn: Callable[..., Any]) -> inspect.Signature:
+    """Schema signature. Varargs and keyword-only extras stay off the tool schema."""
+    visible = [
+        param for param in inspect.signature(fn).parameters.values()
+        if param.kind not in {
+            inspect.Parameter.VAR_KEYWORD,
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.KEYWORD_ONLY,
+        }
+    ]
+    return inspect.Signature(visible)
+
+
+def _as_tool_object(result: Any) -> dict[str, Any]:
+    if isinstance(result, dict):
+        return result
+    parsed = _json_object(result)
+    if isinstance(parsed, dict):
+        return parsed
+    return {"ok": True, "result": result}
+
+
+def _json_object(result: Any) -> Any:
+    if not isinstance(result, str):
+        return None
+    stripped = result.lstrip()
+    if not stripped or stripped[0] not in "{[":
+        return None
+    try:
+        return json.loads(result)
+    except json.JSONDecodeError:
+        return None
+
+
 def _register_profile(server: Any, name: str, fn: Callable[..., Any]) -> None:
     description = inspect.getdoc(fn) or name
 
     def tool(_name: str = name, **kwargs: Any) -> dict[str, Any]:
-        result = call_mcp_tool(_name, kwargs)
-        if isinstance(result, dict):
-            return result
-        return {"ok": True, "result": result}
+        return _as_tool_object(call_mcp_tool(_name, kwargs))
 
     tool.__name__ = name
     tool.__doc__ = description
     # The SDK builds the tool schema from this signature, not from **kwargs.
-    tool.__signature__ = inspect.signature(fn)  # type: ignore[attr-defined]
+    tool.__signature__ = _public_signature(fn)  # type: ignore[attr-defined]
     server.add_tool(tool, name=name, description=description, structured_output=True)
 
 
