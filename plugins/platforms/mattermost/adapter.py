@@ -21,6 +21,7 @@ from urllib.parse import unquote as _unquote
 from typing import Any, Dict, List, Optional, Tuple
 
 from gateway.config import Platform, PlatformConfig
+from gateway.pd_one_channel_scopes import pdone_profile_home
 from gateway.platforms.helpers import MessageDeduplicator
 from gateway.platforms.helpers import cancel_task
 from gateway.platforms.base import gateway_trust_env, BasePlatformAdapter, SendResult
@@ -1043,7 +1044,7 @@ class MattermostAdapter(BasePlatformAdapter):
             or _get_scoped_secret("PD_ONE_HERMES_POLICY_ROOT")
             or _get_scoped_secret("PD_ONE_POLICY_ROOT")
             or _get_scoped_secret("PD_ONE_OPENCLAW_WORKSPACE")
-            or "/home/prodesign/.hermes/profiles/pdone"
+            or str(pdone_profile_home())
         )
         policy = self._load_pd_one_user_policy(user_id) or {"found": False, "mattermostUserId": user_id}
         def _compact_identity(identity: Any) -> Dict[str, Any]:
@@ -1147,7 +1148,7 @@ class MattermostAdapter(BasePlatformAdapter):
             from hermes_constants import get_hermes_home
             default_db = Path(get_hermes_home()) / "state" / "outbound_dm_workflows.sqlite"
         except Exception:
-            default_db = Path.home() / ".hermes" / "profiles" / "pdone" / "state" / "outbound_dm_workflows.sqlite"
+            default_db = pdone_profile_home() / "state" / "outbound_dm_workflows.sqlite"
         db_path = Path(str(self.config.extra.get("pd_one_outbound_dm_workflows_db") or _get_scoped_secret("PD_ONE_OUTBOUND_DM_WORKFLOWS_DB") or default_db)).expanduser()
         if str(raw_enabled).strip().lower() == "auto" and not db_path.exists():
             return None
