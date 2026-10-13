@@ -85,14 +85,7 @@ def _build_file_upload_form(
     filename: str,
     content_type: Optional[str] = None,
 ):
-    """Build a Mattermost upload form that keeps Unicode filenames readable.
-
-    aiohttp's default ``quote_fields=True`` percent-encodes non-ASCII
-    characters and spaces in the multipart ``filename`` parameter.
-    Mattermost stores that encoded value literally, so ``良器.docx`` is
-    saved as ``%E8%89%AF%E5%99%A8.docx``. Mattermost accepts UTF-8 names
-    when the field is not quoted. Header controls are stripped first.
-    """
+    """Build an unquoted multipart form so Mattermost keeps Unicode filenames instead of percent-encoding them."""
     import aiohttp
 
     safe_filename = _mattermost_upload_filename(filename)
@@ -200,11 +193,7 @@ class MattermostAdapter(BasePlatformAdapter):
 
     @staticmethod
     def truncate_message(content: str, max_length: int = MAX_POST_LENGTH, len_fn=None):
-        """Split long posts by language first, then markdown-safe blocks.
-
-        Fenced code and GFM tables stay atomic. ``len_fn`` other than ``len``
-        falls back to the shared platform splitter.
-        """
+        """Split long posts by language, then markdown-safe blocks; fenced code and GFM tables stay atomic."""
         if len_fn is not None and len_fn is not len:
             return BasePlatformAdapter.truncate_message(
                 content, max_length, len_fn=len_fn
@@ -254,7 +243,7 @@ class MattermostAdapter(BasePlatformAdapter):
     def _auth_header(self) -> Dict[str, str]:
         return {"Authorization": f"Bearer {self._token}"}
 
-    async def _api(self, method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def _api(self, method: str, path: str, payload: Any = None) -> Any:
         """{method} /api/v4/{path}; POST also records _last_post_status/_last_post_error."""
         import aiohttp
         if ".." in path:
@@ -291,6 +280,14 @@ class MattermostAdapter(BasePlatformAdapter):
 
     async def _api_post(self, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         return await self._api("POST", path, payload)
+
+    async def _private_hr_request(self, method: str, path: str, payload: Any = None) -> Any:
+        """Read audience data without clobbering post-error state used by thread fallback."""
+        saved = (self._last_post_status, self._last_post_error)
+        try:
+            return await self._api(method, path, payload)
+        finally:
+            self._last_post_status, self._last_post_error = saved
 
     def _last_post_failure_is_broken_thread_root(self) -> bool:
         """Return True only for clear invalid/missing Mattermost thread roots."""
@@ -397,6 +394,12 @@ class MattermostAdapter(BasePlatformAdapter):
         """Send a message (or multiple chunks) to a channel; reply_to / metadata["thread_id"] is the root post."""
         if not content:
             return SendResult(success=True)
+        content = await _withhold_private_hr_fields(
+            self.format_message(content), chat_id,
+            request_json=self._private_hr_request,
+            load_policy=self._load_pd_one_user_policy,
+            bot_user_id=self._bot_user_id,
+        )
         result = SendResult(success=True)
         # Top-level overflow must thread chunk 2+ under the first post; existing
         # thread sends keep the original root for every chunk.
@@ -405,7 +408,7 @@ class MattermostAdapter(BasePlatformAdapter):
             or (isinstance(metadata, dict) and (metadata.get("thread_id") or metadata.get("root_id")))
         )
         overflow_root: Optional[str] = None
-        for chunk in self.truncate_message(self.format_message(content), MAX_POST_LENGTH):
+        for chunk in self.truncate_message(content, MAX_POST_LENGTH):
             posted = await self._post_message(
                 chat_id, chunk, reply_to or overflow_root, metadata
             )
@@ -434,7 +437,13 @@ class MattermostAdapter(BasePlatformAdapter):
         await self._api_post(f"users/{self._bot_user_id}/typing", {"channel_id": chat_id})
 
     async def edit_message(self, chat_id: str, message_id: str, content: str, *, finalize: bool = False) -> SendResult:
-        payload = _with_mentions_disabled({"message": self.format_message(content)})
+        content = await _withhold_private_hr_fields(
+            self.format_message(content), chat_id,
+            request_json=self._private_hr_request,
+            load_policy=self._load_pd_one_user_policy,
+            bot_user_id=self._bot_user_id,
+        )
+        payload = _with_mentions_disabled({"message": content})
         return _post_result(await self._api("PUT", f"posts/{message_id}/patch", payload), "Failed to edit post")
 
     async def send_image(self, chat_id: str, image_url: str, caption: Optional[str] = None,
@@ -592,11 +601,6 @@ class MattermostAdapter(BasePlatformAdapter):
                 # healthy with a dead listener). Type-based: substring "401" matching misclassified transient errors.
                 if isinstance(exc, aiohttp.WSServerHandshakeError) and exc.status in {401, 403}:
                     logger.error("Mattermost WS auth failed (HTTP %d) — stopping reconnect", exc.status)
-                    # Escalate through the fatal-error hook instead of a bare return: the old silent exit
-                    # left _running True, so is_connected() kept reporting healthy while the listener was
-                    # dead and the gateway was never told (OOF-156 class). Type-based only — the substring
-                    # fallback that used to sit below this branch misclassified transient errors whose
-                    # message merely contained "401" (#80489).
                     self._set_fatal_error(
                         "mattermost_auth_error",
                         f"Mattermost WebSocket authentication rejected (HTTP {exc.status}). The bot token is "
@@ -633,9 +637,7 @@ class MattermostAdapter(BasePlatformAdapter):
                 break
 
     def _apply_channel_gating(self, channel_id: str, message_text: str) -> Optional[str]:
-        """Mention-gate a non-DM post; return the cleaned text, or None to ignore it. allowed_channels is a
-        whitelist checked first (@mentions elsewhere are ignored); require_mention (default true) is
-        bypassed in free_response_channels."""
+        """Mention-gate a non-DM post. Return the cleaned text, or None to ignore it."""
         ignored_channels = _channel_id_set(
             _extra_or_secret(self.config.extra, "ignored_channels", "MATTERMOST_IGNORED_CHANNELS", blank_is_unset=False)
         )
@@ -722,12 +724,7 @@ class MattermostAdapter(BasePlatformAdapter):
         data: Dict[str, Any],
         metadata: Optional[Dict[str, Any]],
     ) -> None:
-        """Best-effort queue signal for PD One reply-quality review.
-
-        The queue is a lightweight candidate signal only. It intentionally does
-        not persist message text, tool traces, or private source data; the
-        supervisor can fetch bounded Mattermost/review_log evidence later.
-        """
+        """Queue a PD One reply-quality signal without persisting message text or private source data."""
         if not getattr(self, "_pd_one_quality_queue_path", None):
             return
         post_id = str(data.get("id") or "")
@@ -769,14 +766,7 @@ class MattermostAdapter(BasePlatformAdapter):
             return await resp.read(), resp.status, None
 
     def _file_download_timeout(self):
-        """Return a generous timeout for Mattermost attachment downloads.
-
-        Mattermost can serve larger Office/CAD attachments slowly from the
-        production host.  A 30s total timeout is fine for JSON API calls but it
-        can silently drop valid thread attachments before the agent sees them.
-        Keep a bounded total timeout, but allow enough wall clock time for
-        multi-MB files over slow links.
-        """
+        """Use a bounded but generous timeout so large Mattermost attachments are not dropped at 30s."""
         import aiohttp
 
         raw_total = (
@@ -800,14 +790,7 @@ class MattermostAdapter(BasePlatformAdapter):
         return aiohttp.ClientTimeout(total=total, sock_read=sock_read)
 
     async def _api_delete(self, path: str) -> bool:
-        """DELETE /api/v4/{path}.
-
-        Normal gateway traffic uses the long-lived Mattermost aiohttp session.
-        Progress-bubble cleanup can run very late in a turn, including while a
-        gateway replacement is closing that session.  If the primary connector
-        is already closed, retry with a short-lived session so cleanup is not
-        silently lost after the final response lands.
-        """
+        """DELETE /api/v4/{path}, retrying on a short-lived session if the primary connector is already closed."""
         import aiohttp
         url = f"{self._base_url}/api/v4/{path.lstrip('/')}"
 
@@ -840,10 +823,7 @@ class MattermostAdapter(BasePlatformAdapter):
             ok = await _delete_with_session(session)
             if ok:
                 return True
-            # If the underlying connector/session flipped closed during the
-            # request, fall through to a transient retry below. Normal API
-            # failures (403/404/etc.) should not be retried with a second
-            # session because the token/permission outcome will be the same.
+            # Retry only when the connector closed mid-request. A 403/404 will not change on a second session.
             session_closed = getattr(session, "closed", False) is True
             closed_error = "closed" in str(last_delete_error[0] or "").lower()
             if not session_closed and not closed_error:
@@ -920,13 +900,7 @@ class MattermostAdapter(BasePlatformAdapter):
         triggering_post_id: Optional[str],
         session_key: Optional[str] = None,
     ) -> Tuple[Optional[str], List[str], List[str]]:
-        """Fetch and format Mattermost thread history before the triggering post.
-
-        Hermes already uses Mattermost root_id as thread_id for session keys.
-        This fills the missing bootstrap case: a first @mention in an existing
-        thread should show the root post and earlier replies even when Hermes
-        was not mentioned at the root.
-        """
+        """Fetch thread history before the triggering post so a first mention in an old thread sees earlier replies."""
         if not root_id:
             return None, [], []
         try:
@@ -1026,13 +1000,7 @@ class MattermostAdapter(BasePlatformAdapter):
         return None
 
     def _build_pd_one_policy_context(self, user_id: str, channel_id: str, chat_type: str) -> Optional[str]:
-        """Build compact policy context from the Hermes PD One profile.
-
-        The Hermes PD One profile policy files remain the source of truth; this
-        injects enough per-turn context to force exact sender-id authorization
-        and gives the agent deterministic paths to consult before acting.
-        Legacy OpenClaw key/env names remain accepted as compatibility aliases.
-        """
+        """Inject compact PD One policy context that authorizes by exact sender id. Legacy OpenClaw names stay aliases."""
         enabled = self.config.extra.get("pd_one_policy_bridge") if "pd_one_policy_bridge" in self.config.extra else _get_scoped_secret("PD_ONE_POLICY_BRIDGE")
         if str(enabled).lower() not in {"1", "true", "yes", "on"}:
             return None
@@ -1055,49 +1023,19 @@ class MattermostAdapter(BasePlatformAdapter):
 
         mode_raw = self.config.extra.get("pd_one_policy_bridge_mode") or _get_scoped_secret("PD_ONE_POLICY_BRIDGE_MODE") or "compact"
         mode = str(mode_raw).strip().lower()
+        full_keys = (
+            "schema", "generatedAtUtc", "found", "active", "decision", "turnHandling", "dmEnabled",
+            "language", "roles", "safeScopes", "approval", "tools", "channels", "dataAccess", "identity",
+            "setupResponse", "lookupFailureResponse", "employeeFacingNotes", "policyPath",
+        )
+        compact_keys = (
+            "schema", "generatedAtUtc", "found", "active", "decision", "turnHandling", "dmEnabled",
+            "language", "roles", "safeScopes", "approval", "tools", "policyPath",
+        )
         if mode in {"full", "legacy"}:
-            allowed_keys = [
-                "schema",
-                "generatedAtUtc",
-                "found",
-                "active",
-                "decision",
-                "turnHandling",
-                "dmEnabled",
-                "language",
-                "roles",
-                "safeScopes",
-                "approval",
-                "tools",
-                "channels",
-                "dataAccess",
-                "identity",
-                "setupResponse",
-                "lookupFailureResponse",
-                "employeeFacingNotes",
-                "policyPath",
-            ]
-            compact = {key: policy.get(key) for key in allowed_keys if key in policy}
+            compact = {key: policy.get(key) for key in full_keys if key in policy}
         else:
-            compact = {
-                key: policy.get(key)
-                for key in (
-                    "schema",
-                    "generatedAtUtc",
-                    "found",
-                    "active",
-                    "decision",
-                    "turnHandling",
-                    "dmEnabled",
-                    "language",
-                    "roles",
-                    "safeScopes",
-                    "approval",
-                    "tools",
-                    "policyPath",
-                )
-                if key in policy
-            }
+            compact = {key: policy.get(key) for key in compact_keys if key in policy}
             needs_refusal_text = not policy.get("found") or not policy.get("active", True) or str(policy.get("decision", "")).startswith("deny")
             if needs_refusal_text:
                 for key in ("setupResponse", "lookupFailureResponse"):
@@ -1131,13 +1069,7 @@ class MattermostAdapter(BasePlatformAdapter):
         )
 
     def _build_pd_one_outbound_dm_workflow_context(self, user_id: str, channel_id: str, chat_type: str, message_text: str, post: Dict[str, Any]) -> Optional[str]:
-        """Build outbound-DM workflow context only after conservative routing.
-
-        Open workflow rows are candidates only.  The deterministic router injects
-        full context only on tracker-code or platform thread linkage; probable
-        matches receive a small disambiguation packet, and unrelated DMs receive
-        no workflow context.
-        """
+        """Build outbound-DM workflow context only after conservative routing."""
         if chat_type != "dm" or not user_id:
             return None
         raw_enabled = self.config.extra.get("pd_one_outbound_dm_workflows") if "pd_one_outbound_dm_workflows" in self.config.extra else _get_scoped_secret("PD_ONE_OUTBOUND_DM_WORKFLOWS", "auto")
@@ -1275,13 +1207,7 @@ class MattermostAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _mention_translation_target_language(message: str) -> str:
-        """Pick the missing translation side for mixed mentioned-channel posts.
-
-        Mentioned Mattermost posts often have a short Chinese heading followed by
-        English instructions to PD One. Treat that as English-dominant prose that
-        needs Traditional Chinese, not as a Chinese/mixed message that needs the
-        already-English instructions repeated.
-        """
+        """Pick the missing translation side. A short Chinese heading plus English instructions still needs Traditional Chinese."""
         text = str(message or "")
         cjk_chars = len(re.findall(r"[\u3400-\u9fff]", text))
         latin_words = len(re.findall(r"\b[A-Za-z][A-Za-z0-9'’_-]*\b", text))
@@ -1289,10 +1215,7 @@ class MattermostAdapter(BasePlatformAdapter):
             return "Traditional Chinese"
         if latin_words == 0:
             return "English"
-        # One Chinese character roughly carries more information than one Latin
-        # word, but a short Chinese heading plus English instructions should still
-        # target Traditional Chinese. Bias toward Chinese only when CJK clearly
-        # dominates the prose.
+        # Bias toward Chinese only when CJK clearly dominates. A short Chinese heading plus English instructions still needs Traditional Chinese.
         if latin_words >= max(4, cjk_chars // 2):
             return "Traditional Chinese"
         return "English"
@@ -1454,9 +1377,7 @@ class MattermostAdapter(BasePlatformAdapter):
         title = self._sanitize_root_heading_title(content)
         if existing_heading_title and title:
             source_heading = self._sanitize_root_heading_title(existing_heading_title)
-            # Enforce the product requirement that an existing source heading is not
-            # rewritten or reordered; the utility agent may only add the missing
-            # translation on the other side of a slash.
+            # Keep an existing source heading unchanged; the utility agent may only add the missing translation.
             if title == source_heading or not (
                 title.startswith(f"{source_heading} / ")
                 or title.endswith(f" / {source_heading}")
@@ -1468,16 +1389,7 @@ class MattermostAdapter(BasePlatformAdapter):
         return None
 
     async def _maybe_auto_heading_thread_root(self, post: Dict[str, Any], channel_type_raw: str) -> None:
-        """Best-effort: when a Mattermost thread gets a reply, title its root post.
-
-        Skips roots whose first Markdown heading is already bilingual. If the root
-        already starts with a non-bilingual Markdown heading, keeps that source
-        heading text unchanged and asks the utility agent to add a translation.
-        Otherwise prepends a new level-5 bilingual heading while preserving the
-        original root body. The edit is gated by config/env and runs before
-        mention-gating so passive thread replies can improve titles without
-        invoking the main agent.
-        """
+        """Title a thread root on reply, keeping a bilingual heading and preserving the source body."""
         if not self._auto_thread_root_heading_enabled():
             return
         if channel_type_raw == "D":
@@ -1534,13 +1446,7 @@ class MattermostAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
-        """Return the Mattermost root_id for a send, honoring metadata.
-
-        Text sends already accept thread routing either through ``reply_to`` or
-        synthetic-send metadata (``thread_id`` / ``root_id``). File/image sends
-        must use the same routing; otherwise MEDIA attachments emitted after a
-        threaded text reply become top-level channel posts.
-        """
+        """Return the send root_id so file sends use the same thread routing as text sends."""
         effective_reply_to = reply_to
         if not effective_reply_to and metadata:
             effective_reply_to = metadata.get("thread_id") or metadata.get("root_id")
@@ -1600,13 +1506,7 @@ class MattermostAdapter(BasePlatformAdapter):
             await self._add_reaction(post_id, "x")
 
     async def delete_message(self, chat_id: str, message_id: str) -> bool:
-        """Delete a previously sent Mattermost post.
-
-        Mattermost post IDs are globally unique, so the channel ID is not
-        needed by the REST endpoint.  The gateway only tracks IDs returned from
-        sends it performed itself; Mattermost enforces token permissions server
-        side if a caller ever passes an invalid/unauthorized post ID.
-        """
+        """Delete a post by id. Mattermost post ids are global; the server enforces token permissions."""
         if not message_id:
             return False
         return await self._api_delete(f"posts/{message_id}")
@@ -1625,12 +1525,7 @@ class MattermostAdapter(BasePlatformAdapter):
                 logger.warning("Mattermost: missed-mention backfill failed: %s", exc, exc_info=True)
 
     async def _run_backfill_once(self) -> int:
-        """Search recent Mattermost posts for @bot mentions and replay new ones.
-
-        Returns the number of candidate posts handed to the normal posted-event
-        parser.  The parser's existing self-message, channel, mention, policy,
-        and dedup gates remain authoritative.
-        """
+        """Replay recent @bot mentions the WebSocket missed. The posted-event parser gates stay authoritative."""
         if not self._bot_username:
             return 0
 
@@ -1672,15 +1567,8 @@ class MattermostAdapter(BasePlatformAdapter):
                         continue
                 if post_id in self._backfill_seen_post_ids:
                     continue
-                # Idempotency must be based on source-of-truth thread state,
-                # not only the in-memory seen cache.  The rolling watermark is
-                # intentionally anchored to the newest mention found by search;
-                # when no newer mentions arrive, the same recent mention can
-                # remain inside the overlap indefinitely.  After the seen-cache
-                # TTL expires, replaying without checking the thread would
-                # duplicate a request that already has a bot reply.  Do this
-                # expensive thread lookup only after cheap age/cache gates; the
-                # search endpoint can return hundreds of historical mentions.
+                # Seen-cache TTL can expire while the watermark still overlaps this mention.
+                # Confirm the thread has no bot reply before replaying, or the same request posts twice.
                 if await self._thread_has_bot_reply_after(post):
                     self._backfill_seen_post_ids[post_id] = time.time()
                     continue
@@ -1836,8 +1724,7 @@ class MattermostAdapter(BasePlatformAdapter):
             sender_id, channel_id, chat_type, message_text, post,
         )
         channel_context = self._combine_channel_context(policy_context, workflow_context, thread_context)
-        # Recall sees thread posts only. The bridge and outbound-workflow blocks stay on
-        # channel_context for the model and are not a search query.
+        # Recall sees thread posts only. Policy and workflow blocks stay on channel_context, not the search query.
         recall_posts = list(thread_posts) if (policy_context or workflow_context or thread_posts) else None
         await self.handle_message(MessageEvent(
             text=message_text, message_type=msg_type, source=source, raw_message=post, message_id=post_id,
@@ -1846,15 +1733,104 @@ class MattermostAdapter(BasePlatformAdapter):
             channel_context=channel_context, recall_posts=recall_posts))
 
 
+# Private HR text is withheld from the send destination itself. There is no channel allowlist.
+_PRIVATE_HR_ROLES = frozenset({"hr_lead", "hr_manager_transition", "admin"})
+_PRIVATE_HR_WITHHOLD_NOTICE = (
+    "我已確認這筆資料。我不會在這個房間張貼私人人事欄位。若需要那些欄位，請用私訊詢問。\n"
+    "\n---\n\n"
+    "I confirmed the record. I will not post private HR fields in this room. "
+    "Ask in a direct message if you need those fields."
+)
+_PRIVATE_HR_RE = re.compile(
+    r"(?:職等|職級|身份類別|直間接|勞退|護照|居留證|年資起算|"
+    r"(?i:(?<![A-Za-z0-9])(?:job grade|grade code|job rank|rank code|identity category|"
+    r"worker class|pension|passport|residence permit|seniority start)(?![A-Za-z0-9])))"
+)
+_PRIVATE_HR_MEMBER_PAGE = 200
+
+
+def _private_hr_policy_allows(policy: Any) -> Optional[bool]:
+    """True when cached roles allow the text; False when they do not; None if the lookup failed."""
+    if not isinstance(policy, dict) or policy.get("error"):
+        return None
+    roles = policy.get("roles")
+    if isinstance(roles, list):
+        names = {str(role).strip().lower() for role in roles}
+        return bool(names & _PRIVATE_HR_ROLES)
+    return False if policy.get("found") is False else None
+
+
+async def _private_hr_humans(request_json, chat_id: str, bot_user_id: str):
+    """Return ``(channel type, human user ids)``, or None when membership cannot be proven."""
+    channel = await request_json("GET", f"channels/{chat_id}")
+    if not isinstance(channel, dict) or not channel.get("type"):
+        return None
+    humans: List[str] = []
+    seen: set[str] = set()
+    for page in range(51):
+        members = await request_json(
+            "GET", f"channels/{chat_id}/members?page={page}&per_page={_PRIVATE_HR_MEMBER_PAGE}")
+        if not isinstance(members, list):
+            return None
+        ids = [str(member.get("user_id") or "") for member in members if isinstance(member, dict)]
+        if len(ids) != len(members) or any(not user_id for user_id in ids):
+            return None
+        if ids:
+            users = await request_json("POST", "users/ids", ids)
+            if not isinstance(users, list):
+                return None
+            by_id = {str(user.get("id") or ""): user for user in users if isinstance(user, dict)}
+            if set(by_id) != set(ids):
+                return None
+            for user_id in ids:
+                user = by_id[user_id]
+                if user.get("is_bot") or user_id == bot_user_id:
+                    continue
+                if user_id not in seen:
+                    seen.add(user_id)
+                    humans.append(user_id)
+        if len(members) < _PRIVATE_HR_MEMBER_PAGE:
+            return str(channel.get("type")), humans
+    return None
+
+
+def _private_hr_user_allowed(load_policy, user_id: str) -> bool:
+    try:
+        verdict = _private_hr_policy_allows(load_policy(user_id))
+    except (OSError, TypeError, ValueError, AttributeError):
+        logger.warning("Mattermost: private HR policy lookup failed user=%s", user_id, exc_info=True)
+        return False
+    return verdict is True
+
+
+async def _withhold_private_hr_fields(
+    message: str, chat_id: str, *, request_json, load_policy, bot_user_id: str = "",
+) -> str:
+    """Replace private HR text unless this send destination is an HR or admin audience. Failures withhold the whole body and are not logged."""
+    if not message or _PRIVATE_HR_RE.search(message) is None:
+        return message
+    audience = await _private_hr_humans(request_json, str(chat_id), str(bot_user_id or ""))
+    if audience is None:
+        logger.warning(
+            "Mattermost: withheld private HR fields; audience lookup failed channel=%s", chat_id)
+        return _PRIVATE_HR_WITHHOLD_NOTICE
+    channel_type, humans = audience
+    if channel_type == "D":
+        allowed = len(humans) == 1 and _private_hr_user_allowed(load_policy, humans[0])
+    else:
+        allowed = bool(humans) and all(
+            _private_hr_user_allowed(load_policy, user_id) for user_id in humans)
+    if allowed:
+        return message
+    logger.warning("Mattermost: withheld private HR fields channel=%s type=%s", chat_id, channel_type)
+    return _PRIVATE_HR_WITHHOLD_NOTICE
+
+
 # --- Plugin standalone-send (out-of-process cron delivery via Mattermost REST) ---
 
 async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Optional[str] = None,
                            media_files: Optional[list] = None, force_document: bool = False) -> Dict[str, Any]:
-    """Send via the Mattermost v4 REST API without a live gateway adapter (out-of-process cron).
-
-    Token/URL: ``pconfig`` with env fallback. ``media_files`` upload via ``POST /files`` and attach by
-    file_id; ``thread_id`` becomes ``root_id``. ``force_document`` is signature parity only (unused).
-    """
+    """Send via the Mattermost v4 REST API without a live gateway adapter (out-of-process cron)."""
     try:
         import aiohttp
     except ImportError:
@@ -1885,6 +1861,27 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
                         return send_error(f"Mattermost file upload failed ({upload_resp.status}): {body[:400]}")
                     upload_data = await upload_resp.json()
                     file_ids.extend(info["id"] for info in upload_data.get("file_infos", []) if info.get("id"))
+
+            async def _request_json(method, path, payload=None):
+                url = f"{base_url}/api/v4/{path.lstrip('/')}"
+                kwargs: Dict[str, Any] = {"headers": headers, **_req_kw}
+                if payload is not None:
+                    kwargs["json"] = payload
+                try:
+                    async with session.request(method, url, **kwargs) as audience_resp:
+                        if audience_resp.status >= 400:
+                            await audience_resp.read()
+                            return {}
+                        return await audience_resp.json()
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError):
+                    return {}
+
+            policy_host = MattermostAdapter.__new__(MattermostAdapter)
+            policy_host.config = pconfig
+            message = await _withhold_private_hr_fields(
+                message, chat_id, request_json=_request_json,
+                load_policy=policy_host._load_pd_one_user_policy,
+            )
             payload: Dict[str, Any] = {"channel_id": chat_id, "message": message}
             if thread_id:
                 payload["root_id"] = thread_id
