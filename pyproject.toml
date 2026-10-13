@@ -432,6 +432,23 @@ otlp = [
 ]
 langfuse = ["langfuse==4.15.2"]
 bedrock = ["boto3==1.42.89"]
+# Production hosts install this on top of the base install (`.[nemo]`).
+# boto3 and firecrawl-py stay at the same exact pins as [bedrock] and
+# [firecrawl]. botocore, jmespath, s3transfer, nest-asyncio, and PyYAML
+# are the versions already resolved in uv.lock (PyYAML is not a direct
+# core dependency). ruamel.yaml stays at the core pin 0.18.16, which does
+# not require the clib. 0.2.15 has no Windows ARM64 wheel, so that host
+# skips the clib the same way core avoids ruamel.yaml 0.18.17.
+nemo = [
+  "boto3==1.42.89",
+  "botocore==1.42.97",
+  "firecrawl-py==4.17.0",
+  "jmespath==1.1.0",
+  "nest-asyncio==1.6.0",
+  "pyyaml==6.0.3",
+  "ruamel.yaml.clib==0.2.15; platform_machine != 'ARM64' or sys_platform != 'win32'",
+  "s3transfer==0.16.1",
+]
 vertex = ["google-auth==2.55.1"]
 azure-identity = ["azure-identity==1.25.3"]
 termux = [
@@ -687,6 +704,7 @@ anthropic = false
 asyncpg = false
 azure-identity = false
 boto3 = false
+botocore = false
 brotlicffi = false
 browser-harness = false
 certifi = false
@@ -719,6 +737,7 @@ httpx = false
 httpx2 = false
 huggingface_hub = false
 jinja2 = false
+jmespath = false
 langfuse = "2026-09-09T16:01:26Z"
 lark-oapi = false
 markdown = false
@@ -729,6 +748,7 @@ microsoft-teams-apps = false
 mistralai = false
 modal = false
 nemo-relay = false
+nest-asyncio = false
 neutts = "2026-07-22T14:54:23Z"
 numpy = false
 openai = false
@@ -756,7 +776,9 @@ qrcode = false
 requests = false
 rich = false
 ruamel-yaml = false
+ruamel-yaml-clib = false
 ruff = false
+s3transfer = false
 sentencepiece = false
 setuptools = false
 setuptools-rust = false
