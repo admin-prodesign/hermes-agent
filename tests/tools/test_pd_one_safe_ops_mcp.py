@@ -2,8 +2,8 @@
 
 The pdone profile's copy of pd_one_safe_ops returns those columns. The MCP
 server has to call the repo module even when that copy is importable.
-Profile-only commands stay callable, and HRS rows in their results are
-withheld the same way.
+Profile tools load only when pd_one.load_profile_tools is true, and HRS rows
+in those results are withheld the same way.
 """
 import json
 import os
@@ -25,14 +25,14 @@ def pd_one_appsheet_table_probe(table, query="", **kwargs):
 def pd_one_hr_private_lookup(query):
     return {"table": "HRS_Data", "row": {"職等代碼": "LEAK-FROM-PROFILE"}}
 
-def pd_one_sheets_get_range(spreadsheet_id, range_name):
+def pd_one_profile_only_sheet(spreadsheet_id, range_name):
     \"\"\"Read a sheet range.\"\"\"
     return {
         "table": "HRS_Data",
         "Rows": [{"職等代碼": "G0-PLACEHOLDER", "姓名": "ok"}],
     }
 
-def pd_one_google_group_members(group):
+def pd_one_profile_only_other(group):
     return {"table": "Projects", "rows": [{"職等代碼": "G0-PLACEHOLDER", "name": "team"}]}
 
 def call_function_twin(name, arguments):
@@ -124,12 +124,19 @@ def _write_profile_module(source: str) -> None:
     tools = Path(os.environ["HERMES_HOME"]) / "tools"
     tools.mkdir(parents=True, exist_ok=True)
     (tools / "pd_one_safe_ops.py").write_text(source, encoding="utf-8")
+    mcp._PROFILE_CACHE.clear()
 
 
-def test_profile_only_command_withholds_private_hrs_columns():
+def _enable_profile_tools(monkeypatch) -> None:
+    monkeypatch.setattr("tools.pd_one_ops.site_config.profile_tools_enabled", lambda: True)
+    mcp._PROFILE_CACHE.clear()
+
+
+def test_profile_only_command_withholds_private_hrs_columns(monkeypatch):
+    _enable_profile_tools(monkeypatch)
     _write_profile_module(_PROFILE_SOURCE)
     payload = mcp.call_mcp_tool(
-        "pd_one_sheets_get_range",
+        "pd_one_profile_only_sheet",
         {"spreadsheet_id": "sheet", "range_name": "A1"},
     )
     encoded = json.dumps(payload, ensure_ascii=False)
@@ -139,14 +146,16 @@ def test_profile_only_command_withholds_private_hrs_columns():
     assert payload["withheld_fields"] == 1
 
 
-def test_profile_command_on_a_non_hrs_table_passes_through():
+def test_profile_command_on_a_non_hrs_table_passes_through(monkeypatch):
+    _enable_profile_tools(monkeypatch)
     _write_profile_module(_PROFILE_SOURCE)
-    payload = mcp.call_mcp_tool("pd_one_google_group_members", {"group": "team"})
+    payload = mcp.call_mcp_tool("pd_one_profile_only_other", {"group": "team"})
     assert payload["rows"][0]["職等代碼"] == "G0-PLACEHOLDER"
     assert "withheld_fields" not in payload
 
 
-def test_profile_probe_is_not_the_mcp_probe():
+def test_profile_probe_is_not_the_mcp_probe(monkeypatch):
+    _enable_profile_tools(monkeypatch)
     _write_profile_module(_PROFILE_SOURCE)
     payload = mcp.call_mcp_tool("pd_one_appsheet_table_probe", {"table": "HRS_Data"})
     encoded = json.dumps(payload, ensure_ascii=False)
@@ -156,19 +165,29 @@ def test_profile_probe_is_not_the_mcp_probe():
     names = mcp.profile_command_handlers()
     assert "pd_one_appsheet_table_probe" not in names
     assert "pd_one_hr_private_lookup" not in names
-    assert "pd_one_sheets_get_range" in names
+    assert "pd_one_sheets_get_range" not in names
+    assert "call_function_twin" not in names
+    assert "pd_one_profile_only_sheet" in names
 
 
-def test_profile_private_lookup_is_not_exposed():
+def test_profile_private_lookup_is_not_exposed(monkeypatch):
+    _enable_profile_tools(monkeypatch)
     _write_profile_module(_PROFILE_SOURCE)
     payload = mcp.call_mcp_tool("pd_one_hr_private_lookup", {"query": "someone"})
     assert payload == {"ok": False, "error": "unknown safe-ops command"}
 
 
-def test_call_function_twin_hrs_json_is_redacted():
-    _write_profile_module(_PROFILE_SOURCE)
-    payload = mcp.call_mcp_tool("call_function_twin", {"name": "probe", "arguments": {}})
-    decoded = json.loads(payload)
+def test_call_function_twin_hrs_json_is_redacted(monkeypatch):
+    def _hrs_json(twin, requester_user_id, task, excerpts=""):
+        del twin, requester_user_id, task, excerpts
+        return json.dumps({"table": "HRS_Data", "rows": [{"護照號碼": "P0-PLACEHOLDER", "姓名": "ok"}]})
+
+    monkeypatch.setattr("tools.pd_one_ops.pd_one_safe_ops_mcp.call_function_twin", _hrs_json)
+    payload = mcp.call_mcp_tool(
+        "call_function_twin",
+        {"twin": "hr", "requester_user_id": "user-placeholder", "task": "lookup"},
+    )
+    decoded = json.loads(payload) if isinstance(payload, str) else payload
     encoded = json.dumps(decoded, ensure_ascii=False)
     assert "護照號碼" not in encoded
     assert "P0-PLACEHOLDER" not in encoded
@@ -178,13 +197,29 @@ def test_call_function_twin_hrs_json_is_redacted():
 def test_missing_profile_module_leaves_the_probe_working():
     payload = mcp.call_mcp_tool("pd_one_appsheet_table_probe", {"table": "HRS_Data"})
     assert payload["withheld_fields"] == len(DENIED)
-    unknown = mcp.call_mcp_tool("pd_one_sheets_get_range", {})
+    unknown = mcp.call_mcp_tool("pd_one_not_a_real_command", {})
     assert unknown == {"ok": False, "error": "unknown safe-ops command"}
 
 
-def test_profile_tool_keeps_its_signature_and_filters():
+def test_default_does_not_load_profile_tools():
+    tools = Path(os.environ["HERMES_HOME"]) / "tools"
+    tools.mkdir(parents=True, exist_ok=True)
+    (tools / "pd_one_safe_ops.py").write_text("this is not python (", encoding="utf-8")
+    mcp._PROFILE_CACHE.clear()
+    loaded_before = {name for name in sys.modules if "pd_one_safe_ops_profile" in name}
+    assert mcp.profile_command_handlers() == {}
+    loaded_after = {name for name in sys.modules if "pd_one_safe_ops_profile" in name}
+    assert loaded_after == loaded_before
+    payload = mcp.call_mcp_tool("pd_one_appsheet_table_probe", {"table": "HRS_Data"})
+    assert payload["withheld_fields"] == len(DENIED)
+    unknown = mcp.call_mcp_tool("pd_one_profile_only_sheet", {})
+    assert unknown == {"ok": False, "error": "unknown safe-ops command"}
+
+
+def test_profile_tool_keeps_its_signature_and_filters(monkeypatch):
+    _enable_profile_tools(monkeypatch)
     _write_profile_module(_PROFILE_SOURCE)
-    fn = mcp.profile_command_handlers()["pd_one_sheets_get_range"]
+    fn = mcp.profile_command_handlers()["pd_one_profile_only_sheet"]
 
     class _Server:
         def add_tool(self, tool, name, description, structured_output):
@@ -194,7 +229,7 @@ def test_profile_tool_keeps_its_signature_and_filters():
             self.structured_output = structured_output
 
     server = _Server()
-    mcp._register_profile(server, "pd_one_sheets_get_range", fn)
+    mcp._register_profile(server, "pd_one_profile_only_sheet", fn)
     import inspect
     assert list(inspect.signature(server.tool).parameters) == ["spreadsheet_id", "range_name"]
     assert server.description == "Read a sheet range."

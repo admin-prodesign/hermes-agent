@@ -61,6 +61,7 @@ const sidebars: SidebarsConfig = {
         'user-guide/session-storage-recovery',
         'user-guide/profiles',
         'user-guide/profile-distributions',
+        'user-guide/pd-one-safe-ops',
         'user-guide/multi-profile-gateways',
         'user-guide/multi-connection-desktop',
         'user-guide/git-worktrees',
