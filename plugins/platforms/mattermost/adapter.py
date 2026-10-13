@@ -30,6 +30,10 @@ from gateway.platforms._shared import (
     extra_or_secret as _extra_or_secret, get_scoped_secret as _get_scoped_secret,
     send_error
 )
+from plugins.platforms.mattermost.hr_private_output import (
+    guard_adapter_outbound as _guard_hr_outbound,
+    guard_standalone_outbound as _guard_hr_standalone,
+)
 from agent.auxiliary_client import async_call_llm
 
 logger = logging.getLogger(__name__)
@@ -85,13 +89,9 @@ def _build_file_upload_form(
     filename: str,
     content_type: Optional[str] = None,
 ):
-    """Build a Mattermost upload form that keeps Unicode filenames readable.
+    """Multipart upload form with an unquoted UTF-8 filename.
 
-    aiohttp's default ``quote_fields=True`` percent-encodes non-ASCII
-    characters and spaces in the multipart ``filename`` parameter.
-    Mattermost stores that encoded value literally, so ``良器.docx`` is
-    saved as ``%E8%89%AF%E5%99%A8.docx``. Mattermost accepts UTF-8 names
-    when the field is not quoted. Header controls are stripped first.
+    aiohttp's default quoting stores names like ``良器.docx`` percent-encoded.
     """
     import aiohttp
 
@@ -397,6 +397,7 @@ class MattermostAdapter(BasePlatformAdapter):
         """Send a message (or multiple chunks) to a channel; reply_to / metadata["thread_id"] is the root post."""
         if not content:
             return SendResult(success=True)
+        content = await _guard_hr_outbound(self, chat_id, content)
         result = SendResult(success=True)
         # Top-level overflow must thread chunk 2+ under the first post; existing
         # thread sends keep the original root for every chunk.
@@ -434,6 +435,7 @@ class MattermostAdapter(BasePlatformAdapter):
         await self._api_post(f"users/{self._bot_user_id}/typing", {"channel_id": chat_id})
 
     async def edit_message(self, chat_id: str, message_id: str, content: str, *, finalize: bool = False) -> SendResult:
+        content = await _guard_hr_outbound(self, chat_id, content)
         payload = _with_mentions_disabled({"message": self.format_message(content)})
         return _post_result(await self._api("PUT", f"posts/{message_id}/patch", payload), "Failed to edit post")
 
@@ -1014,7 +1016,7 @@ class MattermostAdapter(BasePlatformAdapter):
             return None
         path = Path(str(cache_dir)).expanduser() / f"{user_id}.json"
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
         except FileNotFoundError:
             return {"found": False, "mattermostUserId": user_id, "policyPath": str(path)}
         except Exception as exc:
@@ -1885,6 +1887,7 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
                         return send_error(f"Mattermost file upload failed ({upload_resp.status}): {body[:400]}")
                     upload_data = await upload_resp.json()
                     file_ids.extend(info["id"] for info in upload_data.get("file_infos", []) if info.get("id"))
+            message = await _guard_hr_standalone(pconfig, chat_id, message, session, base_url, headers, _req_kw)
             payload: Dict[str, Any] = {"channel_id": chat_id, "message": message}
             if thread_id:
                 payload["root_id"] = thread_id
