@@ -432,6 +432,15 @@ otlp = [
 ]
 langfuse = ["langfuse==4.15.2"]
 bedrock = ["boto3==1.42.89"]
+# Production hosts install this on top of the base install (`.[nemo]`).
+# honcho-ai 2.5.1 is the Honcho plugin SDK. PyYAML 6.0.3 is what the
+# gateway run script and model_policy/modelctl.py import; core config
+# YAML stays ruamel.yaml. ruamel.yaml.clib is an optional accelerator
+# and is not part of this extra.
+nemo = [
+  "honcho-ai==2.5.1",
+  "pyyaml==6.0.3",
+]
 vertex = ["google-auth==2.55.1"]
 azure-identity = ["azure-identity==1.25.3"]
 termux = [
@@ -714,6 +723,7 @@ google-auth-httplib2 = false
 google-auth-oauthlib = false
 google-cloud-pubsub = false
 h2 = false
+honcho-ai = false
 httplib2 = false
 httpx = false
 httpx2 = false

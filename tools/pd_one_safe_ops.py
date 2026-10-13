@@ -175,6 +175,19 @@ def pd_one_hr_private_lookup(table: str, query: str = "", **_ignored: Any) -> di
     return {"ok": True, "table": table, "rows": projected}
 
 
+def mcp_read_handlers() -> dict[str, Any]:
+    """AppSheet reads the safe-ops MCP exposes.
+
+    Profile-only reads belong here, and each one has to return through
+    ``_appsheet_read`` so HRS private columns cannot skip the denylist.
+    The MCP server applies the same denylist again on ``rows`` / ``row``.
+    """
+    return {
+        "pd_one_appsheet_table_probe": cmd_appsheet_table_probe,
+        "pd_one_appsheet_row_get": cmd_appsheet_row_get,
+    }
+
+
 def _probe_handler(args: dict, **_kwargs: Any) -> str:
     table = str((args or {}).get("table") or "")
     query = str((args or {}).get("query") or "")
