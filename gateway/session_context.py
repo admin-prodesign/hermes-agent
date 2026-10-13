@@ -179,6 +179,21 @@ def get_session_env(name: str, default: str = "") -> str:
     return os.getenv(name, default)
 
 
+def bound_session_value(name: str) -> str | None:
+    """Task-local session value, or None when this task never bound it.
+
+    Authorization must use this instead of ``get_session_env``: the env fallback
+    is model-writable (terminal, cron) and cannot decide who may see private data.
+    """
+    var = _VAR_MAP.get(name)
+    if var is None:
+        return None
+    value = var.get()
+    if value is _UNSET or value is None:
+        return None
+    return str(value)
+
+
 # Surfaces that are not a human chat channel (gateway binds HERMES_SESSION_PLATFORM, CLI/TUI/
 # desktop bind HERMES_SESSION_SOURCE, so both are consulted).  Default-deny: an unrecognized
 # identity counts as messaging.  Mirrors LOCAL_SESSION_SOURCE_IDS in apps/desktop session-source.ts.
