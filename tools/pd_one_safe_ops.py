@@ -175,17 +175,67 @@ def pd_one_hr_private_lookup(table: str, query: str = "", **_ignored: Any) -> di
     return {"ok": True, "table": table, "rows": projected}
 
 
-def mcp_read_handlers() -> dict[str, Any]:
-    """AppSheet reads the safe-ops MCP exposes.
+def merged_appsheet_table_probe(
+    table: str = "",
+    query: str = "",
+    selector: str = "",
+    env: str = "prototype",
+    *,
+    rows: Any = None,
+    **_ignored: Any,
+) -> Any:
+    """Probe used by the MCP server.
 
-    Profile-only reads belong here, and each one has to return through
-    ``_appsheet_read`` so HRS private columns cannot skip the denylist.
-    The MCP server applies the same denylist again on ``rows`` / ``row``.
+    A selector runs the live CLI probe, then the denylist. Without one, the
+    in-process read stays so a caller that already holds rows is still filtered.
     """
-    return {
-        "pd_one_appsheet_table_probe": cmd_appsheet_table_probe,
-        "pd_one_appsheet_row_get": cmd_appsheet_row_get,
-    }
+    del _ignored
+    if str(selector or "").strip():
+        from tools.pd_one_ops.pd_one_safe_ops_mcp import pd_one_appsheet_table_probe as live
+
+        raw = live(str(table or ""), str(selector), str(env or "prototype"))
+        return _decode_probe_payload(raw)
+    return cmd_appsheet_table_probe(table, query, rows=rows)
+
+
+def _decode_probe_payload(raw: Any) -> Any:
+    if not isinstance(raw, str):
+        return raw
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"ok": False, "error": raw}
+
+
+def mcp_read_handlers() -> dict[str, Any]:
+    """Every safe-ops MCP command, with the filtered AppSheet reads in front.
+
+    The probe and row-get names stay the in-process filtered functions. A
+    selector on the probe is the live CLI path. The MCP server applies the
+    denylist again on the result.
+    """
+    from tools.pd_one_ops.mcp_tools import iter_mcp_tools
+
+    handlers = dict(iter_mcp_tools())
+    handlers["pd_one_appsheet_table_probe"] = merged_appsheet_table_probe
+    handlers["pd_one_appsheet_row_get"] = cmd_appsheet_row_get
+    return handlers
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry. Skills and the MCP server invoke this file by path."""
+    import sys
+
+    root = str(Path(__file__).resolve().parent.parent)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from tools.pd_one_ops.cli import main as cli_main
+
+    return int(cli_main(argv))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 
 
 def _probe_handler(args: dict, **_kwargs: Any) -> str:
