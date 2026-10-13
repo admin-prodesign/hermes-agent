@@ -341,15 +341,42 @@ def _truthy_env(name: str, default: bool = False) -> bool:
     return default if v is None else v.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _nonblank_secret(value: Any) -> str:
+    """A credential string with surrounding whitespace removed, or ``""`` when unset.
+
+    Whitespace-only and non-string values (YAML ``true`` / ``0`` / null) are unset: they must
+    not key the HMAC with blanks or a guessable ``str()`` form such as ``"True"``.
+    """
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _line_secret(canonical: str) -> str:
+    """Read one LINE credential, accepting the PD One Bitwarden ``PDONE_`` name.
+
+    Bitwarden stores ``PDONE_LINE_CHANNEL_*``. Config aliases do not remap those keys onto
+    ``LINE_CHANNEL_*`` before ``check_requirements``, so the adapter accepts both names or
+    LINE never starts on PD One. ``external_fallback`` is required: the gate runs before a
+    secret scope exists, and the Bitwarden values are not in ``os.environ``.
+
+    Fork-only (nemo). Do not propose upstream.
+    """
+    for name in (canonical, f"PDONE_{canonical}"):
+        found = _nonblank_secret(_get_scoped_secret(name, external_fallback=True))
+        if found:
+            return found
+    return ""
+
+
 def _credentials(config) -> Tuple[str, str]:
-    """Return ``(channel_access_token, channel_secret)`` from scoped secrets, then ``extra``."""
+    """Return ``(channel_access_token, channel_secret)`` from scoped secrets, then ``extra``.
+
+    Each secret is the canonical ``LINE_CHANNEL_*`` name, else the PD One ``PDONE_LINE_CHANNEL_*``
+    name, else the matching ``extra`` key.
+    """
     extra = getattr(config, "extra", {}) or {}
 
     def read(env: str, key: str) -> str:
-        # A whitespace-only or non-string value (YAML ``true``/``0``/null) reads as unset: it must
-        # not key the HMAC with blanks or a guessable str() form such as "True".
-        value = _get_scoped_secret(env) or extra.get(key)
-        return value.strip() if isinstance(value, str) else ""
+        return _line_secret(env) or _nonblank_secret(extra.get(key))
 
     return read("LINE_CHANNEL_ACCESS_TOKEN", "channel_access_token"), read("LINE_CHANNEL_SECRET", "channel_secret")
 
@@ -1001,7 +1028,8 @@ def _unlink_quietly(path: str) -> None:
 
 
 def _env_credentials_present() -> bool:
-    return all(str(_get_scoped_secret(k) or "").strip() for k in ("LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"))
+    """True when both LINE credentials resolve, including ``PDONE_`` Bitwarden names."""
+    return bool(_line_secret("LINE_CHANNEL_ACCESS_TOKEN") and _line_secret("LINE_CHANNEL_SECRET"))
 
 
 def check_requirements() -> bool:

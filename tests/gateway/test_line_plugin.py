@@ -360,15 +360,169 @@ class TestPostbackButtonShape:
         assert data == {"action": "show_response", "request_id": "rid-1"}
 
 
+_LINE_CREDENTIAL_ENVS = (
+    "LINE_CHANNEL_ACCESS_TOKEN",
+    "LINE_CHANNEL_SECRET",
+    "PDONE_LINE_CHANNEL_ACCESS_TOKEN",
+    "PDONE_LINE_CHANNEL_SECRET",
+)
+
+
+def _clear_line_credential_env(monkeypatch):
+    for name in _LINE_CREDENTIAL_ENVS:
+        monkeypatch.delenv(name, raising=False)
+
+
+def _empty_credential_config():
+    return type("Cfg", (), {"extra": {}})()
+
+
+def _reset_external_secret_cache(monkeypatch):
+    import gateway.platforms._shared as shared
+
+    monkeypatch.setattr(shared, "_UNSCOPED_PROFILE_SECRETS", None)
+
+
+def _install_external_secrets(monkeypatch, secrets):
+    """Pretend Bitwarden (or another external source) published these names."""
+    import agent.secret_scope as secret_scope
+
+    _reset_external_secret_cache(monkeypatch)
+    monkeypatch.setattr(secret_scope, "build_profile_secret_scope", lambda _home: dict(secrets))
+
+
+def _stub_aiohttp(monkeypatch):
+    """``check_requirements`` also imports aiohttp; the credential cases should not depend on it."""
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "aiohttp", types.ModuleType("aiohttp"))
+
+
 class TestCheckRequirements:
 
 
     def test_rejects_without_secret(self, monkeypatch):
+        _clear_line_credential_env(monkeypatch)
         monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "t")
-        monkeypatch.delenv("LINE_CHANNEL_SECRET", raising=False)
         assert not check_requirements()
         monkeypatch.setenv("LINE_CHANNEL_SECRET", "   ")
         assert not check_requirements()
+
+
+class TestPdoneLineCredentialFallback:
+    """PD One stores LINE credentials in Bitwarden as ``PDONE_LINE_CHANNEL_*``.
+
+    ``check_requirements`` runs before a secret scope is installed, and config aliases do not
+    remap those names, so the adapter must accept them or LINE never starts.
+    """
+
+    def test_canonical_names_satisfy_check_requirements(self, monkeypatch):
+        _clear_line_credential_env(monkeypatch)
+        _reset_external_secret_cache(monkeypatch)
+        _stub_aiohttp(monkeypatch)
+        monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "tok-canonical")
+        monkeypatch.setenv("LINE_CHANNEL_SECRET", "sec-canonical")
+
+        assert _line._env_credentials_present()
+        assert check_requirements()
+        assert _line._credentials(_empty_credential_config()) == ("tok-canonical", "sec-canonical")
+
+    def test_pdone_env_fallback_satisfies_check_requirements(self, monkeypatch):
+        _clear_line_credential_env(monkeypatch)
+        _reset_external_secret_cache(monkeypatch)
+        _stub_aiohttp(monkeypatch)
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_ACCESS_TOKEN", "tok-pdone")
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_SECRET", "sec-pdone")
+
+        assert _line._env_credentials_present()
+        assert check_requirements()
+        assert _line._credentials(_empty_credential_config()) == ("tok-pdone", "sec-pdone")
+
+    def test_neither_name_fails_check_requirements(self, monkeypatch):
+        _clear_line_credential_env(monkeypatch)
+        _install_external_secrets(monkeypatch, {})
+
+        assert not _line._env_credentials_present()
+        assert not check_requirements()
+        assert _line._credentials(_empty_credential_config()) == ("", "")
+
+    def test_external_pdone_names_satisfy_check_requirements(self, monkeypatch):
+        """The live failure: Bitwarden names are not in ``os.environ`` when the gate runs."""
+        _clear_line_credential_env(monkeypatch)
+        _stub_aiohttp(monkeypatch)
+        _install_external_secrets(monkeypatch, {
+            "PDONE_LINE_CHANNEL_ACCESS_TOKEN": "tok-bw",
+            "PDONE_LINE_CHANNEL_SECRET": "sec-bw",
+        })
+
+        assert _line._env_credentials_present()
+        assert check_requirements()
+        assert _line._credentials(_empty_credential_config()) == ("tok-bw", "sec-bw")
+
+    def test_canonical_name_wins_over_pdone_name(self, monkeypatch):
+        _clear_line_credential_env(monkeypatch)
+        _reset_external_secret_cache(monkeypatch)
+        monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "tok-canonical")
+        monkeypatch.setenv("LINE_CHANNEL_SECRET", "sec-canonical")
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_ACCESS_TOKEN", "tok-pdone")
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_SECRET", "sec-pdone")
+
+        assert _line._credentials(_empty_credential_config()) == ("tok-canonical", "sec-canonical")
+
+    def test_blank_canonical_falls_through_to_pdone(self, monkeypatch):
+        _clear_line_credential_env(monkeypatch)
+        _reset_external_secret_cache(monkeypatch)
+        monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "   ")
+        monkeypatch.setenv("LINE_CHANNEL_SECRET", "   ")
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_ACCESS_TOKEN", "tok-pdone")
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_SECRET", "sec-pdone")
+
+        assert _line._credentials(_empty_credential_config()) == ("tok-pdone", "sec-pdone")
+
+    def test_each_credential_resolves_independently(self, monkeypatch):
+        _clear_line_credential_env(monkeypatch)
+        _reset_external_secret_cache(monkeypatch)
+        monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "tok-canonical")
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_SECRET", "sec-pdone")
+
+        assert _line._env_credentials_present()
+        assert _line._credentials(_empty_credential_config()) == ("tok-canonical", "sec-pdone")
+
+    def test_pdone_token_without_secret_fails(self, monkeypatch):
+        _clear_line_credential_env(monkeypatch)
+        _reset_external_secret_cache(monkeypatch)
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_ACCESS_TOKEN", "tok-pdone")
+
+        assert not _line._env_credentials_present()
+        assert not check_requirements()
+
+    def test_adapter_init_reads_pdone_credentials(self, monkeypatch):
+        _clear_line_credential_env(monkeypatch)
+        _reset_external_secret_cache(monkeypatch)
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_ACCESS_TOKEN", "tok-pdone")
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_SECRET", "sec-pdone")
+        from gateway.config import PlatformConfig
+
+        adapter = LineAdapter(PlatformConfig(enabled=True, extra={}))
+        assert adapter.channel_access_token == "tok-pdone"
+        assert adapter.channel_secret == "sec-pdone"
+
+    def test_routed_scope_does_not_borrow_another_profiles_pdone_env(self, monkeypatch):
+        import agent.secret_scope as secret_scope
+
+        _clear_line_credential_env(monkeypatch)
+        _reset_external_secret_cache(monkeypatch)
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_ACCESS_TOKEN", "leaked-token")
+        monkeypatch.setenv("PDONE_LINE_CHANNEL_SECRET", "leaked-secret")
+        secret_scope.set_multiplex_active(True)
+        token = secret_scope.set_secret_scope({"SOME_OTHER_KEY": "x"})
+        try:
+            assert not _line._env_credentials_present()
+            assert _line._credentials(_empty_credential_config()) == ("", "")
+        finally:
+            secret_scope.reset_secret_scope(token)
+            secret_scope.set_multiplex_active(False)
 
 
 class TestValidateConfig:
