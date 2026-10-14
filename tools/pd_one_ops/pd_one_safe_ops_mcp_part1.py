@@ -88,10 +88,13 @@ def _push_apps_script_content(project: dict[str, str], files: list[dict[str, Any
         raise RuntimeError(f'Apps Script updateContent HTTP {exc.code}: {body[:1000]}') from exc
 
 def _apps_script_project(key: str, action: str | None=None) -> dict[str, Any]:
+    from tools.pd_one_ops.apps_script_registry import assert_project_visible, visible_project_keys
     project_key = str(key or '').strip()
-    if project_key not in APPS_SCRIPT_ALLOWED_PROJECTS():
-        raise ValueError(f'project_key must be one of: {sorted(APPS_SCRIPT_ALLOWED_PROJECTS())}')
-    project = APPS_SCRIPT_ALLOWED_PROJECTS()[project_key]
+    projects = APPS_SCRIPT_ALLOWED_PROJECTS()
+    project = projects.get(project_key)
+    if project is None:
+        raise ValueError(f'project_key must be one of: {visible_project_keys(projects)}')
+    assert_project_visible(project)
     if action and action not in set(project.get('allowed_actions') or []):
         raise ValueError(f'action {action!r} is not allowed for project_key={project_key!r}')
     return project
@@ -119,9 +122,17 @@ def _apps_script_syntax_check(file_name: str, source: str, file_type: str | None
     return result
 
 def _apps_script_registered_projects() -> list[dict[str, Any]]:
+    from tools.pd_one_ops.apps_script_registry import project_is_visible
     projects = []
     for key, project in sorted(APPS_SCRIPT_ALLOWED_PROJECTS().items()):
-        projects.append({'project_key': key, 'script_id': project['script_id'], 'account': project['account'], 'title': project['title'], 'spreadsheet_id': project.get('spreadsheet_id'), 'system': project.get('system'), 'allowed_actions': project.get('allowed_actions') or []})
+        if not project_is_visible(project):
+            continue
+        item = {'project_key': key, 'script_id': project['script_id'], 'account': project['account'], 'title': project['title'], 'spreadsheet_id': project.get('spreadsheet_id'), 'system': project.get('system'), 'allowed_actions': project.get('allowed_actions') or []}
+        if project.get('registered_by'):
+            item['registered_by'] = project['registered_by']
+        if project.get('parent_file_id'):
+            item['parent_file_id'] = project['parent_file_id']
+        projects.append(item)
     return projects
 
 def _safe_staged_source_path(path: str) -> Path:
@@ -176,20 +187,39 @@ def _apps_script_verify(content: dict[str, Any], file_name: str, required_string
     sha = hashlib.sha256(source.encode('utf-8')).hexdigest()
     return {'file_name': file_name, 'source_len': len(source), 'source_sha256': sha, 'required_strings_count': len(required_strings or []), 'missing_required_strings': missing, 'expected_sha256': expected_sha256, 'sha256_matches_expected': sha == expected_sha256 if expected_sha256 else None, 'ok': not missing and (not expected_sha256 or sha == expected_sha256)}
 
-def apps_script_project_ops(action: str='list_registered_projects', project_key: str='', file_name: str='Code', old_string: str='', new_string: str='', staged_source_path: str='', include_source: bool=False, max_source_chars: int=12000, required_strings: Optional[list[str]]=None, expected_sha256: Optional[str]=None, dry_run: bool=True, confirm_live_patch: Optional[str]=None) -> str:
+def _apps_script_registry_action(action_key: str, project_key: str, script_id: str, parent_file_id: str, dry_run: bool, confirm_live_register: Optional[str]) -> str | None:
+    """Register, scope check, and list. None means a content or patch action follows."""
+    if action_key == 'check_gog_scopes':
+        from tools.pd_one_ops.apps_script_registry import gog_token_scope_report
+        return _json_result({'status': 'ok', 'action': action_key, **gog_token_scope_report()})
+    if action_key == 'register_project':
+        from tools.pd_one_ops.apps_script_registry import note_result, register_apps_script_project
+        result = register_apps_script_project(project_key=project_key, script_id=script_id, parent_file_id=parent_file_id, dry_run=bool(dry_run), confirm_live_register=confirm_live_register)
+        note_result(action_key, result)
+        return _json_result(result)
+    if action_key == 'list_registered_projects':
+        return _json_result({'status': 'ok', 'action': action_key, 'projects': _apps_script_registered_projects()})
+    return None
+
+def apps_script_project_ops(action: str='list_registered_projects', project_key: str='', file_name: str='Code', old_string: str='', new_string: str='', staged_source_path: str='', include_source: bool=False, max_source_chars: int=12000, required_strings: Optional[list[str]]=None, expected_sha256: Optional[str]=None, dry_run: bool=True, confirm_live_patch: Optional[str]=None, script_id: str='', parent_file_id: str='', confirm_live_register: Optional[str]=None, **_model_supplied: Any) -> str:
     """Registry-backed Apps Script operations for approved PD One projects.
 
-    Actions: list_registered_projects, get_content, verify_readback, unique_text_patch,
-    staged_file_replace. Live projects.updateContent writes require exact confirmation
-    RUN LIVE APPS SCRIPT PATCH. This is the generic safe alternative to terminal,
-    clasp, or raw script.googleapis.com updateContent calls.
+    Actions: list_registered_projects, register_project, check_gog_scopes,
+    get_content, verify_readback, unique_text_patch, staged_file_replace.
+    register_project is dry-run unless confirm_live_register is
+    'RUN LIVE APPS SCRIPT REGISTER'. The requester is the bound session, not
+    a tool argument. Live projects.updateContent writes require exact
+    confirmation RUN LIVE APPS SCRIPT PATCH.
     """
+    del _model_supplied
+    action_key = ''
     try:
         action_key = str(action or 'list_registered_projects').strip().lower().replace('-', '_')
-        if action_key == 'list_registered_projects':
-            return _json_result({'status': 'ok', 'action': action_key, 'projects': _apps_script_registered_projects()})
+        early = _apps_script_registry_action(action_key, project_key, script_id, parent_file_id, bool(dry_run), confirm_live_register)
+        if early is not None:
+            return early
         if action_key not in {'get_content', 'verify_readback', 'unique_text_patch', 'staged_file_replace'}:
-            raise ValueError('action must be one of: list_registered_projects, get_content, verify_readback, unique_text_patch, staged_file_replace')
+            raise ValueError('action must be one of: list_registered_projects, register_project, check_gog_scopes, get_content, verify_readback, unique_text_patch, staged_file_replace')
         project = _apps_script_project(project_key, action_key)
         live = not bool(dry_run)
         if live and action_key in {'unique_text_patch', 'staged_file_replace'} and (confirm_live_patch != APPS_SCRIPT_LIVE_CONFIRMATION):
@@ -226,9 +256,13 @@ def apps_script_project_ops(action: str='list_registered_projects', project_key:
                     result['status'] = 'error'
                     result['error'] = 'readback_verification_failed'
         receipt_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+        from tools.pd_one_ops.apps_script_registry import note_result
+        note_result(action_key, result)
         return _json_result(result)
     except Exception as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
+        from tools.pd_one_ops.apps_script_registry import note_error
+        note_error(action_key, project_key, script_id, exc)
         return _json_result({'status': 'error', 'error': 'invalid_request', 'detail': str(exc)})
 
 def worker_scheduling_apps_script_patch(file_name: str='Code', old_string: str='', new_string: str='', dry_run: bool=True, confirm_live_patch: Optional[str]=None) -> str:
@@ -250,9 +284,13 @@ def worker_scheduling_apps_script_patch(file_name: str='Code', old_string: str='
             response = _push_apps_script_content(project, content['files'])
             result['execution'] = {'updated_files': [{'name': f.get('name'), 'type': f.get('type'), 'source_len': len(f.get('source') or '')} for f in response.get('files', [])]}
         receipt_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+        from tools.pd_one_ops.apps_script_registry import note_result
+        note_result('worker_scheduling_apps_script_patch', result)
         return _json_result(result)
     except Exception as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
+        from tools.pd_one_ops.apps_script_registry import note_error
+        note_error('worker_scheduling_apps_script_patch', 'worker_scheduling', '', exc)
         return _json_result({'status': 'error', 'error': 'invalid_request', 'detail': str(exc)})
 
 def _load_appsheet_record_ops_module() -> Any:
