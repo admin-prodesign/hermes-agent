@@ -2767,6 +2767,7 @@ requires-dist = [
     { name = "qrcode", marker = "extra == 'dingtalk'", specifier = "==7.4.2" },
     { name = "qrcode", marker = "extra == 'feishu'", specifier = "==7.4.2" },
     { name = "qrcode", marker = "extra == 'messaging'", specifier = "==7.4.2" },
+    { name = "requests", marker = "extra == 'nemo'", specifier = "==2.33.0" },
     { name = "requests", marker = "python_full_version >= '3.14'", specifier = "==2.33.0" },
     { name = "resvg-py", marker = "python_full_version >= '3.14'", specifier = "==0.4.0" },
     { name = "rich", marker = "python_full_version >= '3.14'", specifier = "==14.3.3" },

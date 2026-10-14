@@ -138,29 +138,139 @@ exec(code, main.__dict__)
 """
 
 
-def _posix_cron_script_argv(script: Path) -> tuple[list[str], dict[str, str]]:
-    """POSIX managed-store installs run cron ``.py`` scripts on the selected dependency venv's
-    interpreter: the store Python has the repo and managed site-packages only on its in-process
-    ``sys.path``, so its children import neither (#123044). No ``PYTHONPATH``: everything the
-    script spawns would inherit it and a foreign interpreter would load the store's compiled
-    extensions (#123440). The venv resolves Hermes from its generation's workspace snapshot,
-    rebuilt only on a dependency change, so the bootstrap puts the live checkout first.
-    Lazy installs are off for the script's process tree: a script importing ``hermes_bootstrap``
-    could otherwise complete a source update and ``execv`` itself onto the bare store Python."""
+def _venv_interpreter(venv: Path) -> Optional[Path]:
+    """``python3`` or ``python`` inside *venv*'s bin dir, else None."""
+    from pm.environments import venv_bin_dir
+
+    bindir = venv_bin_dir(venv)
+    for name in ("python3", "python", "python.exe"):
+        candidate = bindir / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _resolve_release_python(repo: Path) -> Path:
+    """The interpreter profile cron scripts must run, not a bare ``python3`` on ``PATH``.
+
+    A managed store uses ``project_python``: the store Python's children cannot
+    see that environment's site-packages (#123044). A release checkout with its
+    own ``.venv`` or ``venv`` (``releases/current/.venv`` on the production
+    host) and no store record uses that tree. Otherwise the process interpreter.
+    """
     from hermes_cli._launchers import resolve_store_python
+    from hermes_constants import project_venv_dir
     from pm.environments import project_python
 
+    if resolve_store_python(repo) is not None:
+        # project_python, not committed_venv as on Windows: a pre-PM venv selected
+        # before the first commit runs on its OWN interpreter, so there is no ABI
+        # mix (#122183).
+        python = project_python(repo)
+        if not python.is_file():
+            # The caller's interpreter is the bare store Python here — the #123044 failure mode.
+            raise RuntimeError(f"dependency environment interpreter is missing: {python}")
+        return python
+    in_tree = project_venv_dir(repo)
+    if in_tree is not None:
+        found = _venv_interpreter(in_tree)
+        if found is not None:
+            return found
+    return Path(sys.executable)
+
+
+def _posix_cron_script_argv(script: Path) -> tuple[list[str], dict[str, str]]:
+    """POSIX cron ``.py`` scripts run on :func:`_resolve_release_python`.
+
+    A managed store still bootstraps so the live checkout is ahead of the
+    generation snapshot, and does not set ``PYTHONPATH``: everything the script
+    spawns would inherit it and a foreign interpreter would load the store's
+    compiled extensions (#123440). Lazy installs are off for that process tree:
+    a script importing ``hermes_bootstrap`` could otherwise complete a source
+    update and ``execv`` itself onto the bare store Python.
+    """
+    from hermes_cli._launchers import resolve_store_python
+
     repo = Path(__file__).resolve().parents[1]
+    python = _resolve_release_python(repo)
     if resolve_store_python(repo) is None:
-        return [sys.executable, str(script)], {}
-    # project_python, not committed_venv as on Windows: a pre-PM venv selected before the first
-    # commit runs on its OWN interpreter here, so there is no ABI mix (#122183).
-    python = project_python(repo)
-    if not python.is_file():
-        # The caller's interpreter is the bare store Python here — the #123044 failure mode.
-        raise RuntimeError(f"dependency environment interpreter is missing: {python}")
+        return [str(python), str(script)], {}
     return ([str(python), "-c", _POSIX_SCRIPT_BOOTSTRAP, str(repo), str(script)],
             {"HERMES_DISABLE_LAZY_INSTALLS": "1"})
+
+
+def _prepend_python_bin(env: dict[str, str], python: Path) -> None:
+    """Put *python*'s directory first on ``PATH`` without resolving symlinks.
+
+    ``venv/bin/python`` is often a symlink to the base interpreter. Resolving
+    it would put ``/usr/bin`` first and ``#!/usr/bin/env python3`` would miss
+    the release venv again. ``VIRTUAL_ENV`` is set only when the directory is
+    actually a venv.
+    """
+    bin_dir = str(python.parent)
+    path = env.get("PATH", "")
+    parts = path.split(os.pathsep) if path else []
+    if not parts or os.path.normcase(os.path.normpath(parts[0])) != os.path.normcase(os.path.normpath(bin_dir)):
+        env["PATH"] = os.pathsep.join([bin_dir, *parts]) if parts else bin_dir
+    venv_root = python.parent.parent
+    if (venv_root / "pyvenv.cfg").is_file():
+        env.setdefault("VIRTUAL_ENV", str(venv_root))
+
+
+def _script_wants_cwa_tls(path: Path) -> bool:
+    """True when this cron script is the CWA typhoon fetch (or names that host).
+
+    Profile scripts live on the host, not in the repo. The runner arms the
+    exception only for a script that mentions ``cwa.gov.tw`` or whose file
+    name says typhoon, so other HTTPS traffic keeps ``VERIFY_X509_STRICT``.
+    """
+    if "typhoon" in path.name.lower():
+        return True
+    try:
+        blob = path.read_bytes()[:2_000_000]
+    except OSError:
+        return False
+    return b"cwa.gov.tw" in blob
+
+
+def _apply_cwa_tls_env(env: dict[str, str]) -> None:
+    """Point ``PYTHONPATH`` at a pure-Python ``sitecustomize``, not site-packages.
+
+    #123440 forbids putting the store's site-packages on ``PYTHONPATH`` because
+    a child with a foreign interpreter would load those compiled extensions.
+    This directory is only the CWA hook. ``_HERMES_CRON_CWA_TLS`` is a spawn
+    signal, not user config: without it the hook does nothing.
+    """
+    hook = str(Path(__file__).resolve().parent / "cwa_site")
+    current = env.get("PYTHONPATH", "")
+    parts = current.split(os.pathsep) if current else []
+    if hook not in parts:
+        env["PYTHONPATH"] = os.pathsep.join([hook, *parts]) if parts else hook
+    env["_HERMES_CRON_CWA_TLS"] = "1"
+
+
+def _apply_cron_script_runtime_env(
+    env: dict[str, str], argv: list[str], path: Path, interpreter: Optional[str],
+) -> None:
+    """Release-venv ``PATH`` for every profile script, plus CWA TLS when needed.
+
+    ``.py`` is already launched with the release interpreter (shebang ignored).
+    Shell wrappers still exec ``python3`` or a ``#!/usr/bin/env python3`` child,
+    so the venv bin has to be first on ``PATH`` or those imports miss ``requests``
+    and ``yaml``. A job ``interpreter`` is the ``.py`` launcher, so its bin leads
+    instead. ``.sh`` / ``.bash`` ignore that field and still get the release bin:
+    ``argv[0]`` there is bash, not the user's Python.
+    """
+    user_python = (
+        isinstance(interpreter, str) and interpreter.strip()
+        and path.suffix.lower() not in {".sh", ".bash"}
+    )
+    if user_python and argv:
+        _prepend_python_bin(env, Path(argv[0]))
+    else:
+        _prepend_python_bin(env, _resolve_release_python(Path(__file__).resolve().parents[1]))
+    if _script_wants_cwa_tls(path):
+        _apply_cwa_tls_env(env)
 
 
 def _windows_cron_python_invocation(python_exe: str) -> tuple[str, dict[str, str]]:
@@ -480,6 +590,9 @@ def _run_job_script(
         # env itself — no raw copy at the spawn site (test_subprocess_env_guard).
         env = build_subprocess_env(strip_launch_profile=True)
         env.update(env_overlay)
+        # After the sanitizer: PATH must lead with the release venv even when
+        # the script is a shell wrapper whose shebang says ``python3``.
+        _apply_cron_script_runtime_env(env, argv, path, interpreter)
         # Subprocess cwd only (default: scripts-dir parent). NEVER os.chdir() the process.
         # Use the job's workdir as the subprocess cwd when configured, otherwise default to the scripts-dir
         # parent (back-compat). NEVER mutate the Python process cwd — that would leak into concurrent
