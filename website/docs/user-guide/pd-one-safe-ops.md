@@ -30,6 +30,26 @@ word `Owner`.
 does not import the profile `tools/` directory unless that flag is true, and
 even then it will not call a release-owned name from the profile file.
 
+## Worker scheduling
+
+Monthly scheduling stays on its own stdio server, `pdone_worker_scheduling`,
+so a long solve does not block or circuit-break `pdone_safe_ops`. Point
+`mcp_servers.pdone_worker_scheduling` at
+`<release>/tools/pd_one_worker_scheduling_mcp.py` and start it with the
+release interpreter. Do not copy the file into a profile `tools/` directory.
+Keep this server's `timeout` long enough for a normal bounded
+`solve_preview` (the tool's own default is 420 seconds). A timeout at that
+bound is a tool failure, not an infeasible schedule.
+
+```yaml
+mcp_servers:
+  pdone_worker_scheduling:
+    command: <release>/.venv/bin/python
+    args:
+      - <release>/tools/pd_one_worker_scheduling_mcp.py
+    timeout: 900
+```
+
 ## Config
 
 Unknown top-level keys are kept. A `pd_one:` section does not need a core
