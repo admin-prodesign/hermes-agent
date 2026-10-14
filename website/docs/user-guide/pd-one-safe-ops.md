@@ -150,6 +150,69 @@ profile folder. `profile_root()` resolves that folder at call time:
 When `HERMES_HOME` already points at a profile folder, that folder is the
 profile root. Kanban boards and other shared state stay on the install root.
 
+## Apps Script self-registration
+
+`pd_one.apps_script.<key>.script_id` still fills in the four built-in
+projects (`worker_scheduling`, `appsheet_helper`, `appsheet_data_mirror`,
+`finance_forex_notification`). Those keys cannot be replaced. An employee
+registers an additional container-bound project with
+`apps_script_project_ops` action `register_project`. The registry file is
+`<profile home>/pd-one/apps-script-registry.json`, read on every call, so
+adding a project does not reload MCP. The file is profile data, not part of
+the release tree.
+
+Dry-run is the default. It resolves the script id and the parent Drive file,
+checks that the PD One Google account can see that file, and checks that the
+bound session user is an owner or writer (directly or through a Google
+Group). The requester is the bound session. A tool argument cannot supply a
+different user id or email. Addresses outside the domain of
+`pd_one.emails.admin` are refused. A live registration writes the registry
+only when `confirm_live_register` is `RUN LIVE APPS SCRIPT REGISTER`.
+
+A self-registered project can be listed, read back, or patched only by the
+user who registered it, or by a user whose policy-cache roles include
+`admin`. Patches stay dry-run unless `confirm_live_patch` is
+`RUN LIVE APPS SCRIPT PATCH`, and a live patch still read-backs. Register,
+patch, and readback append one line to
+`<profile home>/pd-one/apps-script-audit.jsonl` (`who`, `at`, `script_id`,
+`action`, `result`). The line has no tokens and no file contents.
+
+`action=check_gog_scopes` reads JSON under `~/.config/gogcli` and reports
+whether the token metadata includes
+`https://www.googleapis.com/auth/script.projects` and a Drive read scope
+(`drive.readonly`, `drive.metadata.readonly`, or full `drive`). It does not
+print refresh tokens. gog usually keeps the refresh token in the OS keyring,
+so a `scopes_not_found` result means the config directory has no scope list
+to check. Re-consent without dropping services the account already uses:
+
+```bash
+gog auth add <pd_one.emails.admin> \
+  --services <existing-services>,appscript,drive \
+  --drive-scope readonly \
+  --extra-scopes https://www.googleapis.com/auth/script.projects \
+  --force-consent
+```
+
+Enable the Apps Script API and Google Drive API on the OAuth client first.
+`gog auth list --json` shows the recorded grant. Run `check_gog_scopes`
+again after consent.
+
+### Post-merge deploy
+
+1. Rebuild the nemo release from `main` and point `releases/current` at that
+   build. Restart the pdone gateway so the MCP process loads this code.
+   Later registrations do not need another reload.
+2. Do not copy the server into `profiles/pdone/tools/`.
+3. Run `check_gog_scopes` (or inspect `~/.config/gogcli`). If
+   `script.projects` or Drive read is missing, re-consent with the command
+   above.
+4. Update the profile copies of `gog/SKILL.md` and
+   `pd-one-hermes-permissions/SKILL.md` so they describe self-registration.
+   Those skills are not in this repository.
+5. Confirm a dry-run `register_project`, then a live register with the
+   register phrase. Another employee cannot list that key. A policy-cache
+   admin can. The four built-ins still list.
+
 ## HR columns
 
 HRS tables (`HRS_Data`, `HRS_Data_MasterNames`) and HR-employee row payloads
