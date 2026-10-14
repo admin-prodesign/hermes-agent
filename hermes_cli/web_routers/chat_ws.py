@@ -18,6 +18,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, WebSocket, WebSocketDisco
 from agent.interrupt_scope import InterruptScope, bind_interrupt_scope
 from hermes_cli.active_sessions import ActiveSessionRegistryError, active_session_registry_snapshot
 from hermes_cli.pty_session import RegistryFull
+from hermes_cli.terminal_node_deps import TerminalDepsUnavailable
 from hermes_cli.web_deps import LateState, late
 from hermes_cli.web_routers.chat_ws_errors import chat_start_failure_message
 from hermes_cli.web_server_chat import (
@@ -451,9 +452,17 @@ async def console_ws(ws: WebSocket) -> None:
 
 async def _pty_fail(ws: WebSocket, exc: BaseException) -> None:
     """Tell the user why chat could not start, then close 1011 so the SPA renders
-    "Start new session". The raw exception goes to the server log only."""
-    _log.warning("pty start failed: %s: %s", type(exc).__name__, exc)
-    await ws.send_text(f"\r\n\x1b[31m{chat_start_failure_message(exc)}\x1b[0m\r\n")
+    "Start new session". The raw exception goes to the server log only.
+
+    A missing terminal install on a read-only release was already warned once
+    inside ``ensure_dashboard_terminal_deps``; don't log it again per reconnect.
+    """
+    if isinstance(exc, TerminalDepsUnavailable):
+        text = exc.user_message
+    else:
+        _log.warning("pty start failed: %s: %s", type(exc).__name__, exc)
+        text = chat_start_failure_message(exc)
+    await ws.send_text(f"\r\n\x1b[31m{text}\x1b[0m\r\n")
     await ws.close(code=1011)
 
 
@@ -593,7 +602,9 @@ async def pty_ws(ws: WebSocket) -> None:
             _discard_active_session_file(ws.app, channel, active_session_file)
         await _pty_fail(ws, exc)
         return
-    except SystemExit as exc:  # _make_tui_argv sys.exit(1)s when node/npm is missing
+    except (SystemExit, TerminalDepsUnavailable) as exc:
+        # SystemExit: node/npm missing. TerminalDepsUnavailable: already warned
+        # once inside the deps latch — close the socket, do not traceback.
         if not marker_preexisting:
             _discard_active_session_file(ws.app, channel, active_session_file)
         await _pty_fail(ws, exc)
