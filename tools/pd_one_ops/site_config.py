@@ -114,10 +114,103 @@ def _install_root() -> Path:
     return home
 
 
+# The MCP server's HERMES_HOME is the install root. Profile registries live in
+# profiles/<name> (pdone unless the runtime or config names another folder).
+_DEFAULT_PROFILE_NAME = "pdone"
+_PROFILE_HOME_ENVS = ("HERMES_PROFILE_HOME", "PD_ONE_PROFILE_HOME")
+_PROFILE_NAME_ENVS = ("HERMES_PROFILE_NAME", "HERMES_PROFILE")
+
+
+def _named_profile_dir(name: str) -> Path | None:
+    """Directory for a profile id. ``default`` names the install root."""
+    from hermes_constants import PROFILE_ID_RE
+    from hermes_cli.profiles import get_profile_dir
+
+    cleaned = name.strip().lower()
+    if not cleaned or cleaned == "default" or PROFILE_ID_RE.match(cleaned) is None:
+        return None
+    directory = Path(get_profile_dir(cleaned))
+    if directory.parent.name != "profiles":
+        return None
+    return directory
+
+
+def _explicit_profile_home() -> Path | None:
+    for key in _PROFILE_HOME_ENVS:
+        raw = os.environ.get(key, "").strip()
+        if raw:
+            return Path(raw).expanduser()
+    return None
+
+
+def _env_profile_name() -> str:
+    for key in _PROFILE_NAME_ENVS:
+        raw = os.environ.get(key, "").strip()
+        if raw:
+            return raw
+    return ""
+
+
+def _active_profile_dir() -> Path | None:
+    """Profile directory the runtime already selected, when it named one."""
+    pinned = _env_profile_name()
+    if pinned:
+        found = _named_profile_dir(pinned)
+        if found is not None:
+            return found
+    try:
+        from hermes_cli.profiles import get_active_profile, get_active_profile_name
+    except ImportError:
+        return None
+    derived = (get_active_profile_name() or "").strip()
+    # ``custom`` is get_active_profile_name's sentinel for a home that is not
+    # profiles/<name>. An explicit HERMES_PROFILE=custom still resolves above.
+    if derived and derived != "custom":
+        found = _named_profile_dir(derived)
+        if found is not None:
+            return found
+    return _named_profile_dir(get_active_profile() or "")
+
+
+def _is_profile_folder(path: Path) -> bool:
+    return path.parent.name == "profiles"
+
+
+def _configured_profile_name() -> str:
+    from hermes_constants import PROFILE_ID_RE
+
+    section = _config_section()
+    for key in ("profile", "profile_name"):
+        raw = section.get(key)
+        if not isinstance(raw, str):
+            continue
+        name = raw.strip().lower()
+        if name and name != "default" and PROFILE_ID_RE.match(name):
+            return name
+    return _DEFAULT_PROFILE_NAME
+
+
 def profile_root() -> ProfileRoot:
+    """PD One profile folder for this call.
+
+    Capability registries and policies live under the profile folder. The MCP
+    server often leaves ``HERMES_HOME`` on the install root. An explicit
+    profile-home environment variable wins, then a profile the runtime already
+    named, then ``<HERMES_HOME>/profiles/<name>`` (``pd_one.profile``, else
+    ``pdone``). A home that is already a profile folder stays that folder.
+    """
+    explicit = _explicit_profile_home()
+    if explicit is not None:
+        return ProfileRoot(explicit)
+    active = _active_profile_dir()
+    if active is not None:
+        return ProfileRoot(active)
     from hermes_constants import get_hermes_home
 
-    return ProfileRoot(get_hermes_home())
+    home = get_hermes_home()
+    if _is_profile_folder(home):
+        return ProfileRoot(home)
+    return ProfileRoot(home / "profiles" / _configured_profile_name())
 
 
 def kanban_boards_root() -> Path:
@@ -200,9 +293,8 @@ class ExternalPath:
             return Path(raw).expanduser()
         parts = _EXTERNAL_FALLBACK_FILES.get(self.key)
         if parts:
-            from hermes_constants import get_hermes_home
-
-            return get_hermes_home().joinpath(*parts)
+            # Profile skills live next to the capability registries.
+            return profile_root().joinpath(*parts)
         if self.key == "kanban_boards":
             return kanban_boards_root()
         return None
