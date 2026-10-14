@@ -102,7 +102,7 @@ def test_profile_shaped_home_is_used_as_is(monkeypatch, tmp_path, profile_home):
 
 @pytest.mark.parametrize("env_name", ["HERMES_PROFILE_HOME", "PD_ONE_PROFILE_HOME"])
 def test_profile_home_env_wins(monkeypatch, tmp_path, env_name):
-    home = _platform_install(monkeypatch)
+    _platform_install(monkeypatch)
     pinned = tmp_path / "pinned-profile"
     pinned.mkdir()
     monkeypatch.setenv("HERMES_PROFILE", "worker")
