@@ -435,7 +435,8 @@ class MattermostAdapter(BasePlatformAdapter):
         await self._api_post(f"users/{self._bot_user_id}/typing", {"channel_id": chat_id})
 
     async def edit_message(self, chat_id: str, message_id: str, content: str, *, finalize: bool = False) -> SendResult:
-        content = await _guard_hr_outbound(self, chat_id, content)
+        # Stream previews must stay prefix-stable. Only the final edit is filtered.
+        content = await _guard_hr_outbound(self, chat_id, content) if finalize else content
         payload = _with_mentions_disabled({"message": self.format_message(content)})
         return _post_result(await self._api("PUT", f"posts/{message_id}/patch", payload), "Failed to edit post")
 

@@ -20,6 +20,7 @@ from tools.pd_one_hr_fields import (
     members_are_hr_only,
     private_projection,
     redact_private_hr_columns,
+    remember_private_hr_values,
 )
 from tools.registry import registry, tool_error, tool_result
 
@@ -81,7 +82,10 @@ def fetch_appsheet_rows(table: str, query: str = "") -> list[dict[str, Any]]:
 def _appsheet_read(table: str, query: str = "", *, rows: Any = None) -> dict[str, Any]:
     """Single exit for AppSheet reads. Private columns cannot skip this."""
     source = fetch_appsheet_rows(table, query) if rows is None else rows
-    return redact_private_hr_columns(str(table or ""), source)
+    table_name = str(table or "")
+    if table_name in PRIVATE_HRS_TABLES:
+        remember_private_hr_values(source)
+    return redact_private_hr_columns(table_name, source)
 
 
 def cmd_appsheet_table_probe(table: str, query: str = "", *, rows: Any = None, **_ignored: Any) -> dict[str, Any]:
@@ -171,6 +175,7 @@ def pd_one_hr_private_lookup(table: str, query: str = "", **_ignored: Any) -> di
             ),
         }
     rows = fetch_appsheet_rows(table, query)
+    remember_private_hr_values(rows)
     projected = [private_projection(row) for row in rows if isinstance(row, dict)]
     return {"ok": True, "table": table, "rows": projected}
 
