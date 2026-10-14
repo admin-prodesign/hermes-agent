@@ -223,10 +223,28 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
         return [_tui_node_bin("node"), "--expose-gc", str(tui_dir / "dist/entry.js")], tui_dir
 
     from hermes_cli.source_build import build_source_tui, prepare_launch_dependencies, source_build_env
+    from hermes_cli.terminal_node_deps import (
+        TerminalDepsUnavailable, ensure_dashboard_terminal_deps, sealed_tui_entry,
+    )
 
     project_root = tui_dir.parent
-    env = source_build_env()
-    prepare_launch_dependencies(project_root, env=env)
+    prepared_env: dict | None = None
+
+    def _install() -> None:
+        nonlocal prepared_env
+        prepared_env = source_build_env()
+        prepare_launch_dependencies(project_root, env=prepared_env)
+
+    # Deps already in the release: do not npm ci. Missing deps in a read-only
+    # release: one warning, then stop — never a traceback on every reconnect.
+    if not ensure_dashboard_terminal_deps(project_root, install=_install):
+        raise TerminalDepsUnavailable(project_root)
+
+    entry = tui_dir / "dist" / "entry.js"
+    if not tui_dev and sealed_tui_entry(project_root, entry):
+        return [_tui_node_bin("node"), "--expose-gc", str(entry)], tui_dir
+
+    env = prepared_env or source_build_env()
     if tui_dev:
         # tsx imports @hermes/ink's built exports; the production bundle instead
         # compiles its source directly through scripts/build/tui.mjs.
@@ -465,11 +483,17 @@ def _launch_tui(
     if resume_session_id:
         env["HERMES_TUI_RESUME"] = resume_session_id
 
-    argv, cwd = _make_tui_argv(tui_dir, tui_dev)
+    from hermes_cli.terminal_node_deps import TerminalDepsUnavailable
+
     code: Optional[int] = None
     try:
         try:
+            argv, cwd = _make_tui_argv(tui_dir, tui_dev)
             code = subprocess.call(argv, cwd=str(cwd), env=env)
+        except TerminalDepsUnavailable as exc:
+            # The active-session file and any --worktree live until the finally.
+            print(exc.user_message, file=sys.stderr)
+            code = 1
         except KeyboardInterrupt:
             code = 130
 
