@@ -13,6 +13,7 @@ from tools.pd_one_hr_fields import (
     PRIVATE_HRS_TABLES,
     column_is_private,
     redact_private_hr_columns,
+    remember_private_hr_values,
 )
 
 _ROW_KEYS = ("rows", "Rows", "data")
@@ -88,6 +89,7 @@ def _apply_row_redaction(payload: dict, table_name: str) -> Any:
     list_key = next((key for key in _ROW_KEYS if isinstance(payload.get(key), list)), None)
     row = payload.get("row") if isinstance(payload.get("row"), dict) else None
     if list_key is None and row is None:
+        remember_private_hr_values([payload])
         stripped, removed = _strip_private_keys(payload)
         if not removed:
             return payload
@@ -97,11 +99,13 @@ def _apply_row_redaction(payload: dict, table_name: str) -> Any:
     cleaned = dict(payload)
     withheld = 0
     if list_key is not None:
+        remember_private_hr_values(payload[list_key])
         redacted = redact_private_hr_columns(table_name, payload[list_key])
         if redacted["withheld_fields"]:
             cleaned[list_key] = redacted["rows"]
             withheld = int(redacted["withheld_fields"])
     if row is not None:
+        remember_private_hr_values([row])
         redacted_one = redact_private_hr_columns(table_name, [row])
         if redacted_one["withheld_fields"]:
             cleaned["row"] = redacted_one["rows"][0] if redacted_one["rows"] else {}
@@ -127,6 +131,8 @@ def guard_hr_payload(
         return payload
     if isinstance(payload, list):
         table_name = _table_name(payload, table) or "HRS_Data"
+        if table_name in PRIVATE_HRS_TABLES:
+            remember_private_hr_values(payload)
         redacted = redact_private_hr_columns(table_name, payload)
         if not redacted["withheld_fields"]:
             return payload
