@@ -54,7 +54,7 @@ def restore_units(changes: list[dict]) -> list[str]:
         path, backup = Path(item["path"]), Path(item["backup"])
         if not backup.is_file():
             continue
-        restored = backup.read_text(encoding="utf-8-sig")
-        path.write_text(restored, encoding="utf-8")
+        original = backup.read_text(encoding="utf-8-sig")
+        path.write_text(original, encoding="utf-8")
         restored.append(str(path))
     return restored
