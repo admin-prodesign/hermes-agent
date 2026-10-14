@@ -9,7 +9,7 @@ time. This page uses placeholders only.
 ## Rollout
 
 1. Rebuild the nemo release from `main` with the `nemo` extra
-   (`honcho-ai` and PyYAML): `hermes pm` / the release build you already use,
+   (`honcho-ai`, PyYAML, and requests): `hermes pm` / the release build you already use,
    passing `--extra nemo`.
 2. Point the pdone profile `mcp_servers.pdone_safe_ops` command at
    `tools/pd_one_safe_ops_mcp.py` in that release, using the release
@@ -145,6 +145,35 @@ the filter removes column values, not prose.
 only when the bound Mattermost session is an HR or admin DM, or a channel
 whose human members all have those roles. The destination is not a model
 argument.
+
+## Cron scripts on the pdone profile
+
+HR sync, the reaper, the digest, and the typhoon check are profile scripts
+under the pdone `scripts/` directory on the host. They are not in this
+repository. A host edit that points a wrapper at `releases/current/.venv/bin/python`
+is the same interpreter the cron runner now selects itself: `.py` files run
+on that interpreter, and every script (including shell wrappers and
+`#!/usr/bin/env python3` children) gets that `bin` first on `PATH`. Leaving
+an old wrapper pointed at the same interpreter is harmless. Further runtime
+changes belong in this repo, not in another host edit.
+
+The typhoon check fetches `cwa.gov.tw`. Python 3.14 enables
+`ssl.VERIFY_X509_STRICT`, and that chain fails with `Missing Subject Key
+Identifier`. The runner mounts `cron/cwa_tls.py` only when the script text
+contains `cwa.gov.tw` or the file name contains `typhoon`. Verification and
+hostname checks stay on; only that flag is cleared, and only for
+`cwa.gov.tw`.
+
+### Post-merge deploy
+
+1. Rebuild the nemo release from `main` with `--extra nemo` (honcho-ai,
+   PyYAML, and requests) and cut `releases/current` over to that build.
+2. Run job `6adb0e5216c5` once by hand. It writes new-hire rows to AppSheet
+   `HR_Employees`. The run should get past `ModuleNotFoundError: requests`.
+3. On the next scheduled runs, confirm digest `870dd7349151` imports `yaml`
+   and typhoon check `840af263673e` fetches CWA without
+   `CERTIFICATE_VERIFY_FAILED`. Reaper `c9287579f167` is already clean; the
+   runner covers it without the host wrapper edit.
 
 ## Dependencies that stay outside the repo
 

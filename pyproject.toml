@@ -436,10 +436,13 @@ bedrock = ["boto3==1.42.89"]
 # honcho-ai 2.5.1 is the Honcho plugin SDK. PyYAML 6.0.3 is what the
 # gateway run script and model_policy/modelctl.py import; core config
 # YAML stays ruamel.yaml. ruamel.yaml.clib is an optional accelerator
-# and is not part of this extra.
+# and is not part of this extra. requests is already a core pin on
+# Python 3.14; it is repeated here so the nemo closure names the package
+# profile cron scripts import (HR sync, reaper).
 nemo = [
   "honcho-ai==2.5.1",
   "pyyaml==6.0.3",
+  "requests==2.33.0",
 ]
 vertex = ["google-auth==2.55.1"]
 azure-identity = ["azure-identity==1.25.3"]
