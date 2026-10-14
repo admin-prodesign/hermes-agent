@@ -11,7 +11,7 @@ from typing import Any
 def read_manifest(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(data, dict):
         raise ValueError(f"{path} is not a JSON object")
     return data

@@ -41,10 +41,14 @@ class ProbeResult:
 
 
 def _kill_group(proc: subprocess.Popen) -> None:
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
+    if os.name == "nt":
         proc.kill()
+    else:
+        sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
+        try:
+            os.killpg(proc.pid, sigkill)  # windows-footgun: ok — POSIX-only branch
+        except (ProcessLookupError, PermissionError, AttributeError):
+            proc.kill()
     try:
         proc.communicate(timeout=5)
     except subprocess.TimeoutExpired:

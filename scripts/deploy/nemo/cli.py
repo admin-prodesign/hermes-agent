@@ -84,14 +84,14 @@ def cmd_pin_cache(args: argparse.Namespace) -> int:
 
 
 def cmd_freeze_constraint(args: argparse.Namespace) -> int:
-    text = args.input.read_text(encoding="utf-8")
+    text = args.input.read_text(encoding="utf-8-sig")
     args.output.write_text(constraint_text(text), encoding="utf-8")
     return 0
 
 
 def cmd_freeze_compare(args: argparse.Namespace) -> int:
     report, missing = compare(
-        args.old.read_text(encoding="utf-8"), args.new.read_text(encoding="utf-8"),
+        args.old.read_text(encoding="utf-8-sig"), args.new.read_text(encoding="utf-8-sig"),
     )
     args.report.write_text(report, encoding="utf-8")
     if missing:

@@ -59,7 +59,7 @@ def rewrite_yaml_text(text: str, old: str, new: str) -> tuple[str, int]:
 
 
 def rewrite_file(path: Path, old: str, new: str, backup: Path | None = None) -> int:
-    original = path.read_text(encoding="utf-8")
+    original = path.read_text(encoding="utf-8-sig")
     updated, count = rewrite_yaml_text(original, old, new)
     if count == 0:
         return 0
