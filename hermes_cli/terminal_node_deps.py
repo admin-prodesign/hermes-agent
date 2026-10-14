@@ -67,7 +67,7 @@ def _package_dir(modules: Path, name: str) -> Path:
 def _workspace_installed(root: Path, modules: Path, workspace: str) -> bool:
     manifest_path = root / workspace / "package.json"
     try:
-        name = json.loads(manifest_path.read_text(encoding="utf-8")).get("name")
+        name = json.loads(manifest_path.read_text(encoding="utf-8-sig")).get("name")
     except (OSError, json.JSONDecodeError, UnicodeError):
         return False
     if not isinstance(name, str) or not name:
