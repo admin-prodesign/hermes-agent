@@ -218,11 +218,12 @@ def _prepend_python_bin(env: dict[str, str], python: Path) -> None:
 
 
 def _script_wants_cwa_tls(path: Path) -> bool:
-    """True when this cron script is the CWA typhoon fetch (or names that host).
+    """True when this cron script is a typhoon fetch or names an allowlisted host.
 
     Profile scripts live on the host, not in the repo. The runner arms the
-    exception only for a script that mentions ``cwa.gov.tw`` or whose file
-    name says typhoon, so other HTTPS traffic keeps ``VERIFY_X509_STRICT``.
+    exception only for a script that mentions a host in
+    ``cron.cwa_tls.RELAXED_X509_HOSTS`` or whose file name says typhoon, so
+    other HTTPS traffic keeps ``VERIFY_X509_STRICT``.
     """
     if "typhoon" in path.name.lower():
         return True
@@ -230,7 +231,8 @@ def _script_wants_cwa_tls(path: Path) -> bool:
         blob = path.read_bytes()[:2_000_000]
     except OSError:
         return False
-    return b"cwa.gov.tw" in blob
+    from cron.cwa_tls import RELAXED_X509_HOSTS
+    return any(host.encode("ascii") in blob for host in RELAXED_X509_HOSTS)
 
 
 def _apply_cwa_tls_env(env: dict[str, str]) -> None:
