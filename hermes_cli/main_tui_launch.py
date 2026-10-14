@@ -163,6 +163,22 @@ def _tui_node_bin(bin: str) -> str:
     return path
 
 
+def _use_preinstalled_tui(tui_dir: Path) -> tuple[list[str], Path]:
+    """Run the bundle shipped in a sealed release. Never npm-install."""
+    from hermes_cli.source_build import note_runtime_npm_skipped
+
+    entry = tui_dir / "dist" / "entry.js"
+    if not entry.is_file():
+        print(
+            "The sealed release has no ui-tui/dist/entry.js. Rebuild it with "
+            "scripts/deploy/nemo/build.sh; npm install is disabled at runtime.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    note_runtime_npm_skipped()
+    return [_tui_node_bin("node"), "--expose-gc", str(entry)], tui_dir
+
+
 def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
     """TUI: --dev → tsx src; else node dist (HERMES_TUI_DIR prebuilt or esbuild)."""
 
@@ -193,6 +209,11 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
         bundled = _find_bundled_tui()
         if bundled is not None:
             return [_tui_node_bin("node"), "--expose-gc", str(bundled)], bundled.parent
+
+        from hermes_cli.source_build import runtime_npm_install_allowed
+
+        if not runtime_npm_install_allowed(tui_dir.parent):
+            return _use_preinstalled_tui(tui_dir)
 
     # About to npm install/build from source, so the workspace must exist.
     if not ext_dir:

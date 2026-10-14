@@ -166,3 +166,51 @@ def test_tui_rebuild_preserves_the_prepared_desktop_and_web_union(tui_source):
     assert acquired == ["npm", "npm"]
     assert (root / "node_modules/web").exists()
     assert (root / "node_modules/apps-desktop").exists()
+
+
+def _seal(root: Path) -> None:
+    marker = root / ".hermes" / "frontend-preinstalled"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("preinstalled\n", encoding="utf-8")
+
+
+@pytest.mark.platforms("posix")
+def test_sealed_release_uses_the_existing_bundle_without_npm(tui_source, capsys):
+    from hermes_cli import source_build
+
+    root, acquired = tui_source
+    source_build._npm_skip_logged = False
+    _touch_tui_entry(root / "ui-tui")
+    _seal(root)
+    argv, cwd = main_tui_launch._make_tui_argv(root / "ui-tui", tui_dev=False)
+    assert argv[-1] == str(cwd / "dist/entry.js")
+    assert _events(root) == []
+    assert acquired == []
+    err = capsys.readouterr().err
+    assert err.count("Skipping npm install") == 1
+    main_tui_launch._make_tui_argv(root / "ui-tui", tui_dev=False)
+    assert capsys.readouterr().err.count("Skipping npm install") == 0
+
+
+@pytest.mark.platforms("posix")
+def test_sealed_release_without_a_bundle_exits(tui_source):
+    root, acquired = tui_source
+    _seal(root)
+    with pytest.raises(SystemExit) as exc:
+        main_tui_launch._make_tui_argv(root / "ui-tui", tui_dev=False)
+    assert exc.value.code == 1
+    assert acquired == []
+    assert _events(root) == []
+
+
+@pytest.mark.platforms("posix")
+def test_dev_mode_still_prepares_dependencies_when_sealed(tui_source, monkeypatch):
+    root, _acquired = tui_source
+    _seal(root)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("dev still installs")
+
+    monkeypatch.setattr("hermes_cli.source_build.prepare_launch_dependencies", boom)
+    with pytest.raises(RuntimeError, match="dev still installs"):
+        main_tui_launch._make_tui_argv(root / "ui-tui", tui_dev=True)
