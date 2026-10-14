@@ -184,14 +184,29 @@ for those hosts and their subdomains.
 
 ### Post-merge deploy
 
-1. Rebuild the nemo release from `main` with `--extra nemo` (honcho-ai,
-   PyYAML, and requests) and cut `releases/current` over to that build.
-2. Run job `6adb0e5216c5` once by hand. It writes new-hire rows to AppSheet
-   `HR_Employees`. The run should get past `ModuleNotFoundError: requests`.
-3. On the next scheduled runs, confirm digest `870dd7349151` imports `yaml`
-   and typhoon check `840af263673e` fetches CWA and `www.dgpa.gov.tw` without
-   `CERTIFICATE_VERIFY_FAILED`. Reaper `c9287579f167` is already clean; the
-   runner covers it without the host wrapper edit.
+Use `scripts/deploy/nemo/` from this tree. Each build's audit and rollback
+files still land under that profile's `upgrade-audits/<build>/`.
+
+1. `probe.py` checks whether `git fetch <sha>` against the bare mirror
+   answers. Exit 75 means it hung; `build.sh` then uses the GitHub tarball.
+2. `build.sh --sha <sha> --mirror <bare-repo>` fetches that commit, installs
+   `.[nemo]` (honcho-ai, PyYAML, and requests), installs the dashboard npm
+   dependencies, and publishes a read-only release. It creates the release
+   directory only after the source tree validates.
+3. `cutover.sh --build <name>` runs the verifies the diff touches (`--full`
+   runs every verify this deploy knows about), waits until pdone and pdneo
+   are quiet, swaps `releases/current`, rewrites units and configs, and polls
+   systemd plus the gateway and dashboard health endpoints.
+4. The post-cutover check runs the cron scripts' safe checks immediately.
+   Typhoon `840af263673e` fetches `cwa.gov.tw` and `www.dgpa.gov.tw` with the
+   cron TLS mount. Digest `870dd7349151` must import `yaml`. Reaper
+   `c9287579f167` runs only with `--dry-run` (or is compiled, when it has no
+   such flag). HR sync `6adb0e5216c5` runs with `--dry-run` when the script
+   declares that flag, and is compiled otherwise. It must not write AppSheet
+   `HR_Employees`. Do not wait for the scheduled runs.
+5. `rollback.sh --manifest upgrade-audits/<build>/manifest.json` restores the
+   previous symlink, unit files, and configs. The new release directory stays
+   on disk.
 
 ## Dependencies that stay outside the repo
 

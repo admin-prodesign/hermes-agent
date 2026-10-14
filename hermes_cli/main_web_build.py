@@ -140,11 +140,20 @@ def _build_web_ui(web_dir: Path, *, fatal: bool = False) -> bool:
 
 def _do_build_web_ui(web_dir: Path, *, fatal: bool = False) -> bool:
     """Build stale dashboard sources; failure is never reported as a usable build."""
-    from hermes_cli.source_build import build_source_web, prepare_launch_dependencies, source_build_env
+    from hermes_cli.source_build import (
+        build_source_web, note_runtime_npm_skipped, prepare_launch_dependencies,
+        runtime_npm_install_allowed, source_build_env,
+    )
 
+    project_root = _web_project_root(web_dir)
+    if not runtime_npm_install_allowed(project_root):
+        note_runtime_npm_skipped()
+        ready = (project_root / "hermes_cli" / "web_dist" / "index.html").is_file()
+        if not ready:
+            _console_print("  ⚠ Web UI bundle is missing and runtime npm install is disabled")
+        return ready
     if not (web_dir / "package.json").exists() or not _web_ui_build_needed(web_dir):
         return True
-    project_root = _web_project_root(web_dir)
     _console_print("→ Building web UI...")
     try:
         env = source_build_env()
