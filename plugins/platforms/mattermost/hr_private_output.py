@@ -43,7 +43,7 @@ def _policies_for(cache_dir: str, user_ids: list[str]) -> list[dict | None]:
 
 
 async def guard_adapter_outbound(adapter: Any, chat_id: str, text: str) -> str:
-    """Filter ``MattermostAdapter.send`` / ``edit_message`` content."""
+    """Filter a final ``send``. The adapter skips in-progress edits."""
     if not text_has_private_hr_markers(text):
         return text
     hr_only = await _adapter_destination_is_hr_only(adapter, chat_id)
