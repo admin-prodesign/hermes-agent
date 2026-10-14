@@ -137,8 +137,14 @@ class TestEvictAutoCacheKeyAfterBackendRecovery:
 
         auto_client = Dummy()
         other_client = Dummy()
-        auto_key = ("auto", False, "https://api.x.ai/v1")
-        other_key = ("openrouter", False, "https://openrouter.ai/api/v1")
+        # Profile home leads the key (v0.22.0). Auto-routed xAI tasks still
+        # cache under provider "auto", which recovery must drop.
+        auto_key = aux._client_cache_key(
+            "auto", async_mode=False, base_url="https://api.x.ai/v1",
+        )
+        other_key = aux._client_cache_key(
+            "openrouter", async_mode=False, base_url="https://openrouter.ai/api/v1",
+        )
         aux._client_cache.clear()
         aux._client_cache[auto_key] = (auto_client, "grok-4.6", None)
         aux._client_cache[other_key] = (other_client, "other", None)
