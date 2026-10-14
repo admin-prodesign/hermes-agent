@@ -299,7 +299,7 @@ import requests, json
 # Print summary to stdout — agent analyzes and reports
 ```
 
-On POSIX the script runs on the release interpreter (`cron/scheduler_script.py::_resolve_release_python`): the managed-store `project_python` when a store is recorded, otherwise the checkout `.venv` or `venv`, otherwise `sys.executable`. The same interpreter's `bin` is prepended to `PATH` after the subprocess env is sanitized, including for `.sh` wrappers, so a shebang of `#!/usr/bin/env python3` does not fall through to a bare system `python3`. A job `interpreter` replaces that pin for `.py` files. A script that mentions `cwa.gov.tw` (or is named like a typhoon check) gets `cron/cwa_tls.py` mounted for that host only: verification stays on, `ssl.VERIFY_X509_STRICT` is cleared.
+On POSIX the script runs on the release interpreter (`cron/scheduler_script.py::_resolve_release_python`): the managed-store `project_python` when a store is recorded, otherwise the checkout `.venv` or `venv`, otherwise `sys.executable`. The same interpreter's `bin` is prepended to `PATH` after the subprocess env is sanitized, including for `.sh` wrappers, so a shebang of `#!/usr/bin/env python3` does not fall through to a bare system `python3`. A job `interpreter` replaces that pin for `.py` files. A script that mentions `cwa.gov.tw` or `dgpa.gov.tw` (or is named like a typhoon check) gets `cron/cwa_tls.py` mounted for those hosts and their subdomains: verification stays on, `ssl.VERIFY_X509_STRICT` is cleared.
 
 The script timeout defaults to 3600 seconds (1 hour). `_get_script_timeout()` resolves the limit through a three-layer chain:
 
