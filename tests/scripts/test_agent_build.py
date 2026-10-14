@@ -350,14 +350,33 @@ def test_automatic_frontends_use_requested_snapshot_not_current_checkout(tmp_pat
     monkeypatch.setattr(stage.shutil, "which", lambda name: "/prepared/node")
     real_run = subprocess.run
     built_sources = []
+    node_commands = []
     def run(command, **kwargs):
         if command[0] != "/prepared/node":
             return real_run(command, **kwargs)
         source = Path(command[command.index("--source") + 1])
         built_sources.append(source)
+        node_commands.append(command)
         assert source != repo
         assert 'version="1"' in (source / "pyproject.toml").read_text()
+        if command[1].endswith("node-deps.mjs"):
+            modules = source / "node_modules" / "web"
+            modules.mkdir(parents=True)
+            (source / "node_modules" / ".hermes-node-deps").write_text("receipt\n", encoding="utf-8")
+            (modules / "package.json").write_text("{}", encoding="utf-8")
+
+    def native(args):
+        (Path(args.out) / "hermes-agent").mkdir(parents=True, exist_ok=True)
+        return 0
     monkeypatch.setattr(stage.subprocess, "run", run)
-    monkeypatch.setattr(stage, "stage_native", lambda args: 0)
-    assert stage.main(["--out", str(tmp_path / "out"), "--ref", revision]) == 0
+    monkeypatch.setattr(stage, "stage_native", native)
+    out = tmp_path / "out"
+    assert stage.main(["--out", str(out), "--ref", revision]) == 0
     assert len(built_sources) == 4
+    assert node_commands[0][1].endswith("node-deps.mjs")
+    assert "--reuse" in node_commands[0]
+    assert node_commands[0].count("--workspace") == 2
+    published = out / "hermes-agent" / "node_modules"
+    assert (published / ".hermes-node-deps").read_text(encoding="utf-8") == "receipt\n"
+    assert (published / "web" / "package.json").read_text(encoding="utf-8") == "{}"
+    assert not (tmp_path / "node_modules").exists()
