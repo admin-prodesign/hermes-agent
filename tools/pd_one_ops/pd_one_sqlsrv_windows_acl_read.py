@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Authorize and (optionally) read \\\\sql-srv using the requester's Windows NTFS rights.
+"""Authorize and (optionally) read \\\\redacted-host using the requester's Windows NTFS rights.
 
-Owner 2026-09-16: profiled employees may ask PD One to read sql-srv documents
+Owner 2026-09-16: profiled employees may ask PD One to read redacted-host documents
 when live NTFS for their AD account allows Read or Write (Write implies Read).
-SMB I/O still uses the vm01 helper identity (JSPD\\admin). Never collect or
-impersonate employee Windows passwords. PD One still does not write sql-srv.
+SMB I/O still uses the redacted-vm helper identity (REDACTED\\account). Never collect or
+impersonate employee Windows passwords. PD One still does not write redacted-host.
 """
 from __future__ import annotations
 import logging
@@ -127,9 +127,9 @@ def run_helper(command: str, path: str, max_items: int, max_bytes: int) -> dict[
     vals = sqlsrv.load_env()
     session, host, user, password = sqlsrv.make_session(vals)
     target = sqlsrv.unc_path(path)
-    payload = sqlsrv.remote_payload(command, target, max_items, max_bytes, 'sql-srv')
+    payload = sqlsrv.remote_payload(command, target, max_items, max_bytes, 'redacted-host')
     result = sqlsrv.run_via_task(session, user, password, payload, timeout=120)
-    result['via'] = {'host': host, 'helper': 'sqlsrv_readonly', 'smb_identity': 'vm01-helper'}
+    result['via'] = {'host': host, 'helper': 'sqlsrv_readonly', 'smb_identity': 'redacted-vm-helper'}
     return result
 
 def main(argv=None) -> int:

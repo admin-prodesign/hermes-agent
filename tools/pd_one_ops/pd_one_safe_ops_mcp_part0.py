@@ -841,7 +841,7 @@ def pd_one_google_group_change_apply(group: str, action: str, member: str, ticke
     return run_json(cmd, timeout=90)
 
 def pd_one_smb_unc_content_search(root: str, terms: list[str], match_mode: str='OR', ticket_id: Optional[str]=None, requester_user_id: Optional[str]=None) -> str:
-    """Read-only recursive UNC content search of a named sql-srv root via vm01.
+    """Read-only recursive UNC content search of a named redacted-host root via redacted-vm.
 
     Authorize with the exact Mattermost requester id (live NTFS Read/Write or the
     Finance AOP standing grant) or an executable ticket. PD One still does not write.
@@ -856,7 +856,7 @@ def pd_one_smb_unc_content_search(root: str, terms: list[str], match_mode: str='
     return run_json(cmd, timeout=240)
 
 def pd_one_sqlsrv_windows_acl_read(requester_user_id: str, path: str, action: str='authorize', max_items: int=50, max_bytes: int=1000000) -> str:
-    """Authorize/list/stat/read a named sql-srv UNC using the requester's live NTFS Read or Write.
+    """Authorize/list/stat/read a named redacted-host UNC using the requester's live NTFS Read or Write.
 
     Writes are not implemented. Use the exact Mattermost sender id. Payroll/credentials/HR-evaluation paths fail closed.
     """

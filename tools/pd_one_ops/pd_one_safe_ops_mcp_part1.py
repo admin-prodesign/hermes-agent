@@ -314,7 +314,7 @@ def _case_payload(src: dict[str, Any], defaults: dict[str, Any], *, parent_case_
     fields = dict(defaults.get('fields') or {})
     fields.update(src.get('fields') or {})
     row: dict[str, Any] = {}
-    aliases = {'title': 'Title', 'description': 'Description', 'type': 'Type', 'sub_type': 'Sub-Type', 'subtype': 'Sub-Type', 'status': 'Status', 'responsible': 'Next Step Responsible Person', 'next_step_responsible': 'Next Step Responsible Person', 'created_by': 'Created By', 'deadline': 'Deadline', 'mattermost_link': 'Mattermost Link', 'other_link': 'Other Link', 'sqlsrv_link': 'sql-srv Link', 'customers': 'Customers', 'products': 'Products', 'molds': 'Molds', 'equipment': 'Equipment'}
+    aliases = {'title': 'Title', 'description': 'Description', 'type': 'Type', 'sub_type': 'Sub-Type', 'subtype': 'Sub-Type', 'status': 'Status', 'responsible': 'Next Step Responsible Person', 'next_step_responsible': 'Next Step Responsible Person', 'created_by': 'Created By', 'deadline': 'Deadline', 'mattermost_link': 'Mattermost Link', 'other_link': 'Other Link', 'sqlsrv_link': 'redacted-host Link', 'customers': 'Customers', 'products': 'Products', 'molds': 'Molds', 'equipment': 'Equipment'}
     for key, column in aliases.items():
         value = merged.get(key)
         if value not in (None, '', []):

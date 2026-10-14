@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ticket-bound read-only recursive UNC content search through vm01."""
+"""Ticket-bound read-only recursive UNC content search through redacted-vm."""
 from __future__ import annotations
 import logging
 
@@ -66,7 +66,7 @@ def ACL_TOOL():
 
 def POLICY_CACHE():
     return PROFILE_ROOT() / 'policy-cache/mattermost/users'
-STANDING_AOP_ROOT = '\\\\sql-srv\\管理部\\aop計劃'
+STANDING_AOP_ROOT = '\\\\redacted-host\\管理部\\aop計劃'
 ALLOWED_EXTENSIONS = {'.docx', '.xlsx', '.txt', '.csv', '.xml'}
 MAX_FILES = 400
 MAX_HITS = 40
@@ -91,7 +91,7 @@ def emit(payload: dict[str, Any]) -> None:
 
 def normalize_unc(raw: str) -> str:
     raw = str(raw or '').strip().replace('/', '\\')
-    server = 'sql-srv'
+    server = 'redacted-host'
     prefix = '\\\\' + server.lower() + '\\'
     if raw.startswith('\\\\'):
         if not raw.lower().startswith(prefix):
