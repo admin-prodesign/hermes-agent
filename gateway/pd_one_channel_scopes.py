@@ -13,6 +13,18 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
+from hermes_constants import get_default_hermes_root
+
+
+def pdone_profile_home() -> Path:
+    """Directory of the ``pdone`` Hermes profile.
+
+    The profile lives at ``<hermes-root>/profiles/pdone``. The root is the
+    platform default (``~/.hermes`` on POSIX) unless ``HERMES_HOME`` names a
+    custom root outside that default.
+    """
+    return get_default_hermes_root() / "profiles" / "pdone"
+
 
 def _dedupe_strings(values: Iterable[Any]) -> list[str]:
     seen: set[str] = set()

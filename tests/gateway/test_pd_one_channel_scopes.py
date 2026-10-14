@@ -1,13 +1,26 @@
 """Tests for PD One/OpenClaw-style per-channel Mattermost scope routing."""
 
+import importlib.util
+from pathlib import Path
+
+import pytest
+
 from gateway.config import Platform
 from gateway.pd_one_channel_scopes import (
     build_scope_prompt,
+    pdone_profile_home,
     resolve_pd_one_channel_scope,
     scoped_skills,
     scoped_toolsets,
     scope_signature_fragment,
 )
+
+# ~/.openclaw/workspace-finance under the process user's home. On the
+# production host that is the same workspace path the suite used to spell out.
+_FINANCE_WORKSPACE = str(Path.home() / ".openclaw" / "workspace-finance")
+# Mattermost ids are 26-char lowercase alphanumeric. These are obvious stand-ins.
+_ADMIN_USER_ID = "testuser000000000000000001"
+_DISCUSSION_CHANNEL_ID = "testchannel000000000000001"
 
 
 def test_resolve_scope_from_mattermost_channel_config():
@@ -17,7 +30,7 @@ def test_resolve_scope_from_mattermost_channel_config():
                 "finance-channel": {
                     "agent_id": "finance",
                     "name": "PD One Finance",
-                    "workspace": "/home/prodesign/.openclaw/workspace-finance",
+                    "workspace": _FINANCE_WORKSPACE,
                     "allowed_toolsets": ["file", "skills", "clarify"],
                     "prompt": "Finance only.",
                 }
@@ -29,7 +42,7 @@ def test_resolve_scope_from_mattermost_channel_config():
 
     assert scope is not None
     assert scope["agent_id"] == "finance"
-    assert scope["workspace"] == "/home/prodesign/.openclaw/workspace-finance"
+    assert scope["workspace"] == _FINANCE_WORKSPACE
 
 
 def test_resolve_scope_supports_default_fallback_for_unknown_channel():
@@ -54,7 +67,7 @@ def test_resolve_scope_supports_default_fallback_for_unknown_channel():
 def test_authorized_admin_prefix_overrides_employee_channel_scope():
     cfg = {
         "mattermost": {
-            "pd_one_admin_prefix": {"allow_from": ["5nak6m7nmf8kudbrwbtccazbgc"]},
+            "pd_one_admin_prefix": {"allow_from": [_ADMIN_USER_ID]},
             "pd_one_channel_scopes": {
                 "admin-channel": {
                     "agent_id": "admin",
@@ -74,7 +87,7 @@ def test_authorized_admin_prefix_overrides_employee_channel_scope():
         cfg,
         "mattermost",
         "employee-channel",
-        user_id="5nak6m7nmf8kudbrwbtccazbgc",
+        user_id=_ADMIN_USER_ID,
         text="admin: fix the capability",
     )
 
@@ -222,7 +235,7 @@ mattermost:
   enabled: true
   pd_one_admin_prefix:
     allow_from:
-    - 5nak6m7nmf8kudbrwbtccazbgc
+    - testuser000000000000000001
   pd_one_channel_scopes:
     finance-channel:
       agent_id: finance
@@ -243,7 +256,7 @@ platforms:
     scopes = cfg.platforms[Platform.MATTERMOST].extra["pd_one_channel_scopes"]
     assert scopes["finance-channel"]["agent_id"] == "finance"
     admin_prefix = cfg.platforms[Platform.MATTERMOST].extra["pd_one_admin_prefix"]
-    assert admin_prefix["allow_from"] == ["5nak6m7nmf8kudbrwbtccazbgc"]
+    assert admin_prefix["allow_from"] == [_ADMIN_USER_ID]
 
 
 
@@ -283,7 +296,7 @@ def test_build_scope_prompt_contains_hard_boundary_and_paths():
     scope = {
         "agent_id": "finance",
         "name": "PD One Finance",
-        "workspace": "/home/prodesign/.openclaw/workspace-finance",
+        "workspace": _FINANCE_WORKSPACE,
         "allowed_toolsets": ["file", "skills"],
         "skills": ["excel-author"],
         "prompt": "Finance only.",
@@ -294,7 +307,7 @@ def test_build_scope_prompt_contains_hard_boundary_and_paths():
     assert "PD One channel scope" in prompt
     assert "finance" in prompt
     assert "finance-channel" in prompt
-    assert "/home/prodesign/.openclaw/workspace-finance" in prompt
+    assert _FINANCE_WORKSPACE in prompt
     assert "file, skills" in prompt
     assert "Finance only." in prompt
     assert "If the request exceeds this channel scope" in prompt
@@ -307,11 +320,12 @@ def test_build_scope_prompt_instructs_wiki_candidate_emission_when_toolset_enabl
         "allowed_toolsets": ["skills", "pd_one_wiki"],
     }
 
-    prompt = build_scope_prompt(scope, channel_id="miiyt4zm9frexdbhxokxqgyxeo")
+    prompt = build_scope_prompt(scope, channel_id=_DISCUSSION_CHANNEL_ID)
 
     assert "Wiki candidate workflow" in prompt
     assert "emit_wiki_update_candidate" in prompt
     assert "source_channel_id" in prompt
+    assert _DISCUSSION_CHANNEL_ID in prompt
 
 
 def test_scope_signature_fragment_changes_with_agent_toolsets_and_prompt():
@@ -346,3 +360,89 @@ def test_scope_signature_includes_channel_sender_and_admin_state():
         changed = dict(base)
         changed[key] = value
         assert scope_signature_fragment(base) != scope_signature_fragment(changed)
+
+
+def test_mattermost_id_placeholders_keep_wire_shape():
+    for value in (_ADMIN_USER_ID, _DISCUSSION_CHANNEL_ID):
+        assert len(value) == 26
+        assert value.isalnum()
+        assert value.islower()
+        assert value.startswith("test")
+
+
+def _use_standin_home(monkeypatch, home: Path) -> None:
+    """Point profile-root resolution at *home* and drop any cached answer."""
+    import hermes_constants
+
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.delenv("HERMES_DATA_DIR_SUFFIX", raising=False)
+    monkeypatch.setattr(hermes_constants, "_default_hermes_root_memo", None)
+
+
+@pytest.mark.platforms("posix")
+def test_pdone_profile_home_uses_user_home_when_hermes_home_unset(monkeypatch):
+    home = Path("/home/testhost")
+    _use_standin_home(monkeypatch, home)
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+
+    assert pdone_profile_home() == home / ".hermes" / "profiles" / "pdone"
+
+
+@pytest.mark.platforms("posix")
+def test_pdone_profile_home_honors_hermes_home_root(monkeypatch):
+    home = Path("/home/testhost")
+    _use_standin_home(monkeypatch, home)
+    monkeypatch.setenv("HERMES_HOME", str(home / ".hermes"))
+
+    assert pdone_profile_home() == home / ".hermes" / "profiles" / "pdone"
+
+
+def test_pdone_profile_home_honors_custom_hermes_home(monkeypatch, tmp_path):
+    home = Path("/home/testhost")
+    custom = tmp_path / "custom-root"
+    _use_standin_home(monkeypatch, home)
+    monkeypatch.setenv("HERMES_HOME", str(custom))
+
+    assert pdone_profile_home() == custom / "profiles" / "pdone"
+
+
+@pytest.mark.platforms("posix")
+def test_dashboard_and_policy_bridge_share_pdone_profile_home(monkeypatch):
+    home = Path("/home/testhost")
+    _use_standin_home(monkeypatch, home)
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    for name in (
+        "PD_ONE_HERMES_POLICY_ROOT",
+        "PD_ONE_POLICY_ROOT",
+        "PD_ONE_OPENCLAW_WORKSPACE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    plugin_path = (
+        Path(__file__).resolve().parents[2]
+        / "plugins"
+        / "pd-one-ops"
+        / "dashboard"
+        / "plugin_api.py"
+    )
+    spec = importlib.util.spec_from_file_location("pd_one_ops_plugin_api_under_test", plugin_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    from gateway.config import PlatformConfig
+    from plugins.platforms.mattermost.adapter import MattermostAdapter
+
+    expected = home / ".hermes" / "profiles" / "pdone"
+    assert module._pdone_home() == expected
+
+    adapter = MattermostAdapter(
+        PlatformConfig(
+            enabled=True,
+            token="test-token",
+            extra={"url": "https://mm.example.com", "pd_one_policy_bridge": "true"},
+        )
+    )
+    text = adapter._build_pd_one_policy_context(_ADMIN_USER_ID, _DISCUSSION_CHANNEL_ID, "channel")
+    assert text is not None
+    assert str(expected / "policies" / "mattermost-channels.md") in text

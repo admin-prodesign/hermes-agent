@@ -16,11 +16,21 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-PDONE_HOME = Path("/home/prodesign/.hermes/profiles/pdone")
 SENSITIVE_PARTS = {
     ".env", "auth.json", "credentials", "tokens", "policy-cache",
     "sessions", "logs", "tmp", "work",
 }
+
+
+def _pdone_home() -> Path:
+    """PD One profile directory under the default Hermes root.
+
+    A custom ``HERMES_HOME`` outside that root is honored. With the env var
+    unset this is ``~/.hermes/profiles/pdone`` on POSIX.
+    """
+    from gateway.pd_one_channel_scopes import pdone_profile_home
+
+    return pdone_profile_home()
 
 
 def _now() -> str:
@@ -36,7 +46,7 @@ def _read_json(path: Path, default: Any) -> Any:
 
 def _safe_rel(path: Path) -> str:
     try:
-        return str(path.relative_to(PDONE_HOME))
+        return str(path.relative_to(_pdone_home()))
     except Exception:
         return str(path)
 
@@ -49,7 +59,7 @@ def _schedule_display(job: dict[str, Any]) -> str:
 
 
 def _cron_jobs() -> list[dict[str, Any]]:
-    raw = _read_json(PDONE_HOME / "cron" / "jobs.json", {"jobs": []})
+    raw = _read_json(_pdone_home() / "cron" / "jobs.json", {"jobs": []})
     jobs = raw.get("jobs", []) if isinstance(raw, dict) else []
     out: list[dict[str, Any]] = []
     for job in jobs:
@@ -75,7 +85,7 @@ def _cron_jobs() -> list[dict[str, Any]]:
 
 
 def _supervisor_entries() -> list[dict[str, Any]]:
-    raw = _read_json(PDONE_HOME / "supervisor" / "automations.json", {"automations": []})
+    raw = _read_json(_pdone_home() / "supervisor" / "automations.json", {"automations": []})
     entries = raw.get("automations", []) if isinstance(raw, dict) else []
     out: list[dict[str, Any]] = []
     for item in entries:
@@ -98,7 +108,7 @@ def _supervisor_entries() -> list[dict[str, Any]]:
 
 
 def _skills() -> list[dict[str, Any]]:
-    root = PDONE_HOME / "skills"
+    root = _pdone_home() / "skills"
     out: list[dict[str, Any]] = []
     if not root.exists():
         return out
@@ -126,7 +136,7 @@ def _skills() -> list[dict[str, Any]]:
 
 
 def _policy_files() -> list[dict[str, Any]]:
-    root = PDONE_HOME / "policies"
+    root = _pdone_home() / "policies"
     out: list[dict[str, Any]] = []
     if not root.exists():
         return out
@@ -137,7 +147,7 @@ def _policy_files() -> list[dict[str, Any]]:
 
 
 def _scripts() -> list[dict[str, Any]]:
-    root = PDONE_HOME / "scripts"
+    root = _pdone_home() / "scripts"
     out: list[dict[str, Any]] = []
     if not root.exists():
         return out
@@ -212,7 +222,7 @@ async def summary() -> dict[str, Any]:
     return {
         "ok": True,
         "generated_at": _now(),
-        "profile_home": str(PDONE_HOME),
+        "profile_home": str(_pdone_home()),
         "counts": counts,
         "skills_by_category": dict(category_counts.most_common()),
         "supervisor_by_criticality": dict(criticality_counts.most_common()),
