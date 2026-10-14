@@ -318,22 +318,94 @@ def test_bilingual_reply_redacts_cached_value_in_both_blocks(caplog):
     assert token in kept
 
 
-def test_table_or_code_block_falls_back_to_the_whole_message():
-    table = (
-        "Safe intro about Purchasing.\n"
-        "| column | value |\n"
-        "| --- | --- |\n"
-        "| 職等代碼 | X3 |\n"
+def test_grade_column_redacts_cells_and_keeps_the_table():
+    text = (
+        "Roster for the team.\n"
+        "| name | grade | department |\n"
+        "| --- | --- | --- |\n"
+        "| Placeholder Person | X3 | Purchasing |\n"
+        "| Placeholder Peer | G9 | Quality |\n"
     )
-    code = "Before the sample.\n```\n職等代碼: X3\n```\nAfter the sample."
-    for text in (table, code):
+    filtered = filter_private_hr_text(text, hr_only=False, chat_id="channel-mixed")
+    assert "Roster for the team." in filtered
+    assert "| name | grade | department |" in filtered
+    assert "| --- | --- | --- |" in filtered
+    assert "Placeholder Person" in filtered
+    assert "Placeholder Peer" in filtered
+    assert "Purchasing" in filtered
+    assert "Quality" in filtered
+    assert "X3" not in filtered
+    assert "G9" not in filtered
+    assert filtered.count("|") == text.count("|")
+    assert "[withheld: grade]" in filtered
+    assert filtered == filter_private_hr_text(filtered, hr_only=False, chat_id="channel-mixed")
+
+
+def test_passport_date_in_a_cell_keeps_the_table():
+    text = (
+        "Travel notes.\n"
+        "| person | document |\n"
+        "| --- | --- |\n"
+        "| Placeholder Person | 護照到期日是 2027-01-01 |\n"
+        "| Placeholder Peer | seat A |\n"
+    )
+    filtered = filter_private_hr_text(text, hr_only=False, chat_id="channel-mixed")
+    assert "Travel notes." in filtered
+    assert "| person | document |" in filtered
+    assert "| --- | --- |" in filtered
+    assert "Placeholder Person" in filtered
+    assert "Placeholder Peer" in filtered
+    assert "seat A" in filtered
+    assert "2027-01-01" not in filtered
+    assert "護照到期日" not in filtered
+    assert filtered.count("|") == text.count("|")
+    assert "[withheld: passport]" in filtered
+    assert "〔已隱藏：護照〕" in filtered
+
+
+def test_code_block_redacts_key_value_lines_in_place():
+    text = (
+        "Sample record.\n"
+        "```\n"
+        "name: Placeholder Person\n"
+        "職等代碼: X3\n"
+        "passport: 2027-01-01\n"
+        "```\n"
+        "End of sample.\n"
+    )
+    filtered = filter_private_hr_text(text, hr_only=False, chat_id="channel-mixed")
+    assert "Sample record." in filtered
+    assert "End of sample." in filtered
+    assert "name: Placeholder Person" in filtered
+    assert "X3" not in filtered
+    assert "2027-01-01" not in filtered
+    assert filtered.count("\n") == text.count("\n")
+    interior = filtered.split("```")[1]
+    assert "[withheld: grade]" in interior
+    assert "[withheld: passport]" in interior
+    assert "已隱藏" not in interior
+    assert filtered == filter_private_hr_text(filtered, hr_only=False, chat_id="channel-mixed")
+
+
+def test_cached_value_on_a_fence_line_falls_back_to_the_whole_message(caplog):
+    from tools.pd_one_hr_fields import remember_private_hr_values
+
+    token = "PV-CACHE-PLACEHOLDER"
+    set_session_vars(
+        platform="mattermost",
+        chat_id="channel-mixed",
+        chat_type="channel",
+        session_id="sess-fence-cache",
+    )
+    remember_private_hr_values([{"職等代碼": token}])
+    text = f"Intro about Purchasing.\n```{token}\nname: Placeholder Person\n```\n"
+    with caplog.at_level(logging.WARNING):
         filtered = filter_private_hr_text(text, hr_only=False, chat_id="channel-mixed")
-        assert "X3" not in filtered
-        assert "Purchasing" not in filtered
-        assert "Before the sample." not in filtered
-        assert "After the sample." not in filtered
-        assert "Private fields were withheld (職等)" in filtered
-        assert "已隱藏" in filtered
+    assert token not in filtered
+    assert token not in caplog.text
+    assert "Intro about Purchasing." not in filtered
+    assert "Private fields were withheld" in filtered
+    assert "cached_private_value" in caplog.text
 
 
 def test_code_block_without_a_private_span_stays():

@@ -54,8 +54,8 @@ PRIVATE_COLUMN_RE = re.compile(
 
 HR_POLICY_ROLES = frozenset({"hr", "admin"})
 
-# Whole-message fallback when a hit sits in a table or fenced block. The normal
-# path is an inline marker that names the category and not the value.
+# Whole-message fallback only when a cached probe value is still present after
+# span redaction. The normal path is an inline marker naming the category.
 HR_PRIVATE_WITHHELD_NOTICE = (
     "The record was confirmed. Private fields were withheld.\n"
     "已確認該筆紀錄。私人欄位已隱藏。"
@@ -141,7 +141,8 @@ _MARKER_NAMES = {
     "入出境": ("entry-exit", "入出境"),
     "私人欄位": ("field", "欄位"),
 }
-_MARKER_RE = re.compile(r"\[withheld: [a-z0-9-]+\] 〔已隱藏：[^〕]*〕")
+_MARKER_RE = re.compile(r"\[withheld: [a-z0-9-]+\](?: 〔已隱藏：[^〕]*〕)?")
+_SEP_CELL_RE = re.compile(r":?-{3,}:?")
 _STEM_CATEGORIES = (
     (("居留", "residencepermit", "residence"), "居留證"),
     (("入出境", "出入境", "entryexit", "exitentry"), "入出境"),
@@ -329,13 +330,15 @@ def clear_private_hr_value_cache() -> None:
         _PRIVATE_VALUE_CACHE.clear()
 
 
-def _inline_marker(category: str) -> str:
+def _inline_marker(category: str, *, ascii_only: bool = False) -> str:
     english, chinese = _MARKER_NAMES.get(category, ("field", "欄位"))
+    if ascii_only:
+        return f"[withheld: {english}]"
     return f"[withheld: {english}] 〔已隱藏：{chinese}〕"
 
 
 def hr_private_withheld_notice(categories: list[str]) -> str:
-    """Whole-message fallback. Names categories, never the withheld values."""
+    """Safety notice when a cached value survives redaction. Names categories, never values."""
     labels: list[str] = []
     for category in categories:
         _english, chinese = _MARKER_NAMES.get(category, ("field", "欄位"))
@@ -352,8 +355,18 @@ def _mask_existing_markers(text: str) -> str:
     return _MARKER_RE.sub(lambda match: " " * len(match.group(0)), text)
 
 
+def _clip_at_pipe(region: str, *, forward: bool) -> tuple[str, int]:
+    """Keep a proximity search inside one table cell."""
+    pipe = region.find("|") if forward else region.rfind("|")
+    if pipe < 0:
+        return region, 0
+    if forward:
+        return region[:pipe], 0
+    return region[pipe + 1:], pipe + 1
+
+
 def _iter_forward(text: str, label_end: int, value_re: re.Pattern[str]):
-    region = text[label_end:label_end + _VALUE_GAP + _VALUE_TAIL]
+    region, _shift = _clip_at_pipe(text[label_end:label_end + _VALUE_GAP + _VALUE_TAIL], forward=True)
     for match in value_re.finditer(region):
         if match.start() <= _VALUE_GAP:
             yield label_end + match.start(), label_end + match.end()
@@ -361,7 +374,8 @@ def _iter_forward(text: str, label_end: int, value_re: re.Pattern[str]):
 
 def _iter_backward(text: str, label_start: int, value_re: re.Pattern[str]):
     begin = max(0, label_start - _VALUE_GAP - _VALUE_TAIL)
-    region = text[begin:label_start]
+    region, shift = _clip_at_pipe(text[begin:label_start], forward=False)
+    begin += shift
     for match in value_re.finditer(region):
         value_start = begin + match.start()
         value_end = begin + match.end()
@@ -484,41 +498,192 @@ def collect_private_hr_spans(text: str) -> list[_Span]:
     return _merge_spans(spans)
 
 
-def _risky_regions(text: str) -> list[tuple[int, int]]:
-    """Fenced blocks and markdown table lines. Cutting those spans breaks markup."""
-    regions: list[tuple[int, int]] = []
-    offset = 0
-    fence: str | None = None
-    fence_start = 0
-    for line in text.splitlines(keepends=True):
-        stripped = line.lstrip()
-        if fence is None and (stripped.startswith("```") or stripped.startswith("~~~")):
-            fence = stripped[:3]
-            fence_start = offset
-        elif fence is not None and stripped.startswith(fence):
-            regions.append((fence_start, offset + len(line)))
-            fence = None
-        elif line.count("|") >= 2:
-            regions.append((offset, offset + len(line)))
-        offset += len(line)
-    if fence is not None:
-        regions.append((fence_start, len(text)))
-    return regions
-
-
-def _span_in_risky(span: _Span, regions: list[tuple[int, int]]) -> bool:
-    return any(span.start < end and start < span.end for start, end in regions)
-
-
-def _apply_redactions(text: str, spans: list[_Span]) -> str:
+def _redact_plain(text: str, *, ascii_only: bool = False) -> tuple[str, list[_Span]]:
+    spans = collect_private_hr_spans(text)
+    if not spans:
+        return text, []
     parts: list[str] = []
     cursor = 0
     for span in spans:
         parts.append(text[cursor:span.start])
-        parts.append(_inline_marker(span.category))
+        parts.append(_inline_marker(span.category, ascii_only=ascii_only))
         cursor = span.end
     parts.append(text[cursor:])
-    return "".join(parts)
+    return "".join(parts), spans
+
+
+def _split_newline(line: str) -> tuple[str, str]:
+    if line.endswith("\r\n"):
+        return line[:-2], "\r\n"
+    if line.endswith("\n"):
+        return line[:-1], "\n"
+    return line, ""
+
+
+def _fence_mark(line: str) -> str | None:
+    body, _newline = _split_newline(line)
+    stripped = body.lstrip(" ")
+    if len(body) - len(stripped) > 3:
+        return None
+    if stripped.startswith("```"):
+        return "```"
+    if stripped.startswith("~~~"):
+        return "~~~"
+    return None
+
+
+def _parse_row(line: str) -> tuple[str, str, list[str], str] | None:
+    """Newline, pipe prefix, cells, pipe suffix. None when the line is not a row."""
+    body, newline = _split_newline(line)
+    if "|" not in body:
+        return None
+    indent = body[: len(body) - len(body.lstrip(" "))]
+    rest = body[len(indent):]
+    prefix = indent
+    if rest.startswith("|"):
+        prefix += "|"
+        rest = rest[1:]
+    suffix = ""
+    if rest.endswith("|"):
+        suffix = "|"
+        rest = rest[:-1]
+    cells = rest.split("|")
+    if len(cells) < 2:
+        return None
+    return newline, prefix, cells, suffix
+
+
+def _is_separator(cells: list[str]) -> bool:
+    return bool(cells) and all(_SEP_CELL_RE.fullmatch(cell.strip()) for cell in cells)
+
+
+def _table_starts(lines: list[str], index: int) -> bool:
+    if index + 1 >= len(lines):
+        return False
+    header = _parse_row(lines[index])
+    separator = _parse_row(lines[index + 1])
+    if header is None or separator is None or len(header[2]) != len(separator[2]):
+        return False
+    return _is_separator(separator[2])
+
+
+def _header_hit(cell: str) -> tuple[str, str] | None:
+    """A header label marks the column under it, even without a value on that line."""
+    text = cell.strip()
+    if not text:
+        return None
+    for label_re, _kinds, pattern, category, _after_only in _OUTBOUND_RULES:
+        if label_re.search(text):
+            return pattern, category
+    if column_is_private(text):
+        return "table_column", _category_for_column(text)
+    return None
+
+
+def _replace_cell_text(cell: str, marker: str) -> str:
+    stripped = cell.strip()
+    if not stripped:
+        return cell
+    start = len(cell) - len(cell.lstrip())
+    end = len(cell.rstrip())
+    return cell[:start] + marker + cell[end:]
+
+
+def _redact_cells(
+    cells: list[str],
+    column_hits: list[tuple[str, str] | None] | None,
+) -> tuple[list[str], list[tuple[str, str]]]:
+    rendered: list[str] = []
+    found: list[tuple[str, str]] = []
+    for index, cell in enumerate(cells):
+        hit = column_hits[index] if column_hits else None
+        if hit is not None and cell.strip():
+            marker = _inline_marker(hit[1])
+            replaced = _replace_cell_text(cell, marker)
+            rendered.append(replaced)
+            if replaced != cell:
+                found.append(hit)
+            continue
+        redacted, spans = _redact_plain(cell)
+        rendered.append(redacted)
+        found.extend((span.pattern, span.category) for span in spans)
+    return rendered, found
+
+
+def _join_row(parsed: tuple[str, str, list[str], str], cells: list[str]) -> str:
+    newline, prefix, _cells, suffix = parsed
+    return prefix + "|".join(cells) + suffix + newline
+
+
+def _consume_fence(
+    lines: list[str],
+    index: int,
+    fence: str,
+    out: list[str],
+    hits: list[tuple[str, str]],
+) -> int:
+    out.append(lines[index])
+    index += 1
+    while index < len(lines):
+        if _fence_mark(lines[index]) == fence:
+            out.append(lines[index])
+            return index + 1
+        body, newline = _split_newline(lines[index])
+        redacted, spans = _redact_plain(body, ascii_only=True)
+        out.append(redacted + newline)
+        hits.extend((span.pattern, span.category) for span in spans)
+        index += 1
+    return index
+
+
+def _consume_table(
+    lines: list[str],
+    index: int,
+    out: list[str],
+    hits: list[tuple[str, str]],
+) -> int:
+    header = _parse_row(lines[index])
+    if header is None:
+        return index
+    column_hits = [_header_hit(cell) for cell in header[2]]
+    rendered, found = _redact_cells(header[2], None)
+    out.append(_join_row(header, rendered))
+    hits.extend(found)
+    out.append(lines[index + 1])
+    width = len(header[2])
+    index += 2
+    while index < len(lines) and _fence_mark(lines[index]) is None:
+        row = _parse_row(lines[index])
+        if row is None or len(row[2]) != width or _is_separator(row[2]):
+            break
+        rendered, found = _redact_cells(row[2], column_hits)
+        out.append(_join_row(row, rendered))
+        hits.extend(found)
+        index += 1
+    return index
+
+
+def _redact_document(text: str) -> tuple[str, list[tuple[str, str]]]:
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    hits: list[tuple[str, str]] = []
+    index = 0
+    while index < len(lines):
+        fence = _fence_mark(lines[index])
+        if fence is not None:
+            index = _consume_fence(lines, index, fence, out, hits)
+            continue
+        if _table_starts(lines, index):
+            index = _consume_table(lines, index, out, hits)
+            continue
+        end = index + 1
+        while end < len(lines) and _fence_mark(lines[end]) is None and not _table_starts(lines, end):
+            end += 1
+        redacted, spans = _redact_plain("".join(lines[index:end]))
+        out.append(redacted)
+        hits.extend((span.pattern, span.category) for span in spans)
+        index = end
+    return "".join(out), hits
 
 
 def private_hr_marker_count(text: str) -> int:
@@ -534,24 +699,30 @@ def text_has_private_hr_markers(text: str) -> bool:
 def filter_private_hr_text(text: str, *, hr_only: bool, chat_id: str = "") -> str:
     """Redact private spans before a non-HR room sees them.
 
-    The rest of the message stays. A table or fenced block falls back to a
-    whole-message notice because cutting a cell or a code line breaks the
-    markup. The log records pattern names, never the message or the value.
+    Table cells and fenced lines are redacted in place so the pipes, column
+    count, and fences stay. The whole message is replaced only when a cached
+    probe value is still present after that pass. The log records pattern
+    names, never the message or the value.
     """
     if hr_only or not text:
         return text
-    spans = collect_private_hr_spans(text)
-    if not spans:
+    redacted, hits = _redact_document(text)
+    leftover = _cached_spans(_mask_existing_markers(redacted))
+    if not hits and not leftover:
         return text
-    patterns = ",".join(dict.fromkeys(span.pattern for span in spans))
+    patterns = [pattern for pattern, _category in hits]
+    categories = [category for _pattern, category in hits]
+    if leftover:
+        patterns.extend(span.pattern for span in leftover)
+        categories.extend(span.category for span in leftover)
     logger.warning(
         "Mattermost: withheld private HR fields from outbound message chat_id=%s patterns=%s",
         chat_id,
-        patterns,
+        ",".join(dict.fromkeys(patterns)),
     )
-    if any(_span_in_risky(span, _risky_regions(text)) for span in spans):
-        return hr_private_withheld_notice([span.category for span in spans])
-    return _apply_redactions(text, spans)
+    if leftover:
+        return hr_private_withheld_notice(categories)
+    return redacted
 
 
 def policy_has_hr_or_admin(policy: Any) -> bool:
