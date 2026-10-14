@@ -60,6 +60,7 @@ secrets.
 
 ```yaml
 pd_one:
+  profile: pdone
   load_profile_tools: false
   owner_display_name: Owner
   owner_mm_username: owner-username
@@ -110,6 +111,7 @@ pd_one:
 
 | Config | Also accepted as |
 | --- | --- |
+| `profile` | Profile folder name under `profiles/`. Default `pdone`. `profile_name` is the same key. |
 | `channels.admin_alert` | `PDONE_ADMIN_ALERT_CHANNEL_ID` |
 | `channels.inter_dept` | `PDONE_INTER_DEPT_CHANNEL_ID` |
 | `channels.work_manual` | `PDONE_WORK_MANUAL_CHANNEL` |
@@ -131,6 +133,22 @@ pd_one:
 `portal_public_hosts` must be set. An empty list does not classify a public
 URL as the local probe. Any other `PDONE_*` name can be set under
 `pd_one.values`.
+
+## Profile folder
+
+The release MCP server often runs with `HERMES_HOME` at the Hermes install
+root. Capability registries, policies, and legacy project trees live in the
+profile folder. `profile_root()` resolves that folder at call time:
+
+1. `HERMES_PROFILE_HOME`, or `PD_ONE_PROFILE_HOME` when the first is unset.
+2. The active Hermes profile, when the runtime names one: `HERMES_PROFILE_NAME`
+   or `HERMES_PROFILE`, otherwise the profile implied by a profile-shaped
+   `HERMES_HOME`, otherwise the sticky active profile.
+3. `<HERMES_HOME>/profiles/<name>`, where `<name>` is `pd_one.profile`
+   (or `pd_one.profile_name`), otherwise `pdone`.
+
+When `HERMES_HOME` already points at a profile folder, that folder is the
+profile root. Kanban boards and other shared state stay on the install root.
 
 ## HR columns
 
@@ -199,5 +217,5 @@ calling `require()` raises `FileNotFoundError` naming `pd_one.external.<key>`.
 | `kanban_boards` | Optional override for the shared kanban boards directory. |
 
 Legacy OpenClaw project trees (worker scheduling, AppSheet env files) stay on
-the profile. Commands that need them resolve the path from the active Hermes
-home and fail with that path when the file is absent.
+the profile folder above. Commands that need them resolve that folder and fail
+with the resulting path when the file is absent.
