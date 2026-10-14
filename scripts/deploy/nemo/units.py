@@ -30,7 +30,7 @@ def units_embedding(directories: list[Path], old: str) -> list[Path]:
     for directory in directories:
         if not directory.is_dir():
             continue
-        found.extend(path for path in sorted(directory.glob("*.service")) if old in path.read_text(encoding="utf-8"))
+        found.extend(path for path in sorted(directory.glob("*.service")) if old in path.read_text(encoding="utf-8-sig"))
     return found
 
 
@@ -38,7 +38,7 @@ def rewrite_units(paths: list[Path], old: str, new: str, backup_dir: Path) -> li
     changes: list[UnitChange] = []
     backup_dir.mkdir(parents=True, exist_ok=True)
     for path in paths:
-        original = path.read_text(encoding="utf-8")
+        original = path.read_text(encoding="utf-8-sig")
         if old not in original:
             continue
         backup = backup_dir / (path.name + ".bak")
@@ -54,6 +54,7 @@ def restore_units(changes: list[dict]) -> list[str]:
         path, backup = Path(item["path"]), Path(item["backup"])
         if not backup.is_file():
             continue
-        path.write_text(backup.read_text(encoding="utf-8"), encoding="utf-8")
+        restored = backup.read_text(encoding="utf-8-sig")
+        path.write_text(restored, encoding="utf-8")
         restored.append(str(path))
     return restored

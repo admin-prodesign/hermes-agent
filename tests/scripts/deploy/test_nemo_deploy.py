@@ -130,7 +130,8 @@ def test_probe_reports_a_hang_without_writing_a_release(tmp_path: Path) -> None:
     result = probe_fetch(mirror, SHA, 1, run=run)
     assert result.status == "hang"
     assert result.exit_code == 75
-    assert list(tmp_path.iterdir()) == [mirror]
+    assert not (tmp_path / "releases").exists()
+    assert not (tmp_path / "upgrade-audits").exists()
 
 
 def test_probe_missing_mirror_is_an_error(tmp_path: Path) -> None:

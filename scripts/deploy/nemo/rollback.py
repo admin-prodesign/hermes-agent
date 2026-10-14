@@ -15,7 +15,8 @@ def apply_rollback(manifest: dict) -> dict:
         backup, path = Path(item["backup"]), Path(item["path"])
         if not backup.is_file():
             continue
-        path.write_text(backup.read_text(encoding="utf-8"), encoding="utf-8")
+        restored = backup.read_text(encoding="utf-8-sig")
+        path.write_text(restored, encoding="utf-8")
         restored_configs.append(str(path))
     previous = manifest.get("previous")
     releases = Path(manifest["releases"])

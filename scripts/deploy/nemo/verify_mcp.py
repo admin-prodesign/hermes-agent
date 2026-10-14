@@ -36,7 +36,7 @@ def scripts_in_release(home: Path, release: Path, profiles: tuple[str, ...] = DE
     for path in configs:
         if not path.is_file():
             continue
-        data = safe_load(path.read_text(encoding="utf-8")) or {}
+        data = safe_load(path.read_text(encoding="utf-8-sig")) or {}
         if not isinstance(data, dict):
             continue
         for script in _servers(data):

@@ -67,7 +67,7 @@ def script_accepts_dry_run(source: str) -> bool:
 
 
 def load_jobs(path: Path) -> list[dict]:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
     if isinstance(data, dict):
         jobs = data.get("jobs", [])
         if isinstance(jobs, dict):
@@ -176,7 +176,7 @@ def run_postcheck(
             root, job = found
             script = resolve_script(root, str(job.get("script") or ""))
             if script is not None and script.is_file():
-                source = script.read_text(encoding="utf-8")
+                source = script.read_text(encoding="utf-8-sig")
             else:
                 script = None
         invocation = plan_policy(policy, script, source, python)
