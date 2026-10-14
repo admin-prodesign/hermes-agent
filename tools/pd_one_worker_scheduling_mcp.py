@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Optional, Union
+
+_LOG = logging.getLogger("pdone_worker_scheduling")
 
 _SERVER_NAME = "pdone_worker_scheduling"
 _INSTRUCTIONS = (
@@ -89,7 +92,8 @@ def worker_scheduling(
             output_dir=output_dir,
             confirm_live_write=confirm_live_write,
         )
-    except Exception as exc:
+    except Exception as exc:  # health: allow BLE001 -- MCP boundary: any dispatcher failure is returned as JSON and the traceback is logged
+        _LOG.exception("worker scheduling dispatch failed")
         return _json_result({
             "status": "error",
             "error": "worker_scheduling_dispatch_failed",
