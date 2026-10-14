@@ -4,9 +4,16 @@ The pdone profile's copy of pd_one_safe_ops returns those columns. The MCP
 server has to call the repo module even when that copy is importable.
 Profile tools load only when pd_one.load_profile_tools is true, and HRS rows
 in those results are withheld the same way.
+
+mcp 2.0 rejects tool parameters whose names start with "_". Building the
+real server (dev group pins mcp==2.0.0; the test skips when that pin is
+absent) must succeed, and appsheet-table-probe must parse and reach
+safe_env when a configured path is a Path.
 """
+import asyncio
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -236,3 +243,81 @@ def test_profile_tool_keeps_its_signature_and_filters(monkeypatch):
     result = server.tool(spreadsheet_id="sheet", range_name="A1")
     assert "職等代碼" not in json.dumps(result, ensure_ascii=False)
     assert result["Rows"][0]["姓名"] == "ok"
+    assert all(not name.startswith("_") for name in inspect.signature(server.tool).parameters)
+
+
+def test_build_server_registers_tools_with_valid_parameters(require_mcp_2_sdk):
+    """The installed mcp package must accept every release tool signature."""
+    server = mcp.build_server()
+    tools = asyncio.run(server.list_tools())
+    assert len(tools) > 0
+    names = set()
+    for tool in tools:
+        names.add(tool.name)
+        schema = tool.input_schema or {}
+        assert schema.get("type") == "object"
+        props = schema.get("properties") or {}
+        assert isinstance(props, dict)
+        for param in props:
+            assert isinstance(param, str) and param.isidentifier()
+            assert not param.startswith("_")
+        required = schema.get("required") or []
+        assert set(required) <= set(props)
+    assert "pd_one_appsheet_row_get" in names
+    assert "pd_one_appsheet_table_probe" in names
+    row = next(tool for tool in tools if tool.name == "pd_one_appsheet_row_get")
+    assert set(row.input_schema["properties"]) == {"table", "query"}
+    assert row.input_schema.get("required") == ["table"]
+    probe = next(tool for tool in tools if tool.name == "pd_one_appsheet_table_probe")
+    assert set(probe.input_schema["properties"]) == {"table", "query", "selector", "env"}
+
+
+def test_appsheet_table_probe_parses_and_safe_env_joins_paths(monkeypatch, capsys):
+    """Arg parsing and safe_env must survive Path entries. The probe is not run."""
+    import tools.pd_one_ops.pd_one_safe_ops_part0 as part0
+    from tools.pd_one_ops.cli import main
+    from tools.pd_one_ops.pd_one_safe_ops_part0 import (
+        APPSHEET_ENV_FILES,
+        APPSHEET_TABLE_PROBE,
+        PATH_BASE,
+        safe_env,
+    )
+
+    base = PATH_BASE()
+    assert isinstance(base, str)
+    assert "PosixPath" not in base and "WindowsPath" not in base
+    assert {"/usr/local/bin", "/usr/bin", "/bin"} <= set(base.split(os.pathsep))
+    env = safe_env()
+    assert isinstance(env["PATH"], str)
+    assert env["PATH"].startswith(base + os.pathsep)
+    assert isinstance(env["HOME"], str)
+
+    probe = APPSHEET_TABLE_PROBE()
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    probe.write_text("# placeholder probe\n", encoding="utf-8")
+    env_file = APPSHEET_ENV_FILES()["prototype"]
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    env_file.write_text("APPSHEET_APP_ID=placeholder\n", encoding="utf-8")
+
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = list(cmd)
+        seen["path"] = (kwargs.get("env") or {}).get("PATH")
+        payload = json.dumps({"rows": [{"name": "placeholder"}], "row_count": 1})
+        return subprocess.CompletedProcess(cmd, 0, stdout=payload + "\n", stderr="")
+
+    monkeypatch.setattr(part0.subprocess, "run", fake_run)
+    code = main([
+        "appsheet-table-probe",
+        "--table", "PlaceholderTable",
+        "--selector", "Name eq 'placeholder'",
+        "--env", "prototype",
+    ])
+    assert code == 0
+    assert seen["cmd"][2:4] == ["PlaceholderTable", "Name eq 'placeholder'"]
+    assert isinstance(seen["path"], str)
+    assert "PosixPath" not in seen["path"]
+    printed = capsys.readouterr().out
+    assert "PlaceholderTable" in printed
+    assert "placeholder" in printed

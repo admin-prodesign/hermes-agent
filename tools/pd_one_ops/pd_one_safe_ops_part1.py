@@ -220,7 +220,7 @@ def cmd_python_package_dry_run(args: argparse.Namespace) -> None:
         fail('--python must resolve under an approved PD One runtime root')
     if not python_path.is_file() or not os.access(python_path, os.X_OK):
         fail(f'approved Python interpreter is not executable: {python_path}')
-    uv_path = shutil.which('uv', path=PATH_BASE() + os.pathsep + site_text('PATH'))
+    uv_path = shutil.which('uv', path=str(PATH_BASE()) + os.pathsep + str(site_text('PATH')))
     if not uv_path:
         fail('uv executable is unavailable')
     proc = run_capture([uv_path, 'pip', 'install', '--dry-run', '--python', str(python_path), f'{package}=={version}'], timeout=120)
@@ -611,7 +611,7 @@ def cmd_python_docx_dependency_repair(args: argparse.Namespace) -> None:
     if action == 'install' and (not already_satisfied):
         if args.confirm_live_write != PYTHON_DOCX_REPAIR_CONFIRMATION():
             fail(f'install requires --confirm-live-write={PYTHON_DOCX_REPAIR_CONFIRMATION()!r}')
-        uv_path = shutil.which('uv', path=PATH_BASE() + os.pathsep + site_text('PATH'))
+        uv_path = shutil.which('uv', path=str(PATH_BASE()) + os.pathsep + str(site_text('PATH')))
         if not uv_path:
             fail('uv executable is unavailable')
         proc = run_capture([uv_path, 'pip', 'install', '--python', str(python_path), f'{PYTHON_DOCX_REPAIR_PACKAGE}=={PYTHON_DOCX_REPAIR_VERSION}'], timeout=180)
