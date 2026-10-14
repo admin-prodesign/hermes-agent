@@ -1,8 +1,9 @@
 """Loaded by ``site`` when the cron runner puts this directory on ``PYTHONPATH``.
 
-The runner does that only for a profile script that fetches ``cwa.gov.tw``
-(or whose name says typhoon). The file is loaded by path so ``cron/__init__``
-does not boot the scheduler inside the script.
+The runner does that only for a profile script that names a host in
+``RELAXED_X509_HOSTS`` (``cwa.gov.tw``, ``dgpa.gov.tw``) or whose name says
+typhoon. The file is loaded by path so ``cron/__init__`` does not boot the
+scheduler inside the script.
 """
 
 from __future__ import annotations

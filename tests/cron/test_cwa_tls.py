@@ -215,6 +215,60 @@ def test_urllib_mount_uses_the_relaxed_context_only_for_cwa(monkeypatch):
     assert supplied["context"] is supplied_ctx
 
 
+@pytest.mark.parametrize("url", [
+    "https://dgpa.gov.tw/typh/daily/nds.html",
+    "https://www.dgpa.gov.tw/typh/daily/nds.html",
+    "https://static.dgpa.gov.tw/file",
+])
+def test_urllib_mount_relaxes_dgpa_hosts(monkeypatch, url):
+    import urllib.request
+
+    captured: list[dict] = []
+
+    def record(url, data=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, *,
+               cafile=None, capath=None, cadefault=False, context=None):
+        captured.append({"url": url, "context": context})
+        return "ok"
+
+    monkeypatch.setattr(urllib.request, "urlopen", record)
+    install_cwa_tls()
+    urllib.request.urlopen(url)
+    _assert_verifying(captured[0]["context"])
+
+
+def test_urllib_mount_leaves_other_hosts_on_the_strict_default(monkeypatch):
+    import urllib.request
+
+    captured: list[dict] = []
+
+    def record(url, data=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, *,
+               cafile=None, capath=None, cadefault=False, context=None):
+        captured.append({"url": url, "context": context})
+        return "ok"
+
+    monkeypatch.setattr(urllib.request, "urlopen", record)
+    install_cwa_tls()
+    supplied_ctx = ssl.create_default_context()
+    urllib.request.urlopen("https://www.dgpa.gov.tw/typh/daily/nds.html")
+    urllib.request.urlopen("https://example.com/")
+    urllib.request.urlopen("https://data.gov.tw/")
+    urllib.request.urlopen("https://dgpa.gov.tw.example.com/")
+    urllib.request.urlopen("https://notdgpa.gov.tw/")
+    urllib.request.urlopen("https://www.dgpa.gov.tw/typh/daily/nds.html", context=supplied_ctx)
+    dgpa, *others, supplied = captured
+    _assert_verifying(dgpa["context"])
+    assert dgpa["context"].verify_mode == ssl.CERT_REQUIRED
+    assert dgpa["context"].check_hostname is True
+    for other in others:
+        assert other["context"] is None
+    # A caller-supplied context is not rewritten, even for a DGPA host.
+    assert supplied["context"] is supplied_ctx
+    default = ssl.create_default_context()
+    if _STRICT:
+        assert default.verify_flags & _STRICT
+        assert not (dgpa["context"].verify_flags & _STRICT)
+
+
 def test_requests_session_routes_cwa_and_leaves_other_hosts():
     requests = pytest.importorskip("requests")
     from requests.sessions import Session
@@ -227,6 +281,15 @@ def test_requests_session_routes_cwa_and_leaves_other_hosts():
         _assert_verifying(cwa)
         assert adapter.ssl_context_for_host("example.com") is None
         assert adapter.ssl_context_for_host("cwa.gov.tw.example.com") is None
+        for host in ("dgpa.gov.tw", "www.dgpa.gov.tw", "static.dgpa.gov.tw"):
+            dgpa = adapter.ssl_context_for_host(host)
+            _assert_verifying(dgpa)
+            assert dgpa.verify_mode == ssl.CERT_REQUIRED
+            assert dgpa.check_hostname is True
+        for host in ("example.com", "data.gov.tw", "dgpa.gov.tw.example.com", "notdgpa.gov.tw"):
+            assert adapter.ssl_context_for_host(host) is None
+        if _STRICT:
+            assert ssl.create_default_context().verify_flags & _STRICT
     finally:
         session.close()
     assert requests.Session._hermes_cwa_tls is True

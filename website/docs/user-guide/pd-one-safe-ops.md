@@ -157,12 +157,12 @@ on that interpreter, and every script (including shell wrappers and
 an old wrapper pointed at the same interpreter is harmless. Further runtime
 changes belong in this repo, not in another host edit.
 
-The typhoon check fetches `cwa.gov.tw`. Python 3.14 enables
-`ssl.VERIFY_X509_STRICT`, and that chain fails with `Missing Subject Key
-Identifier`. The runner mounts `cron/cwa_tls.py` only when the script text
-contains `cwa.gov.tw` or the file name contains `typhoon`. Verification and
-hostname checks stay on; only that flag is cleared, and only for
-`cwa.gov.tw`.
+The typhoon check fetches `cwa.gov.tw` and `www.dgpa.gov.tw`. Python 3.14
+enables `ssl.VERIFY_X509_STRICT`, and those chains fail with `Missing Subject
+Key Identifier`. The runner mounts `cron/cwa_tls.py` only when the script text
+contains `cwa.gov.tw` or `dgpa.gov.tw`, or the file name contains `typhoon`.
+Verification and hostname checks stay on; only that flag is cleared, and only
+for those hosts and their subdomains.
 
 ### Post-merge deploy
 
@@ -171,7 +171,7 @@ hostname checks stay on; only that flag is cleared, and only for
 2. Run job `6adb0e5216c5` once by hand. It writes new-hire rows to AppSheet
    `HR_Employees`. The run should get past `ModuleNotFoundError: requests`.
 3. On the next scheduled runs, confirm digest `870dd7349151` imports `yaml`
-   and typhoon check `840af263673e` fetches CWA without
+   and typhoon check `840af263673e` fetches CWA and `www.dgpa.gov.tw` without
    `CERTIFICATE_VERIFY_FAILED`. Reaper `c9287579f167` is already clean; the
    runner covers it without the host wrapper edit.
 

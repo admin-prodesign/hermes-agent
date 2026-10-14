@@ -145,14 +145,15 @@ def test_job_interpreter_bin_leads_path_for_py_only(cron_env, tmp_path, monkeypa
 
 
 @pytest.mark.platforms("posix")
-@pytest.mark.parametrize("script_name, body_host", [
-    ("fetch.py", True),
-    ("typhoon_check.py", False),
+@pytest.mark.parametrize("script_name, prelude", [
+    ("fetch.py", "URL = 'https://www.cwa.gov.tw/V8/C/P/Typhoon/'\n"),
+    ("typhoon_check.py", ""),
+    ("dgpa_daily.py", "URL = 'https://www.dgpa.gov.tw/typh/daily/nds.html'\n"),
 ])
 def test_cwa_typhoon_script_arms_tls_hook_only_for_that_script(
-    cron_env, tmp_path, monkeypatch, script_name, body_host
+    cron_env, tmp_path, monkeypatch, script_name, prelude
 ):
-    """The strict-flag exception loads for a CWA or typhoon script and not for others."""
+    """The strict-flag exception loads for an allowlisted or typhoon script and not for others."""
     venv = _venv(tmp_path, "release-venv")
     _symlink_python(venv)
     _pin_release_venv(monkeypatch, venv)
@@ -170,8 +171,8 @@ def test_cwa_typhoon_script_arms_tls_hook_only_for_that_script(
         "except ImportError:\n"
         "    print('REQUESTS=absent')\n"
     )
-    if body_host:
-        probe = "URL = 'https://www.cwa.gov.tw/V8/C/P/Typhoon/'\n" + probe
+    if prelude:
+        probe = prelude + probe
     (cron_env / "scripts" / script_name).write_text(probe, encoding="utf-8")
     success, output = _run_job_script(script_name)
     assert success is True, output
