@@ -1,7 +1,9 @@
 """Drift check: does the live release still match the commit it was built from?
 
 Every tracked file is compared by git blob hash against ``git ls-tree`` of the
-deployed SHA. Untracked ``.py``/``.sh`` files outside build output are drift too
+deployed SHA (work-tree bytes are hashed with ``git hash-object --path`` so
+``.gitattributes`` ``eol`` normalization matches checkout). Untracked ``.py``/``.sh``
+files outside build output are drift too
 (a hand-dropped module would be imported). Systemd units that point at a release
 other than ``current`` or the running build are reported, as is main moving ahead
 of the deployed SHA for longer than ``max_lag_s``.
@@ -58,9 +60,26 @@ class DriftReport:
         return "\n".join(lines)
 
 
+def _file_bytes(path: Path) -> bytes:
+    return os.readlink(path).encode("utf-8") if path.is_symlink() else path.read_bytes()
+
+
 def blob_hash(path: Path) -> str:
-    data = os.readlink(path).encode("utf-8") if path.is_symlink() else path.read_bytes()
+    """Raw git blob hash (no ``.gitattributes`` filters). Used only in tests."""
+    data = _file_bytes(path)
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+def worktree_blob_hash(mirror: Path, rel: str, path: Path, *, timeout: float = 60.0) -> str:
+    """Hash *path* as git would after applying attribute clean filters for *rel*."""
+    completed = subprocess.run(
+        ["git", "--git-dir", str(mirror), "hash-object", f"--path={rel}", "--stdin"],
+        input=_file_bytes(path), capture_output=True, timeout=timeout, check=False,
+    )
+    if completed.returncode != 0:
+        err = (completed.stderr or b"").decode("utf-8", "replace").strip()
+        raise RuntimeError(err or f"git hash-object --path={rel} failed")
+    return (completed.stdout or b"").decode("ascii").strip()
 
 
 def tree_blobs(mirror: Path, sha: str, *, run: Run = run_cmd, timeout: float = 60.0) -> dict[str, tuple[str, str]]:
@@ -85,7 +104,8 @@ def _is_build_output(rel: str) -> bool:
     return rel.startswith(BUILD_OUTPUT_PATHS)
 
 
-def compare_tree(release: Path, blobs: dict[str, tuple[str, str]], report: DriftReport) -> None:
+def compare_tree(release: Path, blobs: dict[str, tuple[str, str]], report: DriftReport,
+                 *, mirror: Path) -> None:
     for rel, (mode, obj) in sorted(blobs.items()):
         if mode == GIT_SUBMODULE_MODE:
             continue
@@ -93,7 +113,12 @@ def compare_tree(release: Path, blobs: dict[str, tuple[str, str]], report: Drift
         if not path.is_symlink() and not path.exists():
             report.missing.append(rel)
             continue
-        if (mode == GIT_LINK_MODE) != path.is_symlink() or blob_hash(path) != obj:
+        try:
+            on_disk = worktree_blob_hash(mirror, rel, path)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            report.error = f"{rel}: {exc}"
+            return
+        if (mode == GIT_LINK_MODE) != path.is_symlink() or on_disk != obj:
             report.modified.append(rel)
     for root, dirs, files in os.walk(release):
         rel_root = os.path.relpath(root, release).replace(os.sep, "/")
