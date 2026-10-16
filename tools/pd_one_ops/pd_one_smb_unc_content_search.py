@@ -41,8 +41,6 @@ class _PdLazyAttr:
 
     def __getattr__(self, name: str):
         return getattr(self._load(), name)
-from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
-import os
 import argparse
 import json
 import re
@@ -50,19 +48,27 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Callable
-sqlsrv = ExternalModule('sqlsrv_readonly', 'sqlsrv_readonly')
+
+def _resolved(fn):
+    """A path the parent passed in the environment. Never reads config.yaml."""
+    from tools.pd_one_ops.resolved import MissingResolvedValue
+    try:
+        return fn()
+    except MissingResolvedValue as exc:
+        fail(str(exc))
+        raise
 
 def PROFILE_ROOT():
-    return Path(resolve_configured_path('~/.hermes/profiles/pdone'))
+    from tools.pd_one_ops.resolved import profile_root
+    return _resolved(profile_root)
 
 def LEDGER_TOOLS():
-    return PROFILE_ROOT() / 'legacy-openclaw/workspace/tools'
-
-def HELPER():
-    return Path(resolve_configured_path('~/.hermes/scripts/sqlsrv_readonly.py'))
+    from tools.pd_one_ops.resolved import ledger_tools
+    return _resolved(ledger_tools)
 
 def ACL_TOOL():
-    return PROFILE_ROOT() / 'tools/pd_one_sqlsrv_windows_acl_read.py'
+    from tools.pd_one_ops.resolved import acl_tool
+    return _resolved(acl_tool)
 
 def POLICY_CACHE():
     return PROFILE_ROOT() / 'policy-cache/mattermost/users'
@@ -74,11 +80,6 @@ MAX_FILE_BYTES = 2000000
 TICKET_RE = re.compile('^PDAPP-\\d{8}-[A-F0-9]{8}$')
 USER_ID_RE = re.compile('^[a-z0-9]{26}$')
 RED_LINE_PATH_RE = re.compile('薪資|payroll|password|密碼|credential|\\.env|考核|evaluation|bonus|獎金|payslip', re.I)
-if str(LEDGER_TOOLS()) not in sys.path:
-    sys.path.append(str(LEDGER_TOOLS()))
-if str(HELPER().parent) not in sys.path:
-    sys.path.append(str(HELPER().parent))
-from admin_approval_tickets import ApprovalLedger
 
 def fail(message: str, code: int=2) -> None:
     print(json.dumps({'status': 'error', 'error': message}, ensure_ascii=False), file=sys.stderr)
@@ -135,9 +136,9 @@ def standing_policy_allows(requester_user_id: str, root: str) -> bool:
     return under_root(root, STANDING_AOP_ROOT)
 
 def ntfs_authorize(requester_user_id: str, root: str) -> dict[str, Any]:
-    from tools.pd_one_ops.launch import child_env, python_argv
-    command = python_argv(ACL_TOOL(), '--requester-user-id', requester_user_id, '--path', root, '--action', 'authorize')
-    proc = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=False, env=child_env())
+    # Same interpreter and environment: the parent already resolved config into the env.
+    command = [sys.executable, str(ACL_TOOL()), '--requester-user-id', requester_user_id, '--path', root, '--action', 'authorize']
+    proc = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=False)
     try:
         payload = json.loads(proc.stdout or '{}')
     except json.JSONDecodeError:
@@ -170,6 +171,10 @@ def authorize_named_root(*, root: str, requester_user_id: str='', ticket_id: str
 def authorize_ticket(ticket_id: str, root: str, terms: list[str]) -> dict[str, Any]:
     if not TICKET_RE.fullmatch(ticket_id):
         fail('ticket_id must look like PDAPP-YYYYMMDD-XXXXXXXX')
+    ledger = str(LEDGER_TOOLS())
+    if ledger not in sys.path:
+        sys.path.append(ledger)
+    from admin_approval_tickets import ApprovalLedger
     ticket = ApprovalLedger().get(ticket_id)
     grant = ticket.get('approval_grant') or {}
     caps = set(grant.get('allowed_capabilities') or [])
@@ -215,8 +220,8 @@ def search(*, root: str, terms: list[str], match_mode: str='OR', ticket_id: str 
     if runner is not None:
         raw = runner(payload)
     else:
-        from tools.pd_one_ops.site_config import load_external_module
-        sqlsrv = load_external_module('sqlsrv_readonly', 'sqlsrv_readonly')
+        from tools.pd_one_ops.resolved import load_sqlsrv
+        sqlsrv = _resolved(load_sqlsrv)
         vals = sqlsrv.load_env()
         session, host, user, password = sqlsrv.make_session(vals)
         raw = sqlsrv.run_via_task(session, user, password, payload, timeout=180)

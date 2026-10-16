@@ -61,12 +61,19 @@ def _profile_config(root: Path, text: str) -> Path:
     return path
 
 
+class _Calls(list):
+    def __init__(self) -> None:
+        super().__init__()
+        self.envs: list[dict] = []
+
+
 @pytest.fixture
 def captured(monkeypatch):
-    calls: list[list[str]] = []
+    calls = _Calls()
 
     def fake_run(argv, **kwargs):
         calls.append([os.fspath(item) for item in argv])
+        calls.envs.append(kwargs.get("env") or {})
         return subprocess.CompletedProcess(argv, 0, '{"ok": true}', "")
 
     monkeypatch.setattr(mcp.subprocess, "run", fake_run)
@@ -117,6 +124,11 @@ def test_smb_search_reads_winrm_python_from_the_profile_config(install_root, rel
     argv = captured[-1]
     assert argv[:2] == [str(interpreter), str(release_package / "pd_one_smb_unc_content_search.py")]
     assert not any(arg.startswith(site_config.UNSET_MARK) for arg in argv)
+    env = captured.envs[-1]
+    assert env["PD_ONE_EXTERNAL_INTERPRETER"] == "1"
+    assert env["PD_ONE_PROFILE_ROOT"] == str(install_root / "profiles" / "pdone")
+    assert env["PD_ONE_ACL_TOOL"] == str(release_package / "pd_one_sqlsrv_windows_acl_read.py")
+    assert "PD_ONE_LEDGER_TOOLS" in env
 
 
 def test_profile_config_layers_over_the_install_root(install_root):
@@ -142,6 +154,93 @@ def test_unset_external_path_never_reaches_a_launch(install_root, captured):
     result = json.loads(mcp.run_json([site_config.external_path("hermes_bin"), "--version"]))
     assert (result["error"], result["key"]) == ("missing_external_config", "hermes_bin")
     assert captured == []
+
+
+def _bare_python(tmp_path: Path) -> Path:
+    dest = tmp_path / "bare-venv"
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(dest)], check=True, timeout=120)
+    python = dest / "bin" / "python"
+    assert python.is_file()
+    denied = subprocess.run([str(python), "-c", "import ruamel.yaml"], capture_output=True, text=True, timeout=30, check=False)
+    assert denied.returncode != 0
+    return python
+
+
+def _child_env(release: Path, profile: Path, stub: Path, site: Path) -> dict[str, str]:
+    """The parent-on-PYTHONPATH condition that made winrm_python import the config loader."""
+    return {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": str(profile),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONPATH": str(release),
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PD_ONE_EXTERNAL_INTERPRETER": "1",
+        "PD_ONE_PROFILE_ROOT": str(profile),
+        "PD_ONE_LEDGER_TOOLS": str(profile / "legacy-openclaw" / "workspace" / "tools"),
+        "PD_ONE_ACL_TOOL": str(release / "tools" / "pd_one_ops" / "pd_one_sqlsrv_windows_acl_read.py"),
+        "PD_ONE_OWNER_MM_USERNAME": "",
+        "PD_ONE_SQLSRV_READONLY": str(stub),
+        "PD_ONE_WINRM_SITE_PACKAGES": str(site),
+    }
+
+
+@pytest.mark.platforms("posix")
+def test_external_interpreter_helpers_do_not_import_the_config_loader(release, tmp_path):
+    """``winrm_python`` has no ruamel. Helpers it runs must still start, and must run, with the release on PYTHONPATH."""
+    python = _bare_python(tmp_path)
+    profile = tmp_path / "profile"
+    uid = "a" * 26
+    cache = profile / "policy-cache" / "mattermost" / "users"
+    cache.mkdir(parents=True)
+    (cache / f"{uid}.json").write_text(json.dumps({
+        "found": True, "active": True,
+        "dataAccess": {"managementAopPlanSmbSearch": "allow"},
+    }), encoding="utf-8")
+    (profile / "policies").mkdir()
+    (profile / "policies" / "mattermost-users.json").write_text(json.dumps({"users": {
+        uid: {"status": "active", "mattermostEmail": "person@example.com", "roles": ["staff"], "displayName": "Person"},
+    }}), encoding="utf-8")
+    stub = tmp_path / "sqlsrv_readonly.py"
+    stub.write_text(
+        "def unc_path(path):\n    return path\n"
+        "def load_env():\n    return {}\n"
+        "def make_session(values):\n    return ('session', 'helper-host', 'helper-user', 'helper-secret')\n"
+        "def run_via_task(session, user, password, payload, timeout=180):\n"
+        "    return {'ok': True, 'authorized': True, 'sam': 'person', 'errors': [], "
+        "'matched_aces': [{'type': 'Allow', 'rights': 'ReadAndExecute'}], "
+        "'items': [], 'files_scanned': 0, 'unscanned': []}\n",
+        encoding="utf-8",
+    )
+    site = tmp_path / "empty-site"
+    site.mkdir()
+    env = _child_env(release, profile, stub, site)
+    smb = release / "tools" / "pd_one_ops" / "pd_one_smb_unc_content_search.py"
+    acl = release / "tools" / "pd_one_ops" / "pd_one_sqlsrv_windows_acl_read.py"
+
+    for script in (smb, acl):
+        help_proc = subprocess.run([str(python), str(script), "--help"], env=env, capture_output=True, text=True, timeout=60, check=False)
+        assert help_proc.returncode == 0, help_proc.stderr
+        assert "ruamel" not in (help_proc.stderr + help_proc.stdout).lower()
+
+    search = subprocess.run(
+        [str(python), str(smb), "--root", "\\\\redacted-host\\管理部\\aop計劃\\notes", "--term", "plan", "--requester-user-id", uid],
+        env=env, capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert "ruamel" not in (search.stderr + search.stdout).lower(), search.stderr
+    assert search.returncode == 0, search.stderr
+    body = json.loads(search.stdout)
+    assert body["status"] == "ok" and body["authorization"]["via"] == ["standing_managementAopPlanSmbSearch"]
+
+    listed = subprocess.run(
+        [str(python), str(acl), "--requester-user-id", uid, "--path", "\\\\file-server\\share\\plans", "--action", "authorize"],
+        env=env, capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert "ruamel" not in (listed.stderr + listed.stdout).lower(), listed.stderr
+    assert listed.returncode == 0, listed.stderr
+    assert json.loads(listed.stdout)["authorized"] is True
 
 
 def test_stdio_mcp_child_gets_the_served_profile_home(install_root):
