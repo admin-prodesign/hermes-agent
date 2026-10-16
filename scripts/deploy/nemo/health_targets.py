@@ -100,7 +100,7 @@ def resolve_health_plan(home: Path | None) -> HealthPlan:
         if env_profiles is not None:
             socket_profiles = tuple(name for name in env_profiles.split(",") if name.strip())
         else:
-            socket_profiles = ("pdone",)
+            socket_profiles = ("pdone", "default")
 
     extra_units: list[tuple[str, bool]] = []
     yaml_units = yaml_health.get("units")

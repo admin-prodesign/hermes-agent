@@ -221,7 +221,8 @@ def _prepare_release(cfg: Config, item: Queued, build: str, hooks: Hooks, *, liv
 
 
 def _cutover(cfg: Config, item: Queued, build: str, old_build: str | None, mode: str, hooks: Hooks) -> Outcome:
-    code = hooks.script(cutover_argv(cfg, item.sha, build, deployed_sha(cfg, old_build), mode))
+    old_sha = _expanded_sha(cfg, deployed_sha(cfg, old_build), hooks.git)
+    code = hooks.script(cutover_argv(cfg, item.sha, build, old_sha, mode))
     if code == GATE_BUSY:
         return Outcome("waiting", item.sha, build, mode,
                        f"profiles stayed busy for {int(cfg.gate_timeout_s)}s; retrying")

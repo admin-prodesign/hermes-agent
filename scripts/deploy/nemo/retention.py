@@ -19,6 +19,7 @@ from scripts.deploy.nemo.release_swap import current_target
 
 RUNNING_MARKER = ".running"
 STAGING_STALE_S = 12 * 3600.0
+DEFAULT_KEEP_AUDIT_ROLLBACKS = 2
 
 
 def running_build(releases: Path) -> str | None:
@@ -50,15 +51,25 @@ def previous_symlink_target(releases: Path) -> str | None:
     return None
 
 
-def audit_rollback_targets(home: Path) -> set[str]:
+def audit_rollback_targets(home: Path, *, limit: int = DEFAULT_KEEP_AUDIT_ROLLBACKS) -> set[str]:
+    """Rollback release names from recent audit manifests (capped to save disk)."""
     root = home / "upgrade-audits"
-    if not root.is_dir():
+    if not root.is_dir() or limit <= 0:
         return set()
-    keep: set[str] = set()
+    ranked: list[tuple[float, str]] = []
     for manifest in root.glob("*/manifest.json"):
         previous = read_manifest(manifest).get("previous")
-        if previous:
-            keep.add(os.path.basename(str(previous)))
+        if not previous:
+            continue
+        ranked.append((manifest.stat().st_mtime, os.path.basename(str(previous))))
+    ranked.sort(reverse=True)
+    keep: set[str] = set()
+    for _, name in ranked:
+        if name in keep:
+            continue
+        keep.add(name)
+        if len(keep) >= limit:
+            break
     return keep
 
 

@@ -23,7 +23,7 @@ Usage: cutover.sh --build NAME [options]
   --gate-timeout SEC      Default: 600.
   --gateway-health URL    Default: http://127.0.0.1:8644/health (PD Neo on nemo).
   --dashboard-health URL  Default: http://127.0.0.1:8765/api/health.
-  --socket-profile NAME   Repeatable. Gateway control-socket check (default: pdone).
+  --socket-profile NAME   Repeatable. Gateway control-socket check (default: pdone, default).
   --health-timeout SEC    Default: 90.
   --health-interval SEC   Default: 2.
   --skip-preflight        Skip diff-scoped verifies and pytest.

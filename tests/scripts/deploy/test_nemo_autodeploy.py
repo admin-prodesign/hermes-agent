@@ -28,7 +28,7 @@ from scripts.deploy.nemo.changes import NOOP, RESTART, SKILLS, classify
 from scripts.deploy.nemo.manifest import live_sha, main_matches_live, sha_from_release_name, write_manifest
 from scripts.deploy.nemo.preflight import deploy_preflight
 from scripts.deploy.nemo.poll import PollResult, poll_once
-from scripts.deploy.nemo.retention import keep_set, prune, running_build, set_running
+from scripts.deploy.nemo.retention import audit_rollback_targets, keep_set, prune, running_build, set_running
 from scripts.deploy.nemo import autodeploy_units
 from scripts.deploy.nemo.spool import enqueue, queue_dir, queued_shas, refuse, refused_shas
 
@@ -422,6 +422,24 @@ def test_worker_ignores_a_request_older_than_the_live_sha(tmp_path: Path, origin
 
 
 # ---------------------------------------------------------------- retention
+
+
+def test_audit_rollback_targets_keep_only_the_two_most_recent(tmp_path: Path) -> None:
+    home = tmp_path / "hermes"
+    audits = home / "upgrade-audits"
+    entries = (
+        ("b-old", "r1", 1.0),
+        ("b-mid", "r2", 2.0),
+        ("b-new", "r3", 3.0),
+        ("b-newest", "r4", 4.0),
+    )
+    for build, previous, mtime in entries:
+        path = audits / build
+        path.mkdir(parents=True)
+        manifest = path / "manifest.json"
+        write_manifest(manifest, {"previous": previous})
+        os.utime(manifest, (mtime, mtime))
+    assert audit_rollback_targets(home) == {"r4", "r3"}
 
 
 def test_prune_keeps_current_its_rollback_target_and_the_running_build(tmp_path: Path) -> None:

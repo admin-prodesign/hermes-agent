@@ -23,7 +23,8 @@ from scripts.deploy.nemo.cutover_steps import apply_cutover
 from scripts.deploy.nemo.freeze_diff import compare, constraint_text
 from scripts.deploy.nemo.gate import inspect_db, poll_until_quiet
 from scripts.deploy.nemo.health import HealthCheck, body_healthy, gateway_socket_healthy, poll_until_healthy
-from scripts.deploy.nemo.health_targets import resolve_health_plan
+from scripts.deploy.nemo.health import evaluate
+from scripts.deploy.nemo.health_targets import resolve_health_plan, socket_profile_homes
 from scripts.deploy.nemo.layout import DEFAULT_DASHBOARD_HEALTH, DEFAULT_GATEWAY_HEALTH
 from scripts.deploy.nemo.manifest import record_build_manifest
 from scripts.deploy.nemo.layout import FRONTEND_MARKER_RELATIVE, pin_uv_cache
@@ -145,6 +146,28 @@ def test_probe_missing_mirror_is_an_error(tmp_path: Path) -> None:
 def test_nemo_default_health_urls_match_pd_neo_and_dashboard() -> None:
     assert DEFAULT_GATEWAY_HEALTH == "http://127.0.0.1:8644/health"
     assert DEFAULT_DASHBOARD_HEALTH == "http://127.0.0.1:8765/api/health"
+
+
+def test_default_health_plan_checks_pdone_and_hermes_home_sockets(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "hermes"
+    home.mkdir()
+    (home / "profiles" / "pdone").mkdir(parents=True)
+    plan = resolve_health_plan(home)
+    assert plan.socket_profiles == ("pdone", "default")
+    sockets = socket_profile_homes(home, plan.socket_profiles)
+    checked: list[Path] = []
+
+    def fake_socket(profile_home: Path, timeout: float) -> HealthCheck:
+        checked.append(profile_home.resolve())
+        return HealthCheck(str(profile_home), True, "ok")
+
+    monkeypatch.setattr("scripts.deploy.nemo.health.gateway_socket_healthy", fake_socket)
+    evaluate(
+        [], [], check_unit=lambda _n, _u: True, check_url=lambda url: HealthCheck(url, True, ""),
+        socket_homes=sockets,
+    )
+    assert home.resolve() in checked
+    assert (home / "profiles" / "pdone").resolve() in checked
 
 
 def test_health_plan_reads_config_yaml_and_env(tmp_path: Path, monkeypatch) -> None:
