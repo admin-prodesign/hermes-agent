@@ -198,6 +198,8 @@ copy_tree() {
   mkdir -p "$(dirname "${dest}")"
   rm -rf "${dest}"
   cp -a "${src}" "${dest}"
+  # Published releases are chmod a-w; preserve modes on copy but staging must stay writable.
+  chmod -R u+w "${dest}"
 }
 
 locks_match() {

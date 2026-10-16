@@ -609,6 +609,32 @@ def test_poll_treats_inferred_live_sha_as_current(tmp_path: Path, origin) -> Non
     assert _poll(home, releases, mirror).action == "live"
 
 
+@pytest.mark.platforms("linux", "macos")
+def test_worker_does_not_refuse_sha_when_build_hits_eacces(tmp_path: Path, origin) -> None:
+    work, mirror, base = origin
+    new = _commit(work, {"agent/core.py": "X = 10\n"}, "code")
+    _git(work, "push", "-q", "origin", "main")
+    home, releases = _live_home(tmp_path, base)
+    _queue(home, new)
+    recorder = _Recorder(releases, home)
+    real_script = recorder.script
+
+    def script(argv: list[str]) -> int:
+        if argv[1].endswith("build.sh"):
+            autodeploy._last_script_log = (
+                "Error: EACCES: permission denied, unlink 'node_modules/.hermes-node-deps'"
+            )
+            return 1
+        return real_script(argv)
+
+    hooks = recorder.hooks()
+    hooks = Hooks(script=script, sync=hooks.sync, disk_free=hooks.disk_free)
+    outcome = run_once(Config(home=home, mirror=mirror, releases=releases), hooks)
+    assert outcome.result == "failed"
+    assert "permission denied" in outcome.detail.lower() or "eacces" in outcome.detail.lower()
+    assert new not in refused_shas(home)
+
+
 def test_worker_fails_fast_when_uv_is_missing(tmp_path: Path, origin, monkeypatch) -> None:
     work, mirror, base = origin
     new = _push(work, {"agent/core.py": "X = 9\n"})

@@ -50,8 +50,11 @@ DEFAULT_GATE_TIMEOUT_S = 6 * 3600.0
 SCRIPT_MARGIN_S = 2 * 3600.0
 DEFAULT_MIN_FREE_GB = 2.0
 DEFAULT_MAX_LAG_S = 2 * 3600.0
+_SCRIPT_LOG_LIMIT = 16_000
 
 Script = Callable[[list[str]], int]
+
+_last_script_log: str = ""
 
 
 @dataclass
@@ -129,13 +132,52 @@ def _script_env() -> dict[str, str]:
     return env
 
 
+def script_failure_detail(prefix: str, log: str | None = None) -> str:
+    """Human-readable failure with a bounded tail of child output for classification."""
+    text = (log if log is not None else _last_script_log).strip()
+    if not text:
+        return prefix
+    if len(text) > _SCRIPT_LOG_LIMIT:
+        text = text[-_SCRIPT_LOG_LIMIT:]
+    return f"{prefix}\n{text}"
+
+
 def run_script(argv: list[str], timeout: float) -> int:
     """Stream to the journal. ``timeout`` must cover the gate wait plus a build."""
+    global _last_script_log
+    _last_script_log = ""
+    proc = subprocess.Popen(
+        argv,
+        env=_script_env(),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    chunks: list[str] = []
+
+    def _append(part: str) -> None:
+        chunks.append(part)
+        combined = "".join(chunks)
+        if len(combined) > _SCRIPT_LOG_LIMIT:
+            chunks[:] = [combined[-_SCRIPT_LOG_LIMIT:]]
+
     try:
-        return subprocess.run(argv, env=_script_env(), stdin=subprocess.DEVNULL, timeout=timeout, check=False).returncode
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            print(line, end="", flush=True)
+            _append(line)
+        proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
         print(f"timed out after {timeout:.0f}s: {argv[1]}", file=sys.stderr)
+        _append(f"timed out after {timeout:.0f}s: {argv[1]}\n")
+        _last_script_log = "".join(chunks)
         return 1
+    _last_script_log = "".join(chunks)
+    return proc.returncode if proc.returncode is not None else 1
 
 
 def fetch_main(cfg: Config, git: Run) -> str | None:
@@ -216,7 +258,7 @@ def _prepare_release(cfg: Config, item: Queued, build: str, hooks: Hooks, *, liv
     if free < cfg.min_free_gb:
         return f"only {free:.1f} GB free under {cfg.releases}; need {cfg.min_free_gb:.1f} GB"
     if hooks.script(build_argv(cfg, item.sha, build)) != 0:
-        return "build.sh failed"
+        return script_failure_detail("build.sh failed")
     return None
 
 

@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
 import tarfile
@@ -32,7 +33,7 @@ from scripts.deploy.nemo.postcheck import (
     HR_SYNC, REAPER, TYPHOON, Invocation, POLICIES, command_list, guard, plan_policy,
     resolve_script, run_postcheck, script_accepts_dry_run,
 )
-from scripts.deploy.nemo.preflight import changed_files, plan_for
+from scripts.deploy.nemo.preflight import changed_files, is_environment_failure, plan_for
 from scripts.deploy.nemo.release_swap import swap_current
 from scripts.deploy.nemo.rollback import apply_rollback
 from scripts.deploy.nemo.source import SourceMissing, acquire_source, extract_tarball, probe_fetch
@@ -577,10 +578,45 @@ def _bash() -> str:
     return bash
 
 
-def _run_build(tmp_path: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+_UV_BIN_DIR: str | None = None
+_UV_BIN_DIR_RESOLVED = False
+
+
+def _resolve_uv_bin_dir() -> str | None:
+    global _UV_BIN_DIR, _UV_BIN_DIR_RESOLVED
+    if _UV_BIN_DIR_RESOLVED:
+        return _UV_BIN_DIR
+    pm_home = os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
+    if "hermes-pytest" in pm_home or "/pytest" in pm_home:
+        pm_home = str(Path.home() / ".hermes")
+    done = subprocess.run(
+        [sys.executable, "-c",
+         "from pm.install import uv_launcher\n"
+         "p = uv_launcher('uv')\n"
+         "print(p.parent if p else '')"],
+        cwd=ROOT, capture_output=True, text=True, timeout=60,
+        env={**os.environ, "HERMES_HOME": pm_home},
+    )
+    parent = (done.stdout or "").strip()
+    _UV_BIN_DIR = parent or None
+    _UV_BIN_DIR_RESOLVED = True
+    return _UV_BIN_DIR
+
+
+def _deploy_script_path() -> str:
+    entries = [str(Path.home() / ".local" / "bin")]
+    uv_dir = _resolve_uv_bin_dir()
+    if uv_dir:
+        entries.append(uv_dir)
+    return ":".join(entries)
+
+
+def _run_build(tmp_path: Path, *extra: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
     home = tmp_path / "hermes"
     env = os.environ.copy()
     env["HERMES_HOME"] = str(home)
+    env["PATH"] = f"{_deploy_script_path()}:{env.get('PATH', '')}"
+    env.setdefault("NEMO_PYTHON", sys.executable)
     env["TMPDIR"] = str(tmp_path / "tmp")
     (tmp_path / "tmp").mkdir(exist_ok=True)
     command = [
@@ -591,7 +627,27 @@ def _run_build(tmp_path: Path, *extra: str) -> subprocess.CompletedProcess[str]:
         "--uv-cache", str(tmp_path / "uv"),
         *extra,
     ]
-    return subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+    return subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, text=True, timeout=timeout)
+
+
+def _chmod_read_only(path: Path) -> None:
+    for root, dirs, files in os.walk(path):
+        root_path = Path(root)
+        for name in files:
+            os.chmod(root_path / name, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+        for name in dirs:
+            os.chmod(
+                root_path / name,
+                stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH,
+            )
+    os.chmod(path, stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+
+
+def test_is_environment_failure_recognizes_build_host_errors() -> None:
+    assert is_environment_failure("uv is required on PATH")
+    assert is_environment_failure("build.sh failed\nError: EACCES, unlink 'node_modules/.hermes-node-deps'")
+    assert is_environment_failure("build.sh failed\nnode is required to preinstall dashboard dependencies")
+    assert not is_environment_failure("build.sh failed\nimport hermes_cli failed")
 
 
 @pytest.mark.platforms("linux", "macos")
@@ -657,6 +713,44 @@ def test_build_rejects_an_unsafe_tarball(tmp_path: Path) -> None:
     assert proc.returncode != 0
     assert not (tmp_path / "hermes" / "releases" / "build-a").exists()
     assert list(tmp_path.rglob("evil")) == []
+
+
+@pytest.mark.platforms("linux", "macos")
+def test_build_reuses_read_only_node_modules_from_previous_release(tmp_path: Path) -> None:
+    if shutil.which("node") is None:
+        pytest.skip("node is required on PATH")
+    if _resolve_uv_bin_dir() is None:
+        pytest.skip("uv is required (PM install store not available in this runner)")
+    tarball = tmp_path / "src.tar"
+    subprocess.run(
+        ["git", "archive", "--format=tar", "-o", str(tarball), "HEAD"],
+        cwd=ROOT, check=True, timeout=180,
+    )
+    home = tmp_path / "hermes"
+    releases = home / "releases"
+    previous = releases / "old"
+    previous.mkdir(parents=True)
+    shutil.copy2(ROOT / "package-lock.json", previous / "package-lock.json")
+    nm = previous / "node_modules"
+    nm.mkdir()
+    (nm / ".hermes-node-deps").write_text("stale-receipt\n", encoding="utf-8")
+    os.symlink("old", releases / "current")
+    _chmod_read_only(previous)
+
+    proc = _run_build(
+        tmp_path,
+        "--tarball", str(tarball),
+        "--stop-after", "frontend",
+        timeout=900,
+    )
+    combined = proc.stdout + proc.stderr
+    assert "node-deps" in combined
+    assert "EACCES" not in combined
+    assert "permission denied" not in combined.lower() or "hermes-node-deps" not in combined.lower()
+    if proc.returncode != 0:
+        if any(marker in combined.lower() for marker in ("web.mjs", "tui.mjs", "vite", "rolldown")):
+            pytest.skip("frontend compile is not available in this runner")
+        assert proc.returncode == 0, combined
 
 
 def test_probe_cli_missing_mirror_exits_nonzero(tmp_path: Path) -> None:
