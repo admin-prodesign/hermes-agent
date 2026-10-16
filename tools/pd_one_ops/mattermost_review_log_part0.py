@@ -144,6 +144,8 @@ NOTE_TAG_COLUMNS = set(HEADERS[BASE_HEADER_COUNT + 1:])
 PROTECTED_FORMULA_COLUMNS: set[str] = set()
 
 def run(cmd: list[str], *, input_text: str | None=None, timeout: int=90) -> str:
+    from tools.pd_one_ops.launch import checked_argv
+    cmd = checked_argv(cmd)
     try:
         proc = subprocess.run(cmd, input=input_text, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
@@ -164,7 +166,8 @@ def hermes_env() -> dict[str, str]:
 
 def run_hermes_utility(prompt: str, *, timeout: int=90) -> str:
     """Run the Hermes PD One utility path with bounded wall-clock time."""
-    cmd = [HERMES_BIN(), '--profile', 'pdone', '-t', 'bot_room', '--ignore-rules', '-z', prompt]
+    from tools.pd_one_ops.launch import checked_argv
+    cmd = checked_argv([HERMES_BIN(), '--profile', 'pdone', '-t', 'bot_room', '--ignore-rules', '-z', prompt])
     try:
         proc = subprocess.run(cmd, cwd=str(HERMES_PROFILE_ROOT()), env=hermes_env(), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
@@ -913,8 +916,8 @@ def sort_review_log_desc() -> None:
 
 def load_auth_policies() -> tuple[dict[str, Any], dict[str, Any], str]:
     """Load canonical Mattermost auth policy sources for exact sender-id resolution."""
-    users_policy = mattermost_policy_lookup.load_json(mattermost_policy_lookup.USERS_PATH)
-    roles_policy = mattermost_policy_lookup.load_json(mattermost_policy_lookup.ROLES_PATH)
+    users_policy = mattermost_policy_lookup.load_json(mattermost_policy_lookup.USERS_PATH())
+    roles_policy = mattermost_policy_lookup.load_json(mattermost_policy_lookup.ROLES_PATH())
     return (users_policy, roles_policy, mattermost_policy_lookup.policy_hash())
 
 def auth_lookup_failed(user_id: str, exc: Exception) -> dict[str, Any]:

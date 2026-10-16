@@ -133,8 +133,18 @@ def SCHEDULING_RULES_VALUES():
 def GOG():
     return Path(resolve_configured_path('~/.hermes/profiles/pdone/home/.local/bin/gog'))
 
+def _missing_config_result(exc: Exception) -> dict[str, Any]:
+    key = getattr(exc, 'key', '')
+    return {'status': 'error', 'error': 'missing_external_config' if key else 'missing_helper', 'key': key, 'detail': str(exc)}
+
 def run_json(args: list[str], timeout: int=120) -> str:
-    proc = subprocess.run(args, text=True, capture_output=True, shell=False, timeout=timeout)
+    from tools.pd_one_ops.launch import checked_argv, child_env
+    from tools.pd_one_ops.site_config import MissingExternalConfig
+    try:
+        argv = checked_argv(args)
+    except MissingExternalConfig as exc:
+        return json.dumps(_missing_config_result(exc), ensure_ascii=False)
+    proc = subprocess.run(argv, text=True, capture_output=True, shell=False, timeout=timeout, env=child_env())
     if proc.returncode != 0:
         return json.dumps({'status': 'error', 'returncode': proc.returncode, 'stderr': proc.stderr[-2000:], 'stdout': proc.stdout[-2000:]}, ensure_ascii=False)
     out = proc.stdout.strip() or '{}'
@@ -570,7 +580,13 @@ def _gog_cmd(*parts: str, account: str=None, json_mode: bool=True, dry_run: bool
     return cmd
 
 def _run_cmd(args: list[str], timeout: int=120) -> dict[str, Any]:
-    env = {**os.environ, 'HOME': resolve_configured_path('~')}
+    from tools.pd_one_ops.launch import checked_argv, child_env
+    from tools.pd_one_ops.site_config import MissingExternalConfig
+    env = {**child_env(), 'HOME': str(resolve_configured_path('~'))}
+    try:
+        args = checked_argv(args)
+    except MissingExternalConfig as exc:
+        return {**_missing_config_result(exc), 'command': [str(arg) for arg in args]}
     try:
         proc = subprocess.run(args, env=env, text=True, capture_output=True, shell=False, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
@@ -846,7 +862,12 @@ def pd_one_smb_unc_content_search(root: str, terms: list[str], match_mode: str='
     Authorize with the exact Mattermost requester id (live NTFS Read/Write or the
     Finance AOP standing grant) or an executable ticket. PD One still does not write.
     """
-    cmd = [str(Path(resolve_configured_path('~/.hermes/venvs/winrm/bin/python'))), str(Path(resolve_configured_path('~/.hermes/profiles/pdone/tools/pd_one_smb_unc_content_search.py'))), '--root', root, '--match-mode', match_mode]
+    from tools.pd_one_ops.launch import python_argv
+    from tools.pd_one_ops.site_config import MissingExternalConfig
+    try:
+        cmd = python_argv(resolve_configured_path('~/.hermes/profiles/pdone/tools/pd_one_smb_unc_content_search.py'), '--root', root, '--match-mode', match_mode, interpreter_key='winrm_python')
+    except (MissingExternalConfig, FileNotFoundError) as exc:
+        return json.dumps(_missing_config_result(exc), ensure_ascii=False)
     for term in terms:
         cmd.extend(['--term', term])
     if ticket_id:
@@ -860,7 +881,11 @@ def pd_one_sqlsrv_windows_acl_read(requester_user_id: str, path: str, action: st
 
     Writes are not implemented. Use the exact Mattermost sender id. Payroll/credentials/HR-evaluation paths fail closed.
     """
-    cmd = [str(Path(resolve_configured_path('~/.hermes/profiles/pdone/tools/pd_one_sqlsrv_windows_acl_read.py'))), '--requester-user-id', requester_user_id, '--path', path, '--action', action, '--max', str(max(1, min(int(max_items), 200))), '--max-bytes', str(max(1, min(int(max_bytes), 5000000)))]
+    from tools.pd_one_ops.launch import python_argv
+    try:
+        cmd = python_argv(resolve_configured_path('~/.hermes/profiles/pdone/tools/pd_one_sqlsrv_windows_acl_read.py'), '--requester-user-id', requester_user_id, '--path', path, '--action', action, '--max', str(max(1, min(int(max_items), 200))), '--max-bytes', str(max(1, min(int(max_bytes), 5000000))))
+    except FileNotFoundError as exc:
+        return json.dumps(_missing_config_result(exc), ensure_ascii=False)
     return run_json(cmd, timeout=180)
 
 def pd_one_google_group_change_dry_run(group: str, action: str, member: Optional[str]=None, role: str='MEMBER', name: Optional[str]=None) -> str:
@@ -1605,7 +1630,8 @@ def worker_scheduling(action: str, payload: Optional[dict[str, Any]]=None, dry_r
     return _json_result({'status': 'error', 'error': 'unknown_action', 'action': action_key, 'allowed_actions': ['audit_rest_requests', 'correct_raw_request_dates', 'source_setup', 'setup_scheduling_rules', 'sync_source_rollover', 'preflight', 'solve_preview', 'write_generated_schedule_from_report', 'closeout_processed_requests', 'review_im_scheduling']})
 
 def _load_apps_script_content(project: dict[str, str]) -> dict[str, Any]:
-    proc = subprocess.run([str(GOG()), '-j', '--account', project['account'], 'appscript', 'content', project['script_id']], text=True, capture_output=True, timeout=120, shell=False)
+    from tools.pd_one_ops.launch import checked_argv
+    proc = subprocess.run(checked_argv([GOG(), '-j', '--account', project['account'], 'appscript', 'content', project['script_id']]), text=True, capture_output=True, timeout=120, shell=False)
     if proc.returncode != 0:
         raise RuntimeError(f'gog appscript content failed: {proc.stderr[-1000:]}')
     data = json.loads(proc.stdout or '{}')
@@ -1619,7 +1645,8 @@ def _export_gog_refresh_token(account: str) -> str:
     fd, tmp = tempfile.mkstemp(prefix='pdone-gog-token-', suffix='.json')
     os.close(fd)
     try:
-        proc = subprocess.run([str(GOG()), 'auth', 'tokens', 'export', account, '--out', tmp, '--overwrite'], text=True, capture_output=True, timeout=60, shell=False)
+        from tools.pd_one_ops.launch import checked_argv
+        proc = subprocess.run(checked_argv([GOG(), 'auth', 'tokens', 'export', account, '--out', tmp, '--overwrite']), text=True, capture_output=True, timeout=60, shell=False)
         if proc.returncode != 0:
             raise RuntimeError(f'gog token export failed: {proc.stderr[-1000:]}')
         data = json.loads(Path(tmp).read_text(encoding='utf-8'))

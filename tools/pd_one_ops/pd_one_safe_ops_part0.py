@@ -632,8 +632,18 @@ def find_bin(name: str, extra: list[str] | None=None) -> str | None:
             return candidate
     return shutil.which(name, path=_path_text(PATH_BASE()) + os.pathsep + _path_text(site_text('PATH')))
 
+def launch_argv(cmd: list[Any]) -> list[str]:
+    """``cmd`` as strings; an unset ``pd_one.external.<key>`` fails naming the key."""
+    from tools.pd_one_ops.launch import checked_argv
+    from tools.pd_one_ops.site_config import MissingExternalConfig
+    try:
+        return checked_argv(cmd)
+    except MissingExternalConfig as exc:
+        fail(str(exc))
+        raise
+
 def run_json(cmd: list[str], timeout: int=120) -> Any:
-    proc = subprocess.run(cmd, text=True, capture_output=True, env=safe_env(), shell=False, timeout=timeout)
+    proc = subprocess.run(launch_argv(cmd), text=True, capture_output=True, env=safe_env(), shell=False, timeout=timeout)
     if proc.returncode != 0:
         fail(f'command failed rc={proc.returncode}: {proc.stderr.strip()[:800] or proc.stdout.strip()[:800]}', proc.returncode)
     out = proc.stdout.strip()
@@ -646,7 +656,7 @@ def run_json(cmd: list[str], timeout: int=120) -> Any:
         return {'raw_stdout': out}
 
 def run_capture(cmd: list[str], timeout: int=120, cwd: str | None=None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, env=safe_env(), shell=False, timeout=timeout)
+    return subprocess.run(launch_argv(cmd), cwd=cwd, text=True, capture_output=True, env=safe_env(), shell=False, timeout=timeout)
 
 def tail_text(text: str, limit: int=1200) -> str:
     return (text or '')[-limit:]
