@@ -33,7 +33,8 @@ Usage: cutover.sh --build NAME [options]
   --skip-postcheck        Do not run the cron jobs' safe checks.
 
 The gate still requires no leases, a newest message at least --quiet seconds
-old, and no live goal. HR sync is dry-run only during the post-check.
+old, and no live goal. Exit 75 means the gate timed out and nothing changed.
+HR sync is dry-run only during the post-check.
 EOF
 }
 
@@ -178,9 +179,12 @@ if [[ "${skip_preflight}" != "1" ]]; then
 fi
 
 if [[ "${skip_gate}" != "1" ]]; then
-  nemo_python -m scripts.deploy.nemo.cli gate \
-    --hermes-home "${home}" --quiet "${quiet}" --poll "${poll}" --timeout "${gate_timeout}" \
-    "${profile_args[@]}"
+  if ! nemo_python -m scripts.deploy.nemo.cli gate \
+      --hermes-home "${home}" --quiet "${quiet}" --poll "${poll}" --timeout "${gate_timeout}" \
+      "${profile_args[@]}"; then
+    printf '%s\n' "profiles never went quiet; nothing was changed" >&2
+    exit 75
+  fi
 fi
 
 cut_args=(

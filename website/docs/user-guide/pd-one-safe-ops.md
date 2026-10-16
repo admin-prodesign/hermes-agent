@@ -271,6 +271,13 @@ files still land under that profile's `upgrade-audits/<build>/`.
    previous symlink, unit files, and configs. The new release directory stays
    on disk.
 
+Once `install_autodeploy.sh` has run on nemo, a merge to `main` runs these same
+steps without a hand deploy: CI notifies nemo over Tailscale, and nemo waits for
+idle profiles before it restarts anything. `cutover.sh` exits 75 when the
+profiles never went quiet. One-time setup, the no-restart path for docs and
+skills, retention, and the drift check are in `scripts/deploy/nemo/README.md`.
+Stop `hermes-deploy.path` before a hand deploy.
+
 ## Dependencies that stay outside the repo
 
 `appsheet_record_ops.py` ships in `tools/pd_one_ops/`. The helpers below are
