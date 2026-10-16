@@ -198,6 +198,8 @@ copy_tree() {
   mkdir -p "$(dirname "${dest}")"
   rm -rf "${dest}"
   cp -a "${src}" "${dest}"
+  # Published releases are chmod a-w; preserve modes on copy but staging must stay writable.
+  chmod -R u+w "${dest}"
 }
 
 locks_match() {
@@ -249,18 +251,21 @@ fi
 
 if [[ "${skip_frontend}" != "1" ]]; then
   command -v node >/dev/null 2>&1 || die "node is required to preinstall dashboard dependencies"
-  node "${staging}/scripts/build/node-deps.mjs" \
-    --source "${staging}" --reuse --workspace ui-tui --workspace web
-  tui_fresh="$(node "${staging}/scripts/build/freshness.mjs" \
-    --source "${staging}" --product tui --out "${staging}/ui-tui/dist")"
-  if [[ "${tui_fresh}" != "true" ]]; then
-    node "${staging}/scripts/build/tui.mjs"
-  fi
-  web_fresh="$(node "${staging}/scripts/build/freshness.mjs" \
-    --source "${staging}" --product web --out "${staging}/hermes_cli/web_dist")"
-  if [[ "${web_fresh}" != "true" ]]; then
-    node "${staging}/scripts/build/web.mjs"
-  fi
+  (
+    cd "${staging}"
+    node "scripts/build/node-deps.mjs" \
+      --source . --reuse --workspace ui-tui --workspace web
+    tui_fresh="$(node "scripts/build/freshness.mjs" \
+      --source . --product tui --out "ui-tui/dist")"
+    if [[ "${tui_fresh}" != "true" ]]; then
+      node "scripts/build/tui.mjs"
+    fi
+    web_fresh="$(node "scripts/build/freshness.mjs" \
+      --source . --product web --out "hermes_cli/web_dist")"
+    if [[ "${web_fresh}" != "true" ]]; then
+      node "scripts/build/web.mjs"
+    fi
+  )
   nemo_python -m scripts.deploy.nemo.cli mark-frontend --release "${staging}"
 fi
 
