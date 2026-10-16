@@ -83,7 +83,8 @@ def authorize_live_approval_ticket(ticket_id: str, *, ledger: Any=None, approval
     if not ticket.get('action_binding') or ticket['action_binding'] != approval_module.compute_action_binding(ticket):
         raise ValueError('approval ticket action binding is missing or stale')
     decision = ticket.get('andy_decision') or {}
-    if decision.get('decision') != 'approved' or decision.get('user_id') != TRUSTED_ANDY_USER_ID():
+    trusted_user_id = TRUSTED_ANDY_USER_ID()
+    if not trusted_user_id or decision.get('decision') != 'approved' or decision.get('user_id') != trusted_user_id:
         raise ValueError('approval ticket is not bound to the trusted Owner administrator')
     if REQUIRED_APPROVAL_CAPABILITY not in set(ticket.get('required_capabilities') or []):
         raise ValueError('approval ticket does not authorize Google Groups owner enforcement')
@@ -367,12 +368,17 @@ def run_owner_enforcement(*, dry_run: bool=True, confirm_live_write: str | None=
             client.close()
         token_holder[0] = ''
 
+def cmd_run(args: argparse.Namespace) -> None:
+    if args.operation == 'remove-admin-except-it':
+        result = run_admin_removal_except_it(dry_run=args.dry_run, confirm_live_write=args.confirm_live_write)
+    else:
+        result = run_owner_enforcement(dry_run=args.dry_run, confirm_live_write=args.confirm_live_write, approval_ticket_id=args.approval_ticket_id)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     args.func(args)
     return 0
-if __name__ == '__main__':
-    raise SystemExit(main())
 
 def build_parser():
     parser = argparse.ArgumentParser(description='Run fixed-scope Pro-Design Google Groups continuity operations')
@@ -381,4 +387,7 @@ def build_parser():
     parser.add_argument('--live', dest='dry_run', action='store_false')
     parser.add_argument('--confirm-live-write')
     parser.add_argument('--approval-ticket-id')
+    parser.set_defaults(func=cmd_run)
     return parser
+if __name__ == '__main__':
+    raise SystemExit(main())

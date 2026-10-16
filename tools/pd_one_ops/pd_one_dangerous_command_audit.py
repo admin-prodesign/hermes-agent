@@ -915,12 +915,20 @@ def markdown(report: dict[str, Any]) -> str:
         lines.append(f'- `{c['timestamp']}` `{c['session_id']}` {c['tool']} {c['outcome']} `{c['class']}` → `{c.get('suggested_capability') or 'TBD'}`')
     return '\n'.join(lines) + '\n'
 
+def cmd_audit(args: argparse.Namespace) -> None:
+    report = collect(Path(args.db), args.days)
+    if args.propose_capabilities:
+        keys = ('db', 'window_days', 'since_utc', 'case_count', 'session_count', 'suggested_capability_counts', 'proposals')
+        print(json.dumps({key: report[key] for key in keys}, ensure_ascii=False, indent=2))
+    elif args.markdown:
+        print(markdown(report), end='')
+    else:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     args.func(args)
     return 0
-if __name__ == '__main__':
-    raise SystemExit(main())
 
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -929,4 +937,7 @@ def build_parser():
     ap.add_argument('--json', action='store_true', help='emit full JSON report')
     ap.add_argument('--markdown', action='store_true', help='emit Markdown summary')
     ap.add_argument('--propose-capabilities', action='store_true', help='emit proposal JSON only')
+    ap.set_defaults(func=cmd_audit)
     return ap
+if __name__ == '__main__':
+    raise SystemExit(main())
