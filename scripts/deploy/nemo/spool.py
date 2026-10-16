@@ -1,19 +1,21 @@
-"""Deploy queue: one JSON file per accepted request under ``<home>/deploy/queue``.
+"""Deploy state under ``<home>/deploy``: the request queue and the refused-SHA list.
 
-The listener only writes here. The worker takes the newest request and drops
-the older ones, because only the newest merge to main needs to be live.
+The poller only writes to the queue. The worker takes the newest request and drops
+the older ones, because only the newest commit on main needs to be live. A SHA the
+worker rejected or failed to deploy goes on the refused list so the poller does not
+retry it every minute; ``autodeploy.py retry`` takes it off again.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from scripts.deploy.nemo.webhook import FULL_SHA_RE, DeployRequest
-
+FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 STALE_TMP_S = 60.0
 
 
@@ -21,11 +23,8 @@ STALE_TMP_S = 60.0
 class Queued:
     sha: str
     ref: str
-    repository: str
-    run_id: str
     received_at: float
-    peer: str
-    attempts: int = 0
+    source: str = "poll"
 
 
 def state_dir(home: Path) -> Path:
@@ -34,6 +33,10 @@ def state_dir(home: Path) -> Path:
 
 def queue_dir(home: Path) -> Path:
     return state_dir(home) / "queue"
+
+
+def refused_path(home: Path) -> Path:
+    return state_dir(home) / "refused.jsonl"
 
 
 def _entry_name(item: Queued) -> str:
@@ -49,10 +52,8 @@ def put(queue: Path, item: Queued) -> Path:
     return final
 
 
-def enqueue(queue: Path, request: DeployRequest, *, peer: str, now: float | None = None) -> Path:
-    when = time.time() if now is None else now
-    item = Queued(request.sha, request.ref, request.repository, request.run_id, when, peer)
-    return put(queue, item)
+def enqueue(queue: Path, sha: str, *, ref: str, source: str = "poll", now: float | None = None) -> Path:
+    return put(queue, Queued(sha, ref, time.time() if now is None else now, source))
 
 
 def _load(path: Path) -> Queued | None:
@@ -62,6 +63,12 @@ def _load(path: Path) -> Queued | None:
     except (OSError, ValueError, TypeError):
         return None
     return item if FULL_SHA_RE.fullmatch(item.sha) else None
+
+
+def queued_shas(queue: Path) -> set[str]:
+    if not queue.is_dir():
+        return set()
+    return {item.sha for item in map(_load, queue.glob("*.json")) if item is not None}
 
 
 def _sweep_tmp(queue: Path, now: float) -> None:
@@ -90,8 +97,42 @@ def take_latest(queue: Path, *, now: float | None = None) -> tuple[Queued | None
     return items[-1], items[:-1]
 
 
-def requeue(queue: Path, item: Queued) -> Path | None:
-    """Put ``item`` back unless a newer request arrived meanwhile."""
-    if queue.is_dir() and any(queue.glob("*.json")):
-        return None
-    return put(queue, Queued(**{**asdict(item), "attempts": item.attempts + 1}))
+def refuse(home: Path, sha: str, result: str, detail: str, *, now: float | None = None) -> None:
+    path = refused_path(home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"sha": sha, "result": result, "detail": detail, "at": time.time() if now is None else now}
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, sort_keys=True) + "\n")
+
+
+def refused_entries(home: Path) -> list[dict]:
+    path = refused_path(home)
+    if not path.is_file():
+        return []
+    entries: list[dict] = []
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and FULL_SHA_RE.fullmatch(str(entry.get("sha", ""))):
+            entries.append(entry)
+    return entries
+
+
+def refused_shas(home: Path) -> set[str]:
+    return {entry["sha"] for entry in refused_entries(home)}
+
+
+def forgive(home: Path, sha: str | None = None) -> list[str]:
+    """Drop ``sha`` (or every SHA when ``None``) from the refused list. Returns what was dropped."""
+    entries = refused_entries(home)
+    keep = [entry for entry in entries if sha is not None and entry["sha"] != sha]
+    dropped = sorted({entry["sha"] for entry in entries} - {entry["sha"] for entry in keep})
+    if not dropped:
+        return []
+    path = refused_path(home)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text("".join(json.dumps(entry, sort_keys=True) + "\n" for entry in keep), encoding="utf-8")
+    os.replace(tmp, path)
+    return dropped
