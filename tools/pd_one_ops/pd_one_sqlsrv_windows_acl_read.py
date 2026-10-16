@@ -47,7 +47,6 @@ class _PdLazyAttr:
 
     def __getattr__(self, name: str):
         return getattr(self._load(), name)
-from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import os
 import argparse
 import json
@@ -55,19 +54,41 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
-sqlsrv = _PdLazyMod('sqlsrv_readonly')
-sqlsrv = ExternalModule('sqlsrv_readonly', 'sqlsrv_readonly')
-TOOLS = Path(__file__).resolve().parent
+_SQLSRV_UNSET = object()
+sqlsrv: Any = _SQLSRV_UNSET
+
+def _external() -> bool:
+    return os.environ.get('PD_ONE_EXTERNAL_INTERPRETER', '').strip() not in {'', '0'}
 
 def PROFILE():
+    raw = os.environ.get('PD_ONE_PROFILE_ROOT', '').strip()
+    if raw or _external():
+        from tools.pd_one_ops.resolved import profile_root
+        return profile_root()
+    from tools.pd_one_ops.site_config import profile_root
     return profile_root()
 
 def USERS_PATH():
     return PROFILE() / 'policies' / 'mattermost-users.json'
 
-def HELPER():
-    return Path(resolve_configured_path('~/.hermes/scripts/sqlsrv_readonly.py'))
-sys.path.append(str(HELPER().parent))
+def _owner_username() -> str:
+    if _external() or 'PD_ONE_OWNER_MM_USERNAME' in os.environ:
+        from tools.pd_one_ops.resolved import owner_mm_username
+        return owner_mm_username()
+    from tools.pd_one_ops.site_config import site_text
+    return site_text('PDONE_OWNER_MM_USERNAME')
+
+def _sqlsrv():
+    global sqlsrv
+    if sqlsrv is not _SQLSRV_UNSET:
+        return sqlsrv
+    if _external() or os.environ.get('PD_ONE_SQLSRV_READONLY', '').strip():
+        from tools.pd_one_ops.resolved import load_sqlsrv
+        sqlsrv = load_sqlsrv()
+        return sqlsrv
+    from tools.pd_one_ops.site_config import load_external_module
+    sqlsrv = load_external_module('sqlsrv_readonly', 'sqlsrv_readonly')
+    return sqlsrv
 DOMAIN = 'JSPD'
 RED_LINE_PATH_RE = re.compile('薪資|payroll|password|密碼|credential|\\.env|考核|evaluation|bonus|獎金|payslip', re.I)
 READ_RIGHTS_RE = re.compile('Read|ReadAndExecute|Modify|FullControl|ListDirectory|GenericRead', re.I)
@@ -112,7 +133,7 @@ def company_emails(rec: dict[str, Any]) -> list[str]:
 def is_admin(rec: dict[str, Any]) -> bool:
     roles = [str(r) for r in rec.get('roles') or []] + [str(r) for r in rec.get('extraRoles') or []]
     uname = str(rec.get('mattermostUsername') or '').strip().lower()
-    admin_names = {name for name in (site_text('PDONE_OWNER_MM_USERNAME').strip().lower(), 'admin') if name}
+    admin_names = {name for name in (_owner_username().strip().lower(), 'admin') if name}
     return 'admin' in roles or uname in admin_names
 
 def ps_quote(s: str) -> str:
@@ -125,11 +146,12 @@ def authorize_payload(path: str, emails: list[str], display: str) -> str:
     return f"\n$ErrorActionPreference = 'Continue'\n$ProgressPreference = 'SilentlyContinue'\n$result = [ordered]@{{\n  ok = $true\n  path = {path_ps}\n  errors = @()\n  sam = $null\n  display = $null\n  mail = $null\n  identities = @()\n  matched_aces = @()\n  authorized = $false\n}}\nfunction Add-Err([string]$msg) {{ $result.errors += $msg; $result.ok = $false }}\n$emails = @({email_ps})\ntry {{\n  $root = New-Object DirectoryServices.DirectoryEntry\n  $or = ($emails | ForEach-Object {{ '(mail={{0}})' -f $_ }}) -join ''\n  if ($or) {{\n    $filter = '(|' + $or + ')'\n    $searcher = New-Object DirectoryServices.DirectorySearcher($root, $filter)\n    $searcher.PropertiesToLoad.AddRange(@('sAMAccountName','mail','displayName','memberOf','userAccountControl'))\n    $hits = @($searcher.FindAll())\n    if ($hits.Count -ne 1) {{\n      Add-Err ('AD mail lookup hit_count=' + $hits.Count)\n    }} else {{\n      $hit = $hits[0]\n      $uac = 0\n      if ($hit.Properties['useraccountcontrol'].Count -gt 0) {{ $uac = [int]$hit.Properties['useraccountcontrol'][0] }}\n      if ($uac -band 2) {{ Add-Err 'AD account disabled' }}\n      $result.sam = [string]$hit.Properties['samaccountname'][0]\n      $result.mail = $(if ($hit.Properties['mail'].Count) {{ [string]$hit.Properties['mail'][0] }} else {{ $null }})\n      $result.display = $(if ($hit.Properties['displayname'].Count) {{ [string]$hit.Properties['displayname'][0] }} else {{ $null }})\n      $idents = New-Object System.Collections.Generic.List[string]\n      [void]$idents.Add('JSPD\\' + $result.sam)\n      [void]$idents.Add('JSPD\\Domain Users')\n      [void]$idents.Add('NT AUTHORITY\\Authenticated Users')\n      [void]$idents.Add('Everyone')\n      foreach ($g in $hit.Properties['memberof']) {{\n        $dn = [string]$g\n        if ($dn -match '^CN=([^,]+)') {{ [void]$idents.Add('JSPD\\' + $Matches[1]) }}\n      }}\n      $result.identities = @($idents)\n    }}\n  }} else {{ Add-Err 'no company email for AD lookup' }}\n}} catch {{ Add-Err ('AD: ' + $_.Exception.Message) }}\n\ntry {{\n  $p = {path_ps}\n  if (-not (Test-Path -LiteralPath $p)) {{ Add-Err ('Path not found or helper cannot see it: ' + $p) }}\n  elseif ($result.identities.Count -gt 0) {{\n    $acl = Get-Acl -LiteralPath $p\n    $allow = $false\n    $deny = $false\n    $set = @{{}}\n    foreach ($id in $result.identities) {{ $set[$id.ToLower()] = $true }}\n    foreach ($ace in $acl.Access) {{\n      $id = $ace.IdentityReference.Value\n      if (-not $set.ContainsKey($id.ToLower())) {{ continue }}\n      $rights = $ace.FileSystemRights.ToString()\n      $row = [ordered]@{{ identity=$id; type=$ace.AccessControlType.ToString(); rights=$rights; inherited=[bool]$ace.IsInherited }}\n      $result.matched_aces += $row\n      $readish = $rights -match 'Read|ReadAndExecute|Modify|FullControl|ListDirectory|GenericRead'\n      if ($readish -and $ace.AccessControlType.ToString() -eq 'Deny') {{ $deny = $true }}\n      if ($readish -and $ace.AccessControlType.ToString() -eq 'Allow') {{ $allow = $true }}\n    }}\n    $result.authorized = [bool]($allow -and -not $deny)\n    $result.owner = $acl.Owner\n  }}\n}} catch {{ Add-Err ('ACL: ' + $_.Exception.Message) }}\n$result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath '__OUT__' -Encoding UTF8\n"
 
 def run_helper(command: str, path: str, max_items: int, max_bytes: int) -> dict[str, Any]:
-    vals = sqlsrv.load_env()
-    session, host, user, password = sqlsrv.make_session(vals)
-    target = sqlsrv.unc_path(path)
-    payload = sqlsrv.remote_payload(command, target, max_items, max_bytes, 'redacted-host')
-    result = sqlsrv.run_via_task(session, user, password, payload, timeout=120)
+    helper = _sqlsrv()
+    vals = helper.load_env()
+    session, host, user, password = helper.make_session(vals)
+    target = helper.unc_path(path)
+    payload = helper.remote_payload(command, target, max_items, max_bytes, 'redacted-host')
+    result = helper.run_via_task(session, user, password, payload, timeout=120)
     result['via'] = {'host': host, 'helper': 'sqlsrv_readonly', 'smb_identity': 'redacted-vm-helper'}
     return result
 
@@ -144,15 +166,16 @@ def authorize(requester_user_id: str, path: str) -> dict[str, Any]:
     if _red_line(path):
         fail('payroll, credential, and HR-evaluation paths are not readable through PD One', {'path': path})
     rec = load_user(requester_user_id)
-    target = sqlsrv.unc_path(path)
+    helper = _sqlsrv()
+    target = helper.unc_path(path)
     if is_admin(rec):
         return {'ok': True, 'authorized': True, 'admin_bypass': True, 'path': target, 'windows_sam': None, 'matched_ace_count': 0}
     emails = company_emails(rec)
     if not emails:
         fail('requester has no company email for the AD lookup', {'requester_user_id': requester_user_id})
-    vals = sqlsrv.load_env()
-    session, _host, user, password = sqlsrv.make_session(vals)
-    raw = sqlsrv.run_via_task(session, user, password, authorize_payload(target, emails, str(rec.get('displayName') or '')), timeout=120)
+    vals = helper.load_env()
+    session, _host, user, password = helper.make_session(vals)
+    raw = helper.run_via_task(session, user, password, authorize_payload(target, emails, str(rec.get('displayName') or '')), timeout=120)
     aces = [ace for ace in raw.get('matched_aces') or [] if isinstance(ace, dict)]
     errors = [str(error) for error in raw.get('errors') or []]
     authorized = bool(raw.get('authorized')) and _read_aces(aces, 'Allow') and not _read_aces(aces, 'Deny') and not errors

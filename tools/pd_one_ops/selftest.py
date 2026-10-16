@@ -10,7 +10,10 @@ this module is imported from (the published release is read-only):
   are refused;
 * each release helper script a tool would launch is then started for real with
   ``--help``, by the planned interpreter with the planned environment, so an import that
-  breaks under a read-only release fails here and not in production.
+  breaks under a read-only release fails here and not in production. A helper launched
+  under an external interpreter (``pd_one.external.winrm_python``) is started once more
+  with a stdlib-only venv and the release on ``PYTHONPATH``. That venv has no ruamel, so
+  an import of the YAML loader fails here.
 
 Run before cutover::
 
@@ -168,22 +171,87 @@ def _call_tool(name: str, fn: Any, guard: Guard, allow_missing: frozenset[str]) 
     return result
 
 
+def _help_result(guard: Guard, name: str, argv: list[str], env: dict[str, str], cwd: Optional[str]) -> ToolResult:
+    result = ToolResult(name, outcome="started")
+    try:
+        proc = guard.real_run(argv, env=env, cwd=cwd, timeout=_PROBE_TIMEOUT_SECONDS)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        result.status, result.detail = "fail", f"{type(exc).__name__}: {exc}"
+        return result
+    if proc.returncode != 0:
+        result.status = "fail"
+        result.detail = (proc.stderr or proc.stdout or "")[-600:]
+    return result
+
+
+def _bare_interpreter(guard: Guard, dest: Path) -> Optional[Path]:
+    """A venv with the standard library and nothing else. It cannot import ruamel."""
+    proc = guard.real_run(
+        [sys.executable, "-m", "venv", "--without-pip", str(dest)],
+        env={"PATH": os.environ.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"},
+        cwd=None, timeout=120,
+    )
+    if proc.returncode != 0:
+        return None
+    for relative in ("bin/python", "Scripts/python.exe"):
+        candidate = dest / relative
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _isolated_env(env: dict[str, str]) -> dict[str, str]:
+    """The external child's environment with the release, and not the parent's site-packages, on ``PYTHONPATH``."""
+    isolated = dict(env)
+    isolated["PYTHONPATH"] = str(RELEASE_ROOT)
+    isolated["PYTHONNOUSERSITE"] = "1"
+    isolated["PYTHONDONTWRITEBYTECODE"] = "1"
+    isolated.pop("PYTHONHOME", None)
+    return isolated
+
+
+def _ruamel_absent(guard: Guard, bare: Path) -> ToolResult:
+    result = ToolResult("stdlib interpreter has no ruamel", outcome="started")
+    try:
+        proc = guard.real_run(
+            [str(bare), "-c", "import ruamel.yaml"],
+            env={"PATH": os.environ.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"},
+            cwd=None, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        result.status, result.detail = "fail", f"{type(exc).__name__}: {exc}"
+        return result
+    if proc.returncode == 0:
+        result.status = "fail"
+        result.detail = "bare interpreter can import ruamel; it would not catch a config-loader import"
+    return result
+
+
 def _probe_scripts(guard: Guard) -> list[ToolResult]:
-    """Start every release helper a tool would launch, with ``--help``."""
+    """Start every release helper a tool would launch, with ``--help``.
+
+    External-interpreter helpers are started again under a stdlib-only venv.
+    """
     results = []
-    for (interpreter, script), (env, cwd) in sorted(guard.scripts.items()):
-        result = ToolResult(f"start {Path(script).name} ({Path(interpreter).name})", outcome="started")
-        try:
-            proc = guard.real_run([interpreter, script, "--help"], env=env, cwd=cwd,
-                                  capture_output=True, text=True, timeout=_PROBE_TIMEOUT_SECONDS)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            result.status, result.detail = "fail", f"{type(exc).__name__}: {exc}"
-            results.append(result)
-            continue
-        if proc.returncode != 0:
-            result.status = "fail"
-            result.detail = (proc.stderr or proc.stdout or "")[-600:]
-        results.append(result)
+    planned = sorted(guard.scripts.items())
+    external = [(script, env, cwd) for (_interpreter, script), (env, cwd) in planned if env.get("PD_ONE_EXTERNAL_INTERPRETER")]
+    bare: Optional[Path] = None
+    if external:
+        bare = _bare_interpreter(guard, guard.sandbox / "stdlib-python")
+        if bare is None:
+            failed = ToolResult("stdlib interpreter", outcome="started")
+            failed.status, failed.detail = "fail", "could not create a stdlib-only interpreter"
+            results.append(failed)
+        else:
+            results.append(_ruamel_absent(guard, bare))
+    for (interpreter, script), (env, cwd) in planned:
+        results.append(_help_result(guard, f"start {Path(script).name} ({Path(interpreter).name})", [interpreter, script, "--help"], env, cwd))
+    if bare is not None:
+        for script, env, cwd in external:
+            results.append(_help_result(
+                guard, f"start {Path(script).name} (stdlib-only)",
+                [str(bare), script, "--help"], _isolated_env(env), cwd,
+            ))
     return results
 
 

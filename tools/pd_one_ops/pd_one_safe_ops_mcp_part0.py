@@ -137,14 +137,14 @@ def _missing_config_result(exc: Exception) -> dict[str, Any]:
     key = getattr(exc, 'key', '')
     return {'status': 'error', 'error': 'missing_external_config' if key else 'missing_helper', 'key': key, 'detail': str(exc)}
 
-def run_json(args: list[str], timeout: int=120) -> str:
+def run_json(args: list[str], timeout: int=120, env: dict[str, str] | None=None) -> str:
     from tools.pd_one_ops.launch import checked_argv, child_env
     from tools.pd_one_ops.site_config import MissingExternalConfig
     try:
         argv = checked_argv(args)
     except MissingExternalConfig as exc:
         return json.dumps(_missing_config_result(exc), ensure_ascii=False)
-    proc = subprocess.run(argv, text=True, capture_output=True, shell=False, timeout=timeout, env=child_env())
+    proc = subprocess.run(argv, text=True, capture_output=True, shell=False, timeout=timeout, env=child_env() if env is None else env)
     if proc.returncode != 0:
         return json.dumps({'status': 'error', 'returncode': proc.returncode, 'stderr': proc.stderr[-2000:], 'stdout': proc.stdout[-2000:]}, ensure_ascii=False)
     out = proc.stdout.strip() or '{}'
@@ -862,10 +862,11 @@ def pd_one_smb_unc_content_search(root: str, terms: list[str], match_mode: str='
     Authorize with the exact Mattermost requester id (live NTFS Read/Write or the
     Finance AOP standing grant) or an executable ticket. PD One still does not write.
     """
-    from tools.pd_one_ops.launch import python_argv
+    from tools.pd_one_ops.launch import external_child_env, python_argv
     from tools.pd_one_ops.site_config import MissingExternalConfig
     try:
         cmd = python_argv(resolve_configured_path('~/.hermes/profiles/pdone/tools/pd_one_smb_unc_content_search.py'), '--root', root, '--match-mode', match_mode, interpreter_key='winrm_python')
+        env = external_child_env()
     except (MissingExternalConfig, FileNotFoundError) as exc:
         return json.dumps(_missing_config_result(exc), ensure_ascii=False)
     for term in terms:
@@ -874,7 +875,7 @@ def pd_one_smb_unc_content_search(root: str, terms: list[str], match_mode: str='
         cmd.extend(['--ticket-id', ticket_id])
     if requester_user_id:
         cmd.extend(['--requester-user-id', requester_user_id])
-    return run_json(cmd, timeout=240)
+    return run_json(cmd, timeout=240, env=env)
 
 def pd_one_sqlsrv_windows_acl_read(requester_user_id: str, path: str, action: str='authorize', max_items: int=50, max_bytes: int=1000000) -> str:
     """Authorize/list/stat/read a named redacted-host UNC using the requester's live NTFS Read or Write.

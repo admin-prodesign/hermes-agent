@@ -46,12 +46,39 @@ def python_argv(script: Any, *args: Any, interpreter_key: Optional[str] = None) 
 
 
 def child_env(base: Optional[Mapping[str, str]] = None) -> dict[str, str]:
-    """Environment for a PD One child: the served Hermes home, and the release importable
-    under any interpreter (a helper run by ``pd_one.external.winrm_python`` imports ``tools``)."""
+    """Environment for a PD One child: the served Hermes home, and the release on ``PYTHONPATH``."""
     from hermes_constants import get_hermes_home
 
     env = dict(os.environ if base is None else base)
     env["HERMES_HOME"] = str(get_hermes_home())
     paths = [str(RELEASE_ROOT)] + [p for p in env.get("PYTHONPATH", "").split(os.pathsep) if p]
     env["PYTHONPATH"] = os.pathsep.join(dict.fromkeys(paths))
+    return env
+
+
+def external_child_env(base: Optional[Mapping[str, str]] = None) -> dict[str, str]:
+    """``child_env`` plus the config values an external interpreter must not look up itself.
+
+    ``pd_one.external.winrm_python`` is a separate venv and does not have ruamel, so a
+    helper it runs cannot import the YAML loader. The parent resolves the values here
+    and the child reads them from the environment.
+    """
+    from tools.pd_one_ops.site_config import external_path, profile_root, site_text
+
+    env = child_env(base)
+    root = profile_root()
+    env["PD_ONE_PROFILE_ROOT"] = str(root)
+    env["PD_ONE_LEDGER_TOOLS"] = str(root / "legacy-openclaw/workspace/tools")
+    env["PD_ONE_ACL_TOOL"] = str(root / "tools/pd_one_sqlsrv_windows_acl_read.py")
+    env["PD_ONE_OWNER_MM_USERNAME"] = site_text("PDONE_OWNER_MM_USERNAME").strip()
+    for key, var in (
+        ("sqlsrv_readonly", "PD_ONE_SQLSRV_READONLY"),
+        ("winrm_site_packages", "PD_ONE_WINRM_SITE_PACKAGES"),
+    ):
+        found = external_path(key).path()
+        if found is not None:
+            env[var] = str(found)
+        else:
+            env.pop(var, None)
+    env["PD_ONE_EXTERNAL_INTERPRETER"] = "1"
     return env
