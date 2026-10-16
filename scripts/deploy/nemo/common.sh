@@ -9,6 +9,9 @@ fi
 nemo_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 nemo_repo="$(cd "${nemo_here}/../../.." && pwd)"
 
+# uv and other user-local tools (matches service_path_env in autodeploy_units.py).
+export PATH="${HOME}/.local/bin:${PATH}"
+
 if [[ -z "${NEMO_PYTHON:-}" ]]; then
   if command -v python >/dev/null 2>&1; then
     NEMO_PYTHON="$(command -v python)"
