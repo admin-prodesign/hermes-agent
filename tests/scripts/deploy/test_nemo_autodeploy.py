@@ -101,8 +101,8 @@ def _write_db(path: Path, message_at: float) -> None:
 def _cutover(home: Path, build: str, *extra: str) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "NEMO_PYTHON": sys.executable}
     argv = ["bash", str(NEMO / "cutover.sh"), "--hermes-home", str(home), "--build", build,
-            "--sha", "b" * 40, "--unit-dir", str(home / "units"), "--skip-preflight", "--skip-postcheck",
-            *extra]
+            "--sha", "b" * 40, "--unit-dir", str(home / "units"), "--skip-preflight", "--skip-selftest",
+            "--skip-postcheck", *extra]
     return subprocess.run(argv, env=env, capture_output=True, text=True, timeout=120, check=False)
 
 
@@ -303,7 +303,8 @@ class _Recorder:
         if self.cutover_code is not None:
             return self.cutover_code
         env = {**os.environ, "NEMO_PYTHON": sys.executable}
-        argv = [*argv, "--unit-dir", str(self.home / "units")]
+        # The fake releases carry no tools/ package for the PD One selftest.
+        argv = [*argv, "--unit-dir", str(self.home / "units"), "--skip-selftest"]
         return subprocess.run(argv, env=env, timeout=120, check=False).returncode
 
     def sync(self, release: Path, _home: Path, profiles: tuple[str, ...]) -> list[dict]:

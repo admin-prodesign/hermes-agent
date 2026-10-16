@@ -16,7 +16,7 @@ nemo: hermes-deploy.path → hermes-deploy.service  (oneshot worker, autodeploy.
        1. fetches main; refuses a SHA that is not on main, or is older than the live SHA
        2. classifies the diff: noop / skills / restart          (changes.py)
        3. prunes old releases, then build.sh --sha <sha>
-       4. restart: cutover.sh  (idle gate → swap → unit rewrite → restart → /health → rollback)
+       4. restart: cutover.sh  (PD One selftest → idle gate → swap → unit rewrite → restart → /health → rollback)
           noop/skills: cutover.sh without gate or restart, then sync bundled skills
        5. prunes again (keeps current, its rollback target, and the running build)
 nemo: hermes-deploy-drift.timer  (hourly: live files vs the deployed SHA)
@@ -56,6 +56,16 @@ That should print one `<sha>\trefs/heads/main` line.
 | the above plus `skills/` | `skills` | no | no |
 | anything else (Python, prompts, locales, dependencies, `optional-skills/`, `SOUL.md`), or an unreadable diff | `restart` | yes | yes |
 
+- **PD One selftest.** Before the idle gate, `cutover.sh` runs
+  `<release>/.venv/bin/python -m tools.pd_one_ops.selftest --hermes-home <home> --profile pdone`
+  from the new release directory. It calls every safe-ops MCP tool once with placeholder
+  arguments in dry-run mode: child processes are planned, not run, network is refused, and
+  writes outside a scratch directory are refused. Then it starts each release helper with `--help`.
+  A failure (a script run without an interpreter, an unset `pd_one.external.*` key, an import
+  error, a write into the release) stops the deploy with nothing changed. A key that is absent on
+  nemo on purpose is passed as `--selftest-allow-missing <key>`; `--skip-selftest` turns it off.
+  No-restart deploys skip it. `build.sh` publishes `tools/**/*.py` without the exec bit, so a
+  launch that still depends on it fails here.
 - **Idle gate.** `cutover.sh` waits until pdone and pdneo have no turn or compression
   lease, no live goal, and no message newer than 90 s (`gate.py`). It waits up to 6 h.
   If the profiles are still busy it exits 75 and nothing changes. You get a `waiting`
