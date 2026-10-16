@@ -22,7 +22,9 @@ from pathlib import Path
 import pytest
 
 from scripts.deploy.nemo import autodeploy, poll
-from scripts.deploy.nemo.autodeploy import Config, Hooks, _script_env, check_drift, fetch_main, on_main, run_once
+from scripts.deploy.nemo.autodeploy import (
+    Config, Hooks, _script_env, check_drift, fetch_main, on_main, run_once, run_script, script_failure_detail,
+)
 from scripts.deploy.nemo.autodeploy_units import UnitOptions, render
 from scripts.deploy.nemo.changes import NOOP, RESTART, SKILLS, classify
 from scripts.deploy.nemo.manifest import live_sha, main_matches_live, sha_from_release_name, write_manifest
@@ -607,6 +609,14 @@ def test_poll_treats_inferred_live_sha_as_current(tmp_path: Path, origin) -> Non
     os.symlink(build, releases / "current")
     assert live_sha(home, build) == base[:10].lower()
     assert _poll(home, releases, mirror).action == "live"
+
+
+def test_run_script_retains_child_output_for_failure_detail() -> None:
+    code = run_script(["bash", "-c", "printf '%s\\n' 'EACCES: permission denied'; exit 1"], timeout=10)
+    assert code == 1
+    detail = script_failure_detail("build.sh failed")
+    assert "permission denied" in detail.lower()
+    assert detail.startswith("build.sh failed")
 
 
 @pytest.mark.platforms("linux", "macos")

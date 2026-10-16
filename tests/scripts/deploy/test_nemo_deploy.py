@@ -716,41 +716,60 @@ def test_build_rejects_an_unsafe_tarball(tmp_path: Path) -> None:
 
 
 @pytest.mark.platforms("linux", "macos")
-def test_build_reuses_read_only_node_modules_from_previous_release(tmp_path: Path) -> None:
-    if shutil.which("node") is None:
+def test_copy_tree_makes_read_only_reused_node_modules_writable(tmp_path: Path) -> None:
+    node = shutil.which("node")
+    if node is None:
         pytest.skip("node is required on PATH")
-    if _resolve_uv_bin_dir() is None:
-        pytest.skip("uv is required (PM install store not available in this runner)")
-    tarball = tmp_path / "src.tar"
-    subprocess.run(
-        ["git", "archive", "--format=tar", "-o", str(tarball), "HEAD"],
-        cwd=ROOT, check=True, timeout=180,
+    src = tmp_path / "previous" / "node_modules"
+    src.mkdir(parents=True)
+    (src / ".hermes-node-deps").write_text("stale-receipt\n", encoding="utf-8")
+    _chmod_read_only(src.parent)
+    dest = tmp_path / "staging" / "node_modules"
+    driver = tmp_path / "copy_tree.sh"
+    driver.write_text(
+        f"#!/usr/bin/env bash\n"
+        f"set -euo pipefail\n"
+        f'source "{NEMO / "common.sh"}"\n'
+        f"eval \"$(sed -n '/^copy_tree()/,/^}}/p' '{NEMO / 'build.sh'}')\"\n"
+        f'copy_tree "$1" "$2"\n',
+        encoding="utf-8",
     )
-    home = tmp_path / "hermes"
-    releases = home / "releases"
-    previous = releases / "old"
-    previous.mkdir(parents=True)
-    shutil.copy2(ROOT / "package-lock.json", previous / "package-lock.json")
-    nm = previous / "node_modules"
-    nm.mkdir()
-    (nm / ".hermes-node-deps").write_text("stale-receipt\n", encoding="utf-8")
-    os.symlink("old", releases / "current")
-    _chmod_read_only(previous)
+    driver.chmod(0o755)
+    subprocess.run([str(driver), str(src), str(dest)], check=True, timeout=20)
+    cleanup = subprocess.run(
+        [node, "-e", f"require('fs').rmSync({json.dumps(str(dest / '.hermes-node-deps'))}, {{force: true}})"],
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert cleanup.returncode == 0, cleanup.stderr
 
-    proc = _run_build(
-        tmp_path,
-        "--tarball", str(tarball),
-        "--stop-after", "frontend",
-        timeout=900,
+
+@pytest.mark.platforms("linux", "macos")
+def test_build_frontend_web_step_runs_from_staging_root(tmp_path: Path) -> None:
+    """Vite/babel resolve workspace packages from the checkout cwd (not $HOME)."""
+    bash = _bash()
+    real_node = shutil.which("node")
+    assert real_node is not None
+    staging = tmp_path / "staging"
+    (staging / "scripts" / "build").mkdir(parents=True)
+    record = tmp_path / "web-cwd.txt"
+    wrapper_dir = tmp_path / "bin"
+    wrapper_dir.mkdir()
+    wrapper = wrapper_dir / "node"
+    wrapper.write_text(
+        f"#!/usr/bin/env bash\n"
+        f'if [[ "$1" == scripts/build/web.mjs ]]; then pwd > "{record}"; exit 0; fi\n'
+        f'exec "{real_node}" "$@"\n',
+        encoding="utf-8",
     )
-    combined = proc.stdout + proc.stderr
-    assert "node-deps" in combined
-    assert "EACCES" not in combined
-    assert "permission denied" not in combined.lower() or "hermes-node-deps" not in combined.lower()
-    if proc.returncode != 0:
-        if any(marker in combined.lower() for marker in ("web.mjs", "tui.mjs", "vite", "rolldown")):
-            pytest.skip("frontend compile is not available in this runner")
-        assert proc.returncode == 0, combined
+    wrapper.chmod(0o755)
+    subprocess.run(
+        [bash, "-c",
+         f'staging="{staging}"; export PATH="{wrapper_dir}:$PATH"; '
+         f'( cd "${{staging}}" && web_fresh="false"; '
+         f'if [[ "${{web_fresh}}" != "true" ]]; then node "scripts/build/web.mjs"; fi )'],
+        check=True, timeout=10,
+    )
+    assert Path(record.read_text().strip()).resolve() == staging.resolve()
 
 
 def test_probe_cli_missing_mirror_exits_nonzero(tmp_path: Path) -> None:
