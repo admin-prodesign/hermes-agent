@@ -135,7 +135,9 @@ def standing_policy_allows(requester_user_id: str, root: str) -> bool:
     return under_root(root, STANDING_AOP_ROOT)
 
 def ntfs_authorize(requester_user_id: str, root: str) -> dict[str, Any]:
-    proc = subprocess.run([str(ACL_TOOL()), '--requester-user-id', requester_user_id, '--path', root, '--action', 'authorize'], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=False)
+    from tools.pd_one_ops.launch import child_env, python_argv
+    command = python_argv(ACL_TOOL(), '--requester-user-id', requester_user_id, '--path', root, '--action', 'authorize')
+    proc = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=False, env=child_env())
     try:
         payload = json.loads(proc.stdout or '{}')
     except json.JSONDecodeError:
@@ -213,10 +215,8 @@ def search(*, root: str, terms: list[str], match_mode: str='OR', ticket_id: str 
     if runner is not None:
         raw = runner(payload)
     else:
-        winrm_site = Path(resolve_configured_path('~/.hermes/venvs/winrm/lib/python3.12/site-packages'))
-        if str(winrm_site) not in sys.path:
-            sys.path.append(str(winrm_site))
-        import sqlsrv_readonly as sqlsrv
+        from tools.pd_one_ops.site_config import load_external_module
+        sqlsrv = load_external_module('sqlsrv_readonly', 'sqlsrv_readonly')
         vals = sqlsrv.load_env()
         session, host, user, password = sqlsrv.make_session(vals)
         raw = sqlsrv.run_via_task(session, user, password, payload, timeout=180)

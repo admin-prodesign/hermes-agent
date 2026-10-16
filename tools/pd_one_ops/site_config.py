@@ -22,7 +22,8 @@ if _PACKAGE_PATH not in sys.path:
     sys.path.append(_PACKAGE_PATH)
 
 
-def _config_section() -> dict[str, Any]:
+def _home_section() -> dict[str, Any]:
+    """``pd_one`` from ``<HERMES_HOME>/config.yaml``."""
     try:
         from hermes_cli.config import load_config_readonly
 
@@ -33,6 +34,65 @@ def _config_section() -> dict[str, Any]:
         return {}
     section = cfg.get("pd_one")
     return section if isinstance(section, dict) else {}
+
+
+def _profile_config_dir(home_section: dict[str, Any]) -> Path | None:
+    """Profile folder whose ``config.yaml`` layers over the home's, or None when it is the home.
+
+    The safe-ops MCP server can run with ``HERMES_HOME`` on the install root (a stdio child
+    started without the served profile's home, or one pinned there in ``mcp_servers.*.env``),
+    while ``pd_one.external.*`` lives in the profile's own config.
+    """
+    from hermes_constants import get_hermes_home
+
+    folder = _profile_dir_for(home_section)
+    home = get_hermes_home()
+    try:
+        if folder.resolve() == home.resolve():
+            return None
+    except OSError:
+        return None
+    return folder if (folder / "config.yaml").is_file() else None
+
+
+def _section_under(home: Path) -> dict[str, Any]:
+    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+    token = set_hermes_home_override(home)
+    try:
+        return _home_section()
+    finally:
+        reset_hermes_home_override(token)
+
+
+def _merged(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merged(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _config_section() -> dict[str, Any]:
+    """``pd_one`` config: the home's, with the PD One profile's own config.yaml layered on top."""
+    home_section = _home_section()
+    folder = _profile_config_dir(home_section)
+    if folder is None:
+        return home_section
+    return _merged(home_section, _section_under(folder))
+
+
+def config_sources() -> list[Path]:
+    """The config.yaml files ``pd_one`` values are read from, home first."""
+    from hermes_constants import get_hermes_home
+
+    sources = [get_hermes_home() / "config.yaml"]
+    folder = _profile_config_dir(_home_section())
+    if folder is not None:
+        sources.append(folder / "config.yaml")
+    return sources
 
 
 def _lookup(section: dict[str, Any], *keys: str) -> str:
@@ -176,10 +236,9 @@ def _is_profile_folder(path: Path) -> bool:
     return path.parent.name == "profiles"
 
 
-def _configured_profile_name() -> str:
+def _configured_profile_name(section: dict[str, Any]) -> str:
     from hermes_constants import PROFILE_ID_RE
 
-    section = _config_section()
     for key in ("profile", "profile_name"):
         raw = section.get(key)
         if not isinstance(raw, str):
@@ -199,18 +258,22 @@ def profile_root() -> ProfileRoot:
     named, then ``<HERMES_HOME>/profiles/<name>`` (``pd_one.profile``, else
     ``pdone``). A home that is already a profile folder stays that folder.
     """
+    return ProfileRoot(_profile_dir_for(_home_section()))
+
+
+def _profile_dir_for(home_section: dict[str, Any]) -> Path:
     explicit = _explicit_profile_home()
     if explicit is not None:
-        return ProfileRoot(explicit)
+        return explicit
     active = _active_profile_dir()
     if active is not None:
-        return ProfileRoot(active)
+        return active
     from hermes_constants import get_hermes_home
 
     home = get_hermes_home()
     if _is_profile_folder(home):
-        return ProfileRoot(home)
-    return ProfileRoot(home / "profiles" / _configured_profile_name())
+        return home
+    return home / "profiles" / _configured_profile_name(home_section)
 
 
 def kanban_boards_root() -> Path:
@@ -277,6 +340,22 @@ def external_raw(key: str) -> str:
     return _lookup(_config_section(), "external", key)
 
 
+UNSET_MARK = "<unset pd_one.external."
+
+
+class MissingExternalConfig(FileNotFoundError):
+    """A required ``pd_one.external.<key>`` is unset, or names a path that does not exist."""
+
+    def __init__(self, key: str, path: Path | None = None) -> None:
+        self.key = key
+        sources = ", ".join(str(source) for source in config_sources())
+        problem = "is not set" if path is None else f"points at {path}, which does not exist"
+        super().__init__(
+            f"PD One external dependency '{key}' {problem}. Set pd_one.external.{key} "
+            f"in the profile config.yaml (read from: {sources})."
+        )
+
+
 class ExternalPath:
     """A dependency that stays outside the repo.
 
@@ -314,16 +393,13 @@ class ExternalPath:
     def require(self) -> Path:
         found = self.path()
         if found is None or not found.exists():
-            raise FileNotFoundError(
-                f"PD One external dependency '{self.key}' is missing. "
-                f"Set pd_one.external.{self.key} to its path."
-            )
+            raise MissingExternalConfig(self.key, found)
         return found
 
     def __fspath__(self) -> str:
         found = self.path()
         if found is None:
-            return f"<unset pd_one.external.{self.key}>"
+            return f"{UNSET_MARK}{self.key}>"
         return os.fspath(found)
 
     def __str__(self) -> str:

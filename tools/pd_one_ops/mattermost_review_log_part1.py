@@ -465,8 +465,6 @@ def main(argv=None) -> None:
     args = build_parser().parse_args(argv)
     args.func(args)
     return 0
-if __name__ == '__main__':
-    main()
 
 def build_parser():
     p = argparse.ArgumentParser()
@@ -537,3 +535,5 @@ def build_parser():
     lb.add_argument('--no-ensure-headers', action='store_true')
     lb.set_defaults(func=cmd_backfill_mattermost_user_post_links)
     return ap
+if __name__ == '__main__':
+    main()

@@ -194,7 +194,8 @@ def cutover_argv(cfg: Config, sha: str, build: str, old_sha: str | None, mode: s
     if mode == RESTART:
         return argv + ["--skip-pytest", "--quiet", str(cfg.quiet_s), "--poll", str(cfg.poll_s),
                        "--gate-timeout", str(int(cfg.gate_timeout_s))]
-    return argv + ["--skip-preflight", "--skip-gate", "--skip-restart", "--skip-health", "--skip-postcheck"]
+    return argv + ["--skip-preflight", "--skip-selftest", "--skip-gate", "--skip-restart", "--skip-health",
+                   "--skip-postcheck"]
 
 
 def _prepare_release(cfg: Config, item: Queued, build: str, hooks: Hooks) -> str | None:
