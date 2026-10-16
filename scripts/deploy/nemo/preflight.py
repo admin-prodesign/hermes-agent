@@ -51,6 +51,7 @@ CATALOG: tuple[Verify, ...] = (
 # frontend launch path. CI runs them on every push of this tree.
 DEPLOY_TESTS = (
     "tests/scripts/deploy/test_nemo_deploy.py",
+    "tests/scripts/deploy/test_nemo_autodeploy.py",
     "tests/hermes_cli/test_tui_npm_install.py",
     "tests/hermes_cli/test_frontend_preinstall.py",
 )
