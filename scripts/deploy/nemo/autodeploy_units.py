@@ -31,6 +31,27 @@ LEGACY_UNITS = ("hermes-deploy-listener.service",)
 _SAFE_ARG = re.compile(r"[A-Za-z0-9_@%+=:,./-]+")
 
 
+def service_path_env() -> str:
+    """``PATH`` for systemd units: caller env plus common user-local tool dirs."""
+    parts: list[str] = []
+    seen: set[str] = set()
+    home = Path.home()
+    for candidate in (
+        os.environ.get("PATH", ""),
+        f"{home}/.local/bin",
+        f"{home}/.cargo/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ):
+        for item in candidate.split(":"):
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            parts.append(item)
+    return ":".join(parts)
+
+
 @dataclass
 class UnitOptions:
     home: Path
@@ -45,7 +66,7 @@ class UnitOptions:
     poll_every: str = "60s"
     poll_jitter: str = "20s"
     drift_every: str = "1h"
-    path_env: str = field(default_factory=lambda: os.environ.get("PATH", "/usr/bin:/bin"))
+    path_env: str = field(default_factory=service_path_env)
 
     @property
     def current(self) -> Path:

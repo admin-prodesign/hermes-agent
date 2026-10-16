@@ -153,7 +153,19 @@ method="$(nemo_python "${acquire_args[@]}")"
 [[ -f "${staging}/pyproject.toml" ]] || die "source tree has no pyproject.toml"
 printf '%s\n' "source ${method}"
 
+write_build_manifest() {
+  nemo_python -m scripts.deploy.nemo.cli manifest-set \
+    --path "${audit}/manifest.json" \
+    --set "build=${build}" \
+    --set "sha=${sha}" \
+    --set "release_name=${build}" \
+    --set "build_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+    --set "stage=${1}"
+}
+
 if [[ "${stop_after}" == "source" ]]; then
+  mkdir -p "${audit}"
+  write_build_manifest "source"
   keep_staging=1
   printf '%s\n' "staging ${staging}"
   exit 0
@@ -253,6 +265,7 @@ if [[ "${skip_frontend}" != "1" ]]; then
 fi
 
 if [[ "${stop_after}" == "frontend" ]]; then
+  write_build_manifest "frontend"
   keep_staging=1
   printf '%s\n' "staging ${staging}"
   exit 0
@@ -273,11 +286,14 @@ manifest_args=(
   --path "${audit}/manifest.json"
   --set "build=${build}"
   --set "sha=${sha}"
+  --set "release_name=${build}"
+  --set "build_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   --set "release=${release_path}"
   --set "releases=${releases}"
   --set "source=${method}"
   --set "uv_cache_dir=${UV_CACHE_DIR}"
   --set "extra=${extra}"
+  --set "stage=publish"
 )
 if [[ -n "${previous_name}" ]]; then
   manifest_args+=(--set "previous=${previous_name}")

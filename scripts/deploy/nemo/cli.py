@@ -19,12 +19,13 @@ from scripts.deploy.nemo.freeze_diff import compare, constraint_text
 from scripts.deploy.nemo.frontend import mark_preinstalled
 from scripts.deploy.nemo.gate import poll_until_quiet
 from scripts.deploy.nemo.health import http_healthy, poll_until_healthy
+from scripts.deploy.nemo.health_targets import resolve_health_plan, socket_profile_homes
 from scripts.deploy.nemo.layout import (
     DEFAULT_DASHBOARD_HEALTH, DEFAULT_GATEWAY_HEALTH, DEFAULT_HEALTH_INTERVAL_S,
     DEFAULT_HEALTH_TIMEOUT_S, DEFAULT_POLL_S, DEFAULT_PROFILES, DEFAULT_QUIET_S,
     audit_dir, pin_uv_cache, releases_dir, resolve_hermes_home, valid_sha,
 )
-from scripts.deploy.nemo.manifest import read_manifest, write_manifest
+from scripts.deploy.nemo.manifest import read_manifest, record_build_manifest, write_manifest
 from scripts.deploy.nemo.postcheck import run_postcheck
 from scripts.deploy.nemo.preflight import changed_files, plan_for
 from scripts.deploy.nemo.probe import run_probe
@@ -179,6 +180,11 @@ def cmd_cutover(args: argparse.Namespace) -> int:
         configs=config_candidates(home), audit=audit,
     )
     write_manifest(audit / "manifest.json", result)
+    manifest_path = audit / "manifest.json"
+    existing = read_manifest(manifest_path)
+    sha = args.sha or existing.get("sha") or ""
+    if sha:
+        record_build_manifest(manifest_path, sha=str(sha), release_name=args.build)
     if not result["units"]:
         print("warning: no systemd units embed the previous release path", file=sys.stderr)
     print(json.dumps(result, indent=2, sort_keys=True))
@@ -208,18 +214,26 @@ def _systemctl_active(path: str, user: bool) -> bool:
 
 
 def cmd_health(args: argparse.Namespace) -> int:
-    units: list[tuple[str, bool]] = []
+    home = _home(args) if args.hermes_home else None
+    plan = resolve_health_plan(home)
+    units: list[tuple[str, bool]] = list(plan.extra_units)
     if args.manifest:
         for item in read_manifest(args.manifest).get("units") or []:
             units.append((str(item["path"]), bool(item.get("user"))))
     for path in args.unit:
         units.append((path, is_user_unit(Path(path))))
-    urls = [] if args.no_default_urls else [args.gateway_url, args.dashboard_url]
+    gateway_url = args.gateway_url or plan.gateway_url
+    dashboard_url = args.dashboard_url or plan.dashboard_url
+    urls = [] if args.no_default_urls else [gateway_url, dashboard_url]
     urls.extend(args.url)
+    socket_profiles = tuple(args.socket_profiles or ()) or plan.socket_profiles
+    resolved_home = home if home is not None else resolve_hermes_home(None)
+    socket_homes = socket_profile_homes(resolved_home, socket_profiles) if socket_profiles else []
     ok, checks = poll_until_healthy(
         units, urls, timeout_s=args.timeout, interval_s=args.interval,
         check_unit=_systemctl_active, check_url=lambda url: http_healthy(url, timeout=5),
         clock_fn=time.monotonic, sleep_fn=time.sleep,
+        socket_homes=socket_homes, socket_timeout=args.socket_timeout,
     )
     for item in checks:
         state = "ok" if item.ok else "fail"
@@ -326,6 +340,7 @@ def register(sub) -> None:
     _add_home(cutover)
     cutover.add_argument("--releases", type=Path, default=None)
     cutover.add_argument("--build", required=True)
+    cutover.add_argument("--sha", default=None)
     cutover.add_argument("--unit-dir", action="append", dest="unit_dirs", default=[])
     cutover.set_defaults(func=cmd_cutover)
 
@@ -334,14 +349,17 @@ def register(sub) -> None:
     units.set_defaults(func=cmd_list_units)
 
     health = sub.add_parser("health", help="poll systemd and the health endpoints")
+    _add_home(health)
     health.add_argument("--manifest", type=Path, default=None)
     health.add_argument("--unit", action="append", default=[])
     health.add_argument("--url", action="append", default=[])
-    health.add_argument("--gateway-url", default=DEFAULT_GATEWAY_HEALTH)
-    health.add_argument("--dashboard-url", default=DEFAULT_DASHBOARD_HEALTH)
+    health.add_argument("--socket-profile", action="append", dest="socket_profiles", default=[])
+    health.add_argument("--gateway-url", default=None)
+    health.add_argument("--dashboard-url", default=None)
     health.add_argument("--no-default-urls", action="store_true")
     health.add_argument("--timeout", type=float, default=DEFAULT_HEALTH_TIMEOUT_S)
     health.add_argument("--interval", type=float, default=DEFAULT_HEALTH_INTERVAL_S)
+    health.add_argument("--socket-timeout", type=float, default=5.0)
     health.set_defaults(func=cmd_health)
 
     post = sub.add_parser("postcheck", help="run the cron jobs' safe checks now")

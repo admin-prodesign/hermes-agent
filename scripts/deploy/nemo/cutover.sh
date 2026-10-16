@@ -21,8 +21,9 @@ Usage: cutover.sh --build NAME [options]
   --quiet SEC             Newest message must be at least this old. Default: 90.
   --poll SEC              Gate poll interval. Default: 30.
   --gate-timeout SEC      Default: 600.
-  --gateway-health URL    Default: http://127.0.0.1:8642/health
-  --dashboard-health URL  Default: http://127.0.0.1:9119/api/health
+  --gateway-health URL    Default: http://127.0.0.1:8644/health (PD Neo on nemo).
+  --dashboard-health URL  Default: http://127.0.0.1:8765/api/health.
+  --socket-profile NAME   Repeatable. Gateway control-socket check (default: pdone).
   --health-timeout SEC    Default: 90.
   --health-interval SEC   Default: 2.
   --skip-preflight        Skip diff-scoped verifies and pytest.
@@ -63,8 +64,9 @@ poll="30"
 gate_timeout="600"
 health_timeout="90"
 health_interval="2"
-gateway="http://127.0.0.1:8642/health"
-dashboard="http://127.0.0.1:9119/api/health"
+gateway=""
+dashboard=""
+socket_profiles=()
 profiles=()
 unit_dirs=()
 
@@ -95,6 +97,7 @@ while [[ $# -gt 0 ]]; do
     --skip-restart) skip_restart=1; shift ;;
     --skip-health) skip_health=1; shift ;;
     --skip-postcheck) skip_postcheck=1; shift ;;
+    --socket-profile) socket_profiles+=("${2:-}"); shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -218,6 +221,9 @@ cut_args=(
   -m scripts.deploy.nemo.cli cutover
   --hermes-home "${home}" --releases "${releases}" --build "${build}"
 )
+if [[ -n "${sha}" ]]; then
+  cut_args+=(--sha "${sha}")
+fi
 if [[ "${#unit_dirs[@]}" -gt 0 ]]; then
   for dir in "${unit_dirs[@]}"; do
     cut_args+=(--unit-dir "${dir}")
@@ -230,12 +236,23 @@ if [[ "${skip_restart}" != "1" ]]; then
 fi
 
 if [[ "${skip_health}" != "1" ]]; then
-  if ! nemo_python -m scripts.deploy.nemo.cli health \
-      --manifest "${manifest}" \
-      --gateway-url "${gateway}" \
-      --dashboard-url "${dashboard}" \
-      --timeout "${health_timeout}" \
-      --interval "${health_interval}"; then
+  health_args=(
+    -m scripts.deploy.nemo.cli health
+    --hermes-home "${home}"
+    --manifest "${manifest}"
+    --timeout "${health_timeout}"
+    --interval "${health_interval}"
+  )
+  if [[ -n "${gateway}" ]]; then
+    health_args+=(--gateway-url "${gateway}")
+  fi
+  if [[ -n "${dashboard}" ]]; then
+    health_args+=(--dashboard-url "${dashboard}")
+  fi
+  for prof in "${socket_profiles[@]}"; do
+    health_args+=(--socket-profile "${prof}")
+  done
+  if ! nemo_python "${health_args[@]}"; then
     printf '%s\n' "health check failed; rolling back" >&2
     bash "${here}/rollback.sh" --manifest "${manifest}" || printf '%s\n' "rollback did not finish cleanly" >&2
     exit 1

@@ -23,6 +23,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from scripts.deploy.nemo.autodeploy import Config, deploy_lock, deployed_sha, lock_path
+from scripts.deploy.nemo.manifest import main_matches_live
 from scripts.deploy.nemo.layout import releases_dir, resolve_hermes_home
 from scripts.deploy.nemo.release_swap import current_target
 from scripts.deploy.nemo.source import Run, run_cmd
@@ -71,7 +72,7 @@ def _decide(cfg: Config, git: Run, timeout: float) -> PollResult:
         main = remote_main(cfg.mirror, cfg.remote, timeout, git=git)
     except PollError as exc:
         return PollResult("error", live=live, detail=str(exc))
-    if main == live:
+    if main_matches_live(main, live or None):
         return PollResult("live", main, live)
     if main in refused_shas(cfg.home):
         return PollResult("refused", main, live, "refused earlier; `autodeploy.py retry` to try again")

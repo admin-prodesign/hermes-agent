@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import stat
 import subprocess
@@ -24,7 +25,8 @@ from scripts.deploy.nemo import autodeploy, poll
 from scripts.deploy.nemo.autodeploy import Config, Hooks, check_drift, fetch_main, on_main, run_once
 from scripts.deploy.nemo.autodeploy_units import UnitOptions, render
 from scripts.deploy.nemo.changes import NOOP, RESTART, SKILLS, classify
-from scripts.deploy.nemo.manifest import write_manifest
+from scripts.deploy.nemo.manifest import live_sha, main_matches_live, sha_from_release_name, write_manifest
+from scripts.deploy.nemo.preflight import deploy_preflight
 from scripts.deploy.nemo.poll import PollResult, poll_once
 from scripts.deploy.nemo.retention import keep_set, prune, running_build, set_running
 from scripts.deploy.nemo.spool import enqueue, queue_dir, queued_shas, refuse, refused_shas
@@ -53,6 +55,18 @@ def _commit(work: Path, files: dict[str, str], message: str) -> str:
     _git(work, "add", "-A")
     _git(work, "commit", "-q", "-m", message)
     return _git(work, "rev-parse", "HEAD")
+
+
+@pytest.fixture(autouse=True)
+def _uv_available_for_deploy(monkeypatch) -> None:
+    real_which = shutil.which
+
+    def _which(cmd: str, path: str | None = None) -> str | None:
+        if cmd == "uv":
+            return "/bin/uv"
+        return real_which(cmd, path=path)
+
+    monkeypatch.setattr("scripts.deploy.nemo.preflight.shutil.which", _which)
 
 
 @pytest.fixture
@@ -99,7 +113,7 @@ def _write_db(path: Path, message_at: float) -> None:
 
 
 def _cutover(home: Path, build: str, *extra: str) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "NEMO_PYTHON": sys.executable}
+    env = {**os.environ, "NEMO_PYTHON": sys.executable, "NEMO_DEPLOY_SOCKET_PROFILES": ""}
     argv = ["bash", str(NEMO / "cutover.sh"), "--hermes-home", str(home), "--build", build,
             "--sha", "b" * 40, "--unit-dir", str(home / "units"), "--skip-preflight", "--skip-selftest",
             "--skip-postcheck", *extra]
@@ -332,7 +346,7 @@ def test_busy_profiles_leave_the_sha_for_the_next_poll(tmp_path: Path, origin) -
 
 
 @pytest.mark.platforms("linux", "macos")
-def test_worker_prunes_a_rolled_back_build_and_keeps_the_live_one(tmp_path: Path, origin) -> None:
+def test_worker_keeps_failed_build_dir_and_does_not_prune_on_cutover_failure(tmp_path: Path, origin) -> None:
     work, mirror, base = origin
     new = _commit(work, {"agent/core.py": "X = 3\n"}, "code")
     _git(work, "push", "-q", "origin", "main")
@@ -343,7 +357,7 @@ def test_worker_prunes_a_rolled_back_build_and_keeps_the_live_one(tmp_path: Path
     assert outcome.result == "failed" and "still on old" in outcome.detail
     assert os.readlink(releases / "current") == "old"
     assert running_build(releases) == "old"
-    assert not (releases / new[:12]).exists()
+    assert (releases / new[:12]).exists()
     status = json.loads((home / "deploy" / "status.json").read_text(encoding="utf-8"))
     assert status["result"] == "failed"
     assert new in refused_shas(home)
@@ -414,8 +428,9 @@ def test_prune_keeps_current_its_rollback_target_and_the_running_build(tmp_path:
     assert removed == [".staging-r5.abc", "r1"]
     assert sorted(p.name for p in releases.iterdir() if not p.name.startswith(".")) == ["current", "r2", "r3", "r4"]
     assert fresh.is_dir()
-    assert prune(releases, keep_set(home, releases, with_previous=False)) == ["r3"]
+    assert prune(releases, keep_set(home, releases, with_previous=False)) == []
     assert prune(tmp_path / "empty", set()) == []
+    assert prune(releases, keep_set(home, releases, with_previous=False), allow=False) == []
 
 
 # ---------------------------------------------------------------- drift
@@ -450,6 +465,24 @@ def test_drift_reports_edits_deletions_strays_and_old_units(tmp_path: Path, orig
     assert "hand edit" not in report.summary()
 
 
+def test_drift_accepts_release_dir_sha_when_manifest_is_missing(tmp_path: Path, origin) -> None:
+    work, mirror, base = origin
+    home = tmp_path / "hermes"
+    releases = home / "releases"
+    build = "hermes-agent-" + base[:10] + "-live"
+    _release(releases, build)
+    os.symlink(build, releases / "current")
+    live = releases / build
+    for rel in ("agent/core.py", "skills/demo/SKILL.md"):
+        (live / rel).parent.mkdir(parents=True, exist_ok=True)
+        (live / rel).write_bytes((work / rel).read_bytes())
+    (live / "pyproject.toml").write_bytes((work / "pyproject.toml").read_bytes())
+    cfg = Config(home=home, mirror=mirror, releases=releases)
+    report = check_drift(cfg, unit_dirs=[], max_lag_s=0)
+    assert report.error is None
+    assert report.clean
+
+
 def test_drift_flags_main_moving_ahead_of_the_live_sha(tmp_path: Path, origin) -> None:
     work, mirror, base = origin
     _commit(work, {"agent/core.py": "X = 5\n"}, "ahead")
@@ -465,10 +498,39 @@ def test_drift_flags_main_moving_ahead_of_the_live_sha(tmp_path: Path, origin) -
 # ---------------------------------------------------------------- install
 
 
+def test_live_sha_infers_hermes_agent_release_names_and_matches_main_prefix() -> None:
+    name = "hermes-agent-deadbeef01-extra"
+    assert sha_from_release_name(name) == "deadbeef01"
+    assert main_matches_live("deadbeef01" + "a" * 30, "deadbeef01")
+
+
+def test_poll_treats_inferred_live_sha_as_current(tmp_path: Path, origin) -> None:
+    work, mirror, base = origin
+    home = tmp_path / "hermes"
+    releases = home / "releases"
+    build = "hermes-agent-" + base[:10] + "-manual"
+    _release(releases, build)
+    os.symlink(build, releases / "current")
+    assert live_sha(home, build) == base[:10].lower()
+    assert _poll(home, releases, mirror).action == "live"
+
+
+def test_worker_fails_fast_when_uv_is_missing(tmp_path: Path, origin, monkeypatch) -> None:
+    work, mirror, base = origin
+    new = _push(work, {"agent/core.py": "X = 9\n"})
+    home, releases = _live_home(tmp_path, base)
+    _queue(home, new)
+    monkeypatch.setattr("scripts.deploy.nemo.preflight.shutil.which", lambda *_a, **_k: None)
+    assert deploy_preflight() is not None
+    outcome = run_once(Config(home=home, mirror=mirror, releases=releases), _Recorder(releases, home).hooks())
+    assert outcome.result == "failed" and "uv" in outcome.detail.lower()
+
+
 def test_units_run_from_current_and_poll_the_mirror_on_a_jittered_timer(tmp_path: Path) -> None:
     home = tmp_path / "hermes"
     mirror = tmp_path / "mirror.git"
-    units = render(UnitOptions(home=home, releases=home / "releases", mirror=mirror, path_env="/usr/bin"))
+    units = render(UnitOptions(home=home, releases=home / "releases", mirror=mirror))
+    assert ".local/bin" in units["hermes-deploy-poll.service"]
     current = str(home / "releases" / "current")
     poller = units["hermes-deploy-poll.service"]
     assert f"{current}/.venv/bin/python -m scripts.deploy.nemo.poll" in poller

@@ -13,7 +13,7 @@ import stat
 import time
 from pathlib import Path
 
-from scripts.deploy.nemo.layout import audit_dir
+from scripts.deploy.nemo.layout import DEFAULT_KEEP_RECENT_RELEASES, audit_dir
 from scripts.deploy.nemo.manifest import read_manifest
 from scripts.deploy.nemo.release_swap import current_target
 
@@ -42,13 +42,28 @@ def previous_build(home: Path, current: str | None) -> str | None:
     return str(previous) if previous else None
 
 
-def keep_set(home: Path, releases: Path, *, with_previous: bool) -> set[str]:
+def recent_release_names(releases: Path, keep_recent: int) -> set[str]:
+    if keep_recent <= 0 or not releases.is_dir():
+        return set()
+    ranked: list[tuple[float, str]] = []
+    for child in releases.iterdir():
+        if not child.is_dir() or child.name.startswith(".") or child.is_symlink():
+            continue
+        ranked.append((child.stat().st_mtime, child.name))
+    ranked.sort(reverse=True)
+    return {name for _, name in ranked[:keep_recent]}
+
+
+def keep_set(
+    home: Path, releases: Path, *, with_previous: bool, keep_recent: int = DEFAULT_KEEP_RECENT_RELEASES,
+) -> set[str]:
     current = current_target(releases)
     keep = {name for name in (current, running_build(releases)) if name}
     if with_previous:
         previous = previous_build(home, current)
         if previous:
             keep.add(previous)
+    keep |= recent_release_names(releases, keep_recent)
     return {os.path.basename(name) for name in keep}
 
 
@@ -73,9 +88,12 @@ def _abandoned_staging(path: Path, now: float, stale_s: float) -> bool:
     return path.name.startswith(".staging-") and now - path.stat().st_mtime > stale_s
 
 
-def prune(releases: Path, keep: set[str], *, now: float | None = None, staging_stale_s: float = STAGING_STALE_S) -> list[str]:
+def prune(
+    releases: Path, keep: set[str], *, now: float | None = None, staging_stale_s: float = STAGING_STALE_S,
+    allow: bool = True,
+) -> list[str]:
     """Remove release directories not in ``keep`` and abandoned staging. Call under the deploy lock."""
-    if not releases.is_dir() or not keep:
+    if not allow or not releases.is_dir() or not keep:
         return []
     clock = time.time() if now is None else now
     removed: list[str] = []
