@@ -125,8 +125,8 @@ from agent.auxiliary_health import (
     fallback_candidate_unavailable_reason,
 )
 from agent.auxiliary_unavailable import (
-    AuxiliaryClientUnavailable, clear_nous_credential_failure, missing_provider_credentials_message,
-    nous_credential_failure_detail, record_nous_credential_failure)
+    AuxiliaryClientUnavailable, clear_nous_credential_failure, explicit_route_rescue,
+    missing_provider_credentials_message, nous_credential_failure_detail, record_nous_credential_failure)
 from hermes_constants import OPENROUTER_BASE_URL, hermes_home_key
 from utils import base_url_host_matches, base_url_hostname, base_url_origin, env_float, is_truthy_value, model_forces_max_completion_tokens, normalize_proxy_env_vars
 
@@ -7426,12 +7426,16 @@ def _resolve_call_client(
             model=resolved_model or model, base_url=resolved_base_url or base_url,
             api_key=resolved_api_key or api_key, async_mode=async_mode, main_runtime=main_runtime,
         )
-        if client is None and resolved_provider != "auto" and not resolved_base_url:
+        # Explicit provider with no client: its task fallback_chain or a raise, never auto + its model.
+        rescued = (explicit_route_rescue(task, resolved_provider, async_mode=async_mode)
+                   if client is None and not resolved_base_url else None)
+        if rescued is not None:
+            client, final_model, effective_provider = rescued
+        elif client is None and resolved_provider != "auto" and not resolved_base_url:
             logger.warning("Vision provider %s unavailable, falling back to auto vision backends",
                            resolved_provider)
             effective_provider, client, final_model = resolve_vision_provider_client(
-                provider="auto", model=resolved_model, async_mode=async_mode,
-                main_runtime=main_runtime)
+                provider="auto", async_mode=async_mode, main_runtime=main_runtime)
         if client is not None:
             resolved_provider = effective_provider or resolved_provider
     else:
@@ -7443,19 +7447,9 @@ def _resolve_call_client(
         if client is None:
             # Explicit provider with no credentials: honor the task fallback_chain before
             # raising (fallback entries may use OAuth / credential-pool auth).
-            _explicit = (resolved_provider or "").strip().lower()
-            if _explicit and _explicit not in {"auto", "openrouter", "custom"}:
-                fb_client, fb_model, fb_label = _try_configured_fallback_for_unavailable_client(
-                    task, _explicit)
-                if fb_client is None:
-                    nous_detail = nous_credential_failure_detail() if _explicit == "nous" else None
-                    raise AuxiliaryClientUnavailable(
-                        nous_detail or missing_provider_credentials_message(_explicit))
-                client, final_model = fb_client, fb_model
-                if async_mode:
-                    client, final_model = _to_async_client(
-                        fb_client, fb_model or "", is_vision=(task == "vision"))
-                resolved_provider = fb_label or resolved_provider
+            rescued = explicit_route_rescue(task, resolved_provider, async_mode=async_mode)
+            if rescued is not None:
+                client, final_model, resolved_provider = rescued
                 effective_provider = resolved_provider
             # Auto/custom with no credentials: walk the full auto chain (not just OpenRouter).
             # model=None so each provider uses its own default.
