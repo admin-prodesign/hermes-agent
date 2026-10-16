@@ -31,6 +31,27 @@ LEGACY_UNITS = ("hermes-deploy-listener.service",)
 _SAFE_ARG = re.compile(r"[A-Za-z0-9_@%+=:,./-]+")
 
 
+def service_path_env() -> str:
+    """``PATH`` for systemd units: caller env plus common user-local tool dirs."""
+    parts: list[str] = []
+    seen: set[str] = set()
+    home = Path.home()
+    for candidate in (
+        os.environ.get("PATH", ""),
+        f"{home}/.local/bin",
+        f"{home}/.cargo/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ):
+        for item in candidate.split(":"):
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            parts.append(item)
+    return ":".join(parts)
+
+
 @dataclass
 class UnitOptions:
     home: Path
@@ -45,7 +66,7 @@ class UnitOptions:
     poll_every: str = "60s"
     poll_jitter: str = "20s"
     drift_every: str = "1h"
-    path_env: str = field(default_factory=lambda: os.environ.get("PATH", "/usr/bin:/bin"))
+    path_env: str = field(default_factory=service_path_env)
 
     @property
     def current(self) -> Path:
@@ -166,6 +187,37 @@ def _systemctl(scope: str, *args: str) -> int:
     return subprocess.run(argv, timeout=60, stdin=subprocess.DEVNULL, check=False).returncode
 
 
+def _unit_lifecycle(scope: str, unit: str) -> tuple[bool | None, bool | None]:
+    """Return ``(enabled, active)``; ``None`` when the unit is not installed."""
+    enabled_code = _systemctl(scope, "is-enabled", unit)
+    if enabled_code == 0:
+        enabled = True
+    elif enabled_code == 1:
+        enabled = False
+    else:
+        return None, None
+    active = _systemctl(scope, "is-active", unit) == 0
+    return enabled, active
+
+
+def _capture_unit_states(scope: str, units: tuple[str, ...]) -> dict[str, tuple[bool | None, bool | None]]:
+    return {name: _unit_lifecycle(scope, name) for name in units}
+
+
+def _restore_unit_states(scope: str, states: dict[str, tuple[bool | None, bool | None]]) -> None:
+    for unit, (enabled, active) in states.items():
+        if enabled is None:
+            continue
+        if enabled:
+            _systemctl(scope, "enable", unit)
+        else:
+            _systemctl(scope, "disable", unit)
+        if active:
+            _systemctl(scope, "start", unit)
+        elif enabled:
+            _systemctl(scope, "stop", unit)
+
+
 def _remove_legacy(scope: str, directory: Path) -> None:
     """The push listener from the first version of this tool; its module is gone."""
     stale = legacy_present(directory)
@@ -202,12 +254,16 @@ def cmd_install(args: argparse.Namespace) -> int:
     if not opts.python.exists():
         print(f"{opts.python} is missing; deploy a release with cutover.sh first", file=sys.stderr)
         return 1
+    prior = _capture_unit_states(opts.scope, ENABLED)
     _remove_legacy(opts.scope, directory)
     changed = write_units(directory, units)
     print("unchanged" if not changed else "wrote " + ", ".join(changed))
     if _systemctl(opts.scope, "daemon-reload") != 0:
         return 1
-    return _systemctl(opts.scope, "enable", "--now", *ENABLED)
+    if args.enable:
+        return _systemctl(opts.scope, "enable", "--now", *ENABLED)
+    _restore_unit_states(opts.scope, prior)
+    return 0
 
 
 def cmd_uninstall(args: argparse.Namespace) -> int:
@@ -233,7 +289,11 @@ def main(argv: list[str] | None = None) -> int:
     install.add_argument("--run-as", default=None, help="system scope: user for the poll and drift check")
     install.add_argument("--worker-user", default=None, help="system scope: user for the deploy worker")
     install.add_argument("--dry-run", action="store_true")
-    install.set_defaults(func=cmd_install)
+    install.add_argument(
+        "--enable", action="store_true",
+        help="enable and start poll/path/drift units (default: preserve existing enable/active state)",
+    )
+    install.set_defaults(func=cmd_install, enable=False)
     uninstall = sub.add_parser("uninstall", help="disable and remove the pull-deploy units")
     uninstall.add_argument("--scope", choices=("user", "system"), default="user")
     uninstall.set_defaults(func=cmd_uninstall)

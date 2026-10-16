@@ -71,8 +71,9 @@ That should print one `<sha>\trefs/heads/main` line.
   If the profiles are still busy it exits 75 and nothing changes. You get a `waiting`
   alert, and the next poll queues the newest `main` again for another wait. A running
   turn is never interrupted.
-- **Rollback.** If systemd or `/health` (gateway `:8642`, dashboard `:9119`) is not
-  healthy within 90 s of the restart, `cutover.sh` restores the previous symlink,
+- **Rollback.** If systemd, the gateway control socket (PD One LINE / `pdone`), or HTTP
+  health (PD Neo `:8644`, dashboard `:8765` on nemo) is not healthy within 90 s of the
+  restart, `cutover.sh` restores the previous symlink,
   unit files, and configs from `upgrade-audits/<build>/` and restarts again.
 - **Refused SHAs.** A SHA that is `rejected` (not on main, or older than the live one)
   or `failed` (build failed, too little disk, rolled back, skill sync failed) goes into

@@ -28,10 +28,12 @@ from scripts.deploy.nemo.changes import RESTART, SKILLS, changed_paths, classify
 from scripts.deploy.nemo.drift import DriftReport, compare_tree, main_lag, stray_units, tree_blobs
 from scripts.deploy.nemo.hot import sync_profiles
 from scripts.deploy.nemo.layout import (
-    DEFAULT_EXTRA, DEFAULT_POLL_S, DEFAULT_PROFILES, DEFAULT_QUIET_S, audit_dir, releases_dir,
+    DEFAULT_EXTRA, DEFAULT_POLL_S, DEFAULT_PROFILES, DEFAULT_QUIET_S, releases_dir,
     resolve_hermes_home,
 )
-from scripts.deploy.nemo.manifest import read_manifest
+from scripts.deploy.nemo.manifest import live_sha, resolve_sha_in_mirror
+from scripts.deploy.nemo.autodeploy_units import service_path_env
+from scripts.deploy.nemo.preflight import deploy_preflight, is_environment_failure
 from scripts.deploy.nemo.release_swap import current_target
 from scripts.deploy.nemo.retention import keep_set, prune, running_build, set_running
 from scripts.deploy.nemo.source import Run, run_cmd
@@ -123,6 +125,7 @@ def deploy_lock(path: Path, *, blocking: bool = True) -> Iterator[bool]:
 def _script_env() -> dict[str, str]:
     env = dict(os.environ)
     env.setdefault("NEMO_PYTHON", sys.executable)
+    env["PATH"] = service_path_env()
     return env
 
 
@@ -165,10 +168,7 @@ def is_ancestor(cfg: Config, older: str, newer: str, git: Run) -> bool:
 
 
 def deployed_sha(cfg: Config, build: str | None) -> str | None:
-    if not build:
-        return None
-    sha = read_manifest(audit_dir(cfg.home, os.path.basename(build)) / "manifest.json").get("sha")
-    return str(sha) if sha else None
+    return live_sha(cfg.home, build)
 
 
 def release_ready(release: Path) -> bool:
@@ -198,12 +198,18 @@ def cutover_argv(cfg: Config, sha: str, build: str, old_sha: str | None, mode: s
                    "--skip-postcheck"]
 
 
-def _prepare_release(cfg: Config, item: Queued, build: str, hooks: Hooks) -> str | None:
+def _prepare_release(cfg: Config, item: Queued, build: str, hooks: Hooks, *, live_known: bool) -> str | None:
     release = cfg.releases / build
     if release_ready(release):
         return None
     if release.exists():
-        prune(cfg.releases, keep_set(cfg.home, cfg.releases, with_previous=False))
+        if not live_known:
+            return f"{release} exists but is not a finished release (live SHA unknown; not pruning)"
+        prune(
+            cfg.releases,
+            keep_set(cfg.home, cfg.releases, with_previous=True) | {build},
+            allow=True,
+        )
         if release.exists():
             return f"{release} exists but is not a finished release"
     free = hooks.disk_free(cfg.releases)
@@ -215,7 +221,8 @@ def _prepare_release(cfg: Config, item: Queued, build: str, hooks: Hooks) -> str
 
 
 def _cutover(cfg: Config, item: Queued, build: str, old_build: str | None, mode: str, hooks: Hooks) -> Outcome:
-    code = hooks.script(cutover_argv(cfg, item.sha, build, deployed_sha(cfg, old_build), mode))
+    old_sha = _expanded_sha(cfg, deployed_sha(cfg, old_build), hooks.git)
+    code = hooks.script(cutover_argv(cfg, item.sha, build, old_sha, mode))
     if code == GATE_BUSY:
         return Outcome("waiting", item.sha, build, mode,
                        f"profiles stayed busy for {int(cfg.gate_timeout_s)}s; retrying")
@@ -236,7 +243,16 @@ def _cutover(cfg: Config, item: Queued, build: str, old_build: str | None, mode:
     return Outcome("deployed", item.sha, build, mode, "no runtime change; no restart")
 
 
+def _expanded_sha(cfg: Config, sha: str | None, git: Run) -> str | None:
+    if not sha:
+        return None
+    return resolve_sha_in_mirror(cfg.mirror, sha, run=git) or sha
+
+
 def deploy(cfg: Config, item: Queued, hooks: Hooks) -> Outcome:
+    preflight = deploy_preflight(path=service_path_env())
+    if preflight:
+        return Outcome("failed", item.sha, detail=preflight)
     problem = fetch_main(cfg, hooks.git)
     if problem:
         return Outcome("deferred", item.sha, detail=problem)
@@ -244,17 +260,24 @@ def deploy(cfg: Config, item: Queued, hooks: Hooks) -> Outcome:
     if reason:
         return Outcome("rejected", item.sha, detail=reason)
     old_build = current_target(cfg.releases)
-    old_sha = deployed_sha(cfg, old_build)
+    old_sha = _expanded_sha(cfg, deployed_sha(cfg, old_build), hooks.git)
     build = build_name(item.sha)
-    if old_sha == item.sha or (old_build and os.path.basename(old_build) == build):
+    if old_sha and (old_sha == item.sha.lower() or item.sha.lower().startswith(old_sha)):
+        return Outcome("live", item.sha, build, detail="already live")
+    if old_build and os.path.basename(old_build) == build:
         return Outcome("live", item.sha, build, detail="already live")
     if old_sha and is_ancestor(cfg, item.sha, old_sha, hooks.git):
         return Outcome("rejected", item.sha, detail=f"older than the live {old_sha[:12]}")
     if old_build and running_build(cfg.releases) is None:
         set_running(cfg.releases, os.path.basename(old_build))
     mode = classify(changed_paths(cfg.mirror, old_sha, item.sha, run=hooks.git)) if old_sha else RESTART
-    prune(cfg.releases, keep_set(cfg.home, cfg.releases, with_previous=False) | {build})
-    problem = _prepare_release(cfg, item, build, hooks)
+    if old_sha:
+        prune(
+            cfg.releases,
+            keep_set(cfg.home, cfg.releases, with_previous=True) | {build},
+            allow=True,
+        )
+    problem = _prepare_release(cfg, item, build, hooks, live_known=bool(old_sha))
     if problem:
         return Outcome("failed", item.sha, build, mode, problem)
     return _cutover(cfg, item, build, old_build, mode, hooks)
@@ -282,11 +305,11 @@ def send_alert(script: Path | None, subject: str, body: str) -> None:
 
 
 def _finish(cfg: Config, item: Queued, outcome: Outcome) -> None:
-    if outcome.result in {"deployed", "failed"}:
-        removed = prune(cfg.releases, keep_set(cfg.home, cfg.releases, with_previous=True))
+    if outcome.result == "deployed" and live_sha(cfg.home, current_target(cfg.releases)):
+        removed = prune(cfg.releases, keep_set(cfg.home, cfg.releases, with_previous=True), allow=True)
         if removed:
             print("pruned " + ", ".join(removed))
-    if outcome.result in REFUSED_RESULTS:
+    if outcome.result in REFUSED_RESULTS and not is_environment_failure(outcome.detail):
         refuse(cfg.home, item.sha, outcome.result, outcome.detail)
     _record(cfg, outcome)
     if outcome.alert:
@@ -313,17 +336,22 @@ def check_drift(cfg: Config, *, unit_dirs: list[Path], max_lag_s: float, git: Ru
     build = current_target(cfg.releases)
     sha = deployed_sha(cfg, build) or ""
     report = DriftReport(sha=sha or "unknown")
-    if not build or not sha:
-        report.error = "releases/current has no build manifest with a sha"
+    if not build:
+        report.error = "releases/current is missing"
         return report
+    if not sha:
+        report.error = "releases/current has no SHA (manifest or release directory name)"
+        return report
+    full_sha = resolve_sha_in_mirror(cfg.mirror, sha, run=git) or sha
+    report.sha = full_sha
     try:
-        compare_tree(cfg.releases / os.path.basename(build), tree_blobs(cfg.mirror, sha, run=git), report)
+        compare_tree(cfg.releases / os.path.basename(build), tree_blobs(cfg.mirror, full_sha, run=git), report)
     except (RuntimeError, subprocess.TimeoutExpired) as exc:
         report.error = str(exc)
     allowed = {os.path.basename(build)} | {running_build(cfg.releases) or ""}
     report.units = stray_units(unit_dirs, cfg.releases, allowed)
     if max_lag_s > 0 and not any(queue_dir(cfg.home).glob("*.json")):
-        report.behind = main_lag(cfg.mirror, sha, time.time() if now is None else now, max_lag_s,
+        report.behind = main_lag(cfg.mirror, full_sha, time.time() if now is None else now, max_lag_s,
                                  remote=cfg.remote, run=git, ref=DRIFT_MAIN_REF)
     return report
 

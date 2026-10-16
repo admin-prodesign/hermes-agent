@@ -7,11 +7,18 @@ than running it.
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.deploy.nemo.source import Run, run_cmd
+
+UV_MISSING_MSG = (
+    "uv is required on PATH (install via https://docs.astral.sh/uv/getting-started/installation/ "
+    "and ensure ~/.local/bin is on PATH for systemd units)"
+)
 
 
 @dataclass(frozen=True)
@@ -95,3 +102,28 @@ def verify_script(name: str) -> str:
         if item.name == name:
             return item.script
     raise KeyError(name)
+
+
+def uv_search_path() -> str:
+    from scripts.deploy.nemo.autodeploy_units import service_path_env
+
+    return service_path_env()
+
+
+def require_uv(path: str | None = None) -> str | None:
+    """``None`` when ``uv`` is reachable on ``path`` (default: service PATH)."""
+    search = path if path is not None else uv_search_path()
+    return None if shutil.which("uv", path=search) else UV_MISSING_MSG
+
+
+def deploy_preflight(*, path: str | None = None) -> str | None:
+    """Fail-fast checks before prune or build. Returns a human-readable error."""
+    return require_uv(path)
+
+
+def is_environment_failure(detail: str) -> bool:
+    """Host/tooling problems that should not mark a SHA refused."""
+    text = detail or ""
+    if UV_MISSING_MSG in text or "uv is required on PATH" in text:
+        return True
+    return False
