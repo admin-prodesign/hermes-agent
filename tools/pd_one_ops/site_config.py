@@ -399,7 +399,7 @@ class ExternalPath:
     def __fspath__(self) -> str:
         found = self.path()
         if found is None:
-            return f"<unset pd_one.external.{self.key}>"
+            return f"{UNSET_MARK}{self.key}>"
         return os.fspath(found)
 
     def __str__(self) -> str:
