@@ -262,6 +262,9 @@ mkdir -p "${releases}"
 mv "${staging}" "${release_path}"
 staging=""
 created=1
+# Tool sources are read by an interpreter, never executed. Publishing them without the exec bit
+# makes any launch that still depends on it fail the cutover selftest instead of a user's call.
+find "${release_path}/tools" -type f -name '*.py' -exec chmod a-x {} +
 chmod -R a-w "${release_path}"
 published=1
 

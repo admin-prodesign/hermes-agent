@@ -24,6 +24,7 @@ class _PdUnset:
 _PdUnset = _PdUnset()
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
+from tools.pd_one_ops.launch import checked_argv
 import os
 import argparse
 import json
@@ -55,7 +56,7 @@ def deny_payload(reason: str, **extra: Any) -> dict[str, Any]:
     return payload
 
 def fetch_permissions(file_id: str, account: str, *, runner: Any=subprocess.run) -> list[dict[str, Any]]:
-    command = [GOG(), 'drive', 'permissions', file_id, '--account', account, '--json', '--no-input']
+    command = checked_argv([GOG(), 'drive', 'permissions', file_id, '--account', account, '--json', '--no-input'])
     proc = runner(command, text=True, capture_output=True, timeout=120, check=False)
     if proc.returncode != 0:
         raise RuntimeError('drive permissions lookup failed')
@@ -66,7 +67,7 @@ def fetch_permissions(file_id: str, account: str, *, runner: Any=subprocess.run)
     return [row for row in data.get('permissions', []) if isinstance(row, dict)]
 
 def fetch_file_name(file_id: str, account: str, *, runner: Any=subprocess.run) -> str:
-    command = [GOG(), 'drive', 'get', file_id, '--account', account, '--json', '--no-input']
+    command = checked_argv([GOG(), 'drive', 'get', file_id, '--account', account, '--json', '--no-input'])
     proc = runner(command, text=True, capture_output=True, timeout=60, check=False)
     if proc.returncode != 0:
         return ''

@@ -26,6 +26,10 @@ Usage: cutover.sh --build NAME [options]
   --health-timeout SEC    Default: 90.
   --health-interval SEC   Default: 2.
   --skip-preflight        Skip diff-scoped verifies and pytest.
+  --skip-selftest         Skip the PD One safe-ops selftest against the new release.
+  --selftest-profile NAME Profile the selftest reads pd_one config from. Default: pdone.
+  --selftest-allow-missing KEY
+                          Repeatable. pd_one.external key that is absent on this host on purpose.
   --skip-pytest           Run verifies, and leave pytest to CI.
   --skip-gate             Do not wait for a quiet window.
   --skip-restart          Do not systemctl restart.
@@ -47,6 +51,9 @@ old_sha=""
 full=0
 skip_pytest=0
 skip_preflight=0
+skip_selftest=0
+selftest_profile="pdone"
+selftest_allow_missing=()
 skip_gate=0
 skip_restart=0
 skip_health=0
@@ -80,6 +87,9 @@ while [[ $# -gt 0 ]]; do
     --health-timeout) health_timeout="${2:-}"; shift 2 ;;
     --health-interval) health_interval="${2:-}"; shift 2 ;;
     --skip-preflight) skip_preflight=1; shift ;;
+    --skip-selftest) skip_selftest=1; shift ;;
+    --selftest-profile) selftest_profile="${2:-}"; shift 2 ;;
+    --selftest-allow-missing) selftest_allow_missing+=("${2:-}"); shift 2 ;;
     --skip-pytest) skip_pytest=1; shift ;;
     --skip-gate) skip_gate=1; shift ;;
     --skip-restart) skip_restart=1; shift ;;
@@ -147,7 +157,7 @@ run_selected_tests() {
     printf '%s\n' "pytest is not installed here; CI runs the unit tests"
     return 0
   fi
-  (cd "${nemo_repo}" && scripts/run_tests.sh "$@")
+  (cd "${nemo_repo}" && bash scripts/run_tests.sh "$@")
 }
 
 run_preflight() {
@@ -176,6 +186,23 @@ run_preflight() {
 
 if [[ "${skip_preflight}" != "1" ]]; then
   run_preflight
+fi
+
+# Every safe-ops tool, called harmlessly from the new read-only release with the live profile's
+# config, before anything is swapped.
+run_selftest() {
+  local -a args=(--hermes-home "${home}" --profile "${selftest_profile}")
+  local key
+  if [[ "${#selftest_allow_missing[@]}" -gt 0 ]]; then
+    for key in "${selftest_allow_missing[@]}"; do
+      args+=(--allow-missing "${key}")
+    done
+  fi
+  (cd "${release}" && "${venv_python}" -m tools.pd_one_ops.selftest "${args[@]}")
+}
+
+if [[ "${skip_selftest}" != "1" ]]; then
+  run_selftest || die "pd-one safe-ops selftest failed against ${release}; nothing was changed"
 fi
 
 if [[ "${skip_gate}" != "1" ]]; then

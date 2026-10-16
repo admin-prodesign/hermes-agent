@@ -112,7 +112,8 @@ def company_emails(rec: dict[str, Any]) -> list[str]:
 def is_admin(rec: dict[str, Any]) -> bool:
     roles = [str(r) for r in rec.get('roles') or []] + [str(r) for r in rec.get('extraRoles') or []]
     uname = str(rec.get('mattermostUsername') or '').strip().lower()
-    return 'admin' in roles or uname in {site_text('PDONE_OWNER_MM_USERNAME'), 'admin'}
+    admin_names = {name for name in (site_text('PDONE_OWNER_MM_USERNAME').strip().lower(), 'admin') if name}
+    return 'admin' in roles or uname in admin_names
 
 def ps_quote(s: str) -> str:
     return "'" + s.replace("'", "''") + "'"
@@ -132,12 +133,56 @@ def run_helper(command: str, path: str, max_items: int, max_bytes: int) -> dict[
     result['via'] = {'host': host, 'helper': 'sqlsrv_readonly', 'smb_identity': 'redacted-vm-helper'}
     return result
 
+def _red_line(text: str) -> bool:
+    return bool(RED_LINE_PATH_RE.search(str(text or '')))
+
+def _read_aces(aces: list[dict[str, Any]], kind: str) -> bool:
+    return any(ace.get('type') == kind and READ_RIGHTS_RE.search(str(ace.get('rights') or '')) for ace in aces)
+
+def authorize(requester_user_id: str, path: str) -> dict[str, Any]:
+    """Live NTFS Read/Write for the requester's AD account on ``path``. Every doubt is a refusal."""
+    if _red_line(path):
+        fail('payroll, credential, and HR-evaluation paths are not readable through PD One', {'path': path})
+    rec = load_user(requester_user_id)
+    target = sqlsrv.unc_path(path)
+    if is_admin(rec):
+        return {'ok': True, 'authorized': True, 'admin_bypass': True, 'path': target, 'windows_sam': None, 'matched_ace_count': 0}
+    emails = company_emails(rec)
+    if not emails:
+        fail('requester has no company email for the AD lookup', {'requester_user_id': requester_user_id})
+    vals = sqlsrv.load_env()
+    session, _host, user, password = sqlsrv.make_session(vals)
+    raw = sqlsrv.run_via_task(session, user, password, authorize_payload(target, emails, str(rec.get('displayName') or '')), timeout=120)
+    aces = [ace for ace in raw.get('matched_aces') or [] if isinstance(ace, dict)]
+    errors = [str(error) for error in raw.get('errors') or []]
+    authorized = bool(raw.get('authorized')) and _read_aces(aces, 'Allow') and not _read_aces(aces, 'Deny') and not errors
+    result = {'ok': not errors, 'authorized': authorized, 'admin_bypass': False, 'path': target, 'windows_sam': raw.get('sam'), 'matched_ace_count': len(aces), 'matched_aces': aces}
+    if not authorized:
+        result['error'] = '; '.join(errors) or 'NTFS does not grant Read or Write on that path to the requester'
+    return result
+
+def _without_red_line_items(result: dict[str, Any]) -> dict[str, Any]:
+    items = result.get('items')
+    if not isinstance(items, list):
+        return result
+    kept = [item for item in items if not (isinstance(item, dict) and any(_red_line(value) for value in item.values() if isinstance(value, str)))]
+    return {**result, 'items': kept, 'red_line_items_withheld': len(items) - len(kept)}
+
+def cmd_run(args: argparse.Namespace) -> None:
+    auth = authorize(args.requester_user_id, args.path)
+    if args.action == 'authorize':
+        print(json.dumps(auth, ensure_ascii=False, indent=2))
+        return
+    if not auth['authorized']:
+        fail(auth.get('error') or 'not authorized', {'path': auth.get('path')})
+    result = run_helper(args.action, args.path, max(1, min(int(args.max_items), 200)), max(1, min(int(args.max_bytes), 5000000)))
+    summary = {key: auth.get(key) for key in ('authorized', 'admin_bypass', 'windows_sam', 'matched_ace_count')}
+    print(json.dumps({**_without_red_line_items(result), 'authorization': summary, 'safety': {'read_only': True, 'writes_implemented': False}}, ensure_ascii=False, indent=2))
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     args.func(args)
     return 0
-if __name__ == '__main__':
-    raise SystemExit(main())
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -146,4 +191,7 @@ def build_parser():
     parser.add_argument('--action', choices=('authorize', 'list', 'stat', 'read'), default='authorize')
     parser.add_argument('--max', type=int, default=50, dest='max_items')
     parser.add_argument('--max-bytes', type=int, default=1000000)
+    parser.set_defaults(func=cmd_run)
     return parser
+if __name__ == '__main__':
+    raise SystemExit(main())

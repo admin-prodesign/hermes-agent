@@ -150,6 +150,22 @@ profile folder. `profile_root()` resolves that folder at call time:
 When `HERMES_HOME` already points at a profile folder, that folder is the
 profile root. Kanban boards and other shared state stay on the install root.
 
+`pd_one` values come from `<HERMES_HOME>/config.yaml` with that profile
+folder's own `config.yaml` layered on top (profile wins, key by key). The
+gateway starts every stdio MCP server with `HERMES_HOME` set to the profile it
+serves, so the safe-ops server reads the pdone config without an `env` entry.
+An `env: {HERMES_HOME: ...}` in `mcp_servers.pdone_safe_ops` still wins, and
+the profile layer above still applies when it names the install root.
+
+## Running helpers from a read-only release
+
+Releases are published read-only, and `tools/**/*.py` carries no exec bit. A
+tool that runs a helper script always runs `<interpreter> <script>`: the
+interpreter running the MCP server, or the configured one
+(`pd_one.external.winrm_python` for the file-server content search). Children
+get `HERMES_HOME` and the release on `PYTHONPATH`, so a helper started by a
+different interpreter still imports `tools.pd_one_ops`.
+
 ## Apps Script self-registration
 
 `pd_one.apps_script.<key>.script_id` still fills in the four built-in
@@ -271,6 +287,21 @@ files still land under that profile's `upgrade-audits/<build>/`.
    previous symlink, unit files, and configs. The new release directory stays
    on disk.
 
+Before the idle gate, `cutover.sh` runs the safe-ops selftest from the new
+release (`--skip-selftest` turns it off):
+
+```bash
+cd <release> && .venv/bin/python -m tools.pd_one_ops.selftest --hermes-home <home> --profile pdone
+```
+
+It calls every MCP tool once in dry-run with placeholder arguments: child
+processes are planned and checked, not run; network is refused; writes outside
+a scratch directory are refused. Then it starts each release helper with
+`--help`. Exit 1 lists what failed and stops the deploy. `--allow-missing <key>`
+(cutover: `--selftest-allow-missing`) accepts an external key that is absent on
+the host on purpose. `--readonly-copy` runs the same test from a temp copy of
+`tools/` with every file 0444.
+
 Once `install_autodeploy.sh` has run on nemo, a merge to `main` runs these same
 steps without a hand deploy: a timer on nemo polls GitHub for `main` about once a
 minute, and nemo waits for idle profiles before it restarts anything. `cutover.sh`
@@ -283,8 +314,13 @@ for docs and skills, retention, and the drift check are in
 
 `appsheet_record_ops.py` ships in `tools/pd_one_ops/`. The helpers below are
 not copied. Each is `pd_one.external.<key>`. `exists()` is false when the key
-is unset, so a status command can report it missing. Reading the path or
-calling `require()` raises `FileNotFoundError` naming `pd_one.external.<key>`.
+is unset, so a status command can report it missing. `require()` raises
+`MissingExternalConfig` (a `FileNotFoundError`) naming `pd_one.external.<key>`.
+
+A launch whose argument is an unset external key never reaches the OS. The
+tool returns `"error": "missing_external_config"` with the key, and the
+message names every config file it read. Reading it in code raises
+`MissingExternalConfig` (a `FileNotFoundError`).
 
 | Key | What it is |
 | --- | --- |

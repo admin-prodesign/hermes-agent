@@ -426,15 +426,13 @@ def cmd_yammer_archive_search(args: argparse.Namespace) -> None:
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
-    out = mod.search_yammer_archive(sender_id=args.sender_id, query=args.query, origin_channel_id=args.origin_channel_id or None, max_results=int(args.max_results), db_path=Path(args.db) if args.db else mod.YAMMER_DB)
+    out = mod.search_yammer_archive(sender_id=args.sender_id, query=args.query, origin_channel_id=args.origin_channel_id or None, max_results=int(args.max_results), db_path=Path(args.db) if args.db else None)
     emit(out)
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     args.func(args)
     return 0
-if __name__ == '__main__':
-    raise SystemExit(main())
 
 def build_parser():
     ap = _PdUnset
@@ -996,3 +994,5 @@ def build_parser():
     _pd_result = _pd_phase_21()
     if isinstance(_pd_result, _PdReturn):
         return _pd_result.value
+if __name__ == '__main__':
+    raise SystemExit(main())

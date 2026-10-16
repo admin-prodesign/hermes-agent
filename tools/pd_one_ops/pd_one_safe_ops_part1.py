@@ -600,7 +600,7 @@ def cmd_python_docx_dependency_repair(args: argparse.Namespace) -> None:
     if action not in {'inspect', 'install'}:
         fail('--action must be inspect or install')
     python_path = PYTHON_DOCX_REPAIR_PYTHON()
-    if not python_path.is_absolute() or str(python_path) != resolve_configured_path('~/.hermes/releases/pdone-current/.venv/bin/python'):
+    if not python_path.is_absolute() or str(python_path) != os.fspath(resolve_configured_path('~/.hermes/releases/pdone-current/.venv/bin/python')):
         fail('configured dependency-repair interpreter path is invalid')
     if not python_path.is_file() or not os.access(python_path, os.X_OK):
         fail(f'approved release virtualenv interpreter is not executable: {python_path}')
