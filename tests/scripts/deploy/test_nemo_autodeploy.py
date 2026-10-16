@@ -471,6 +471,64 @@ def test_prune_keeps_current_its_rollback_target_and_the_running_build(tmp_path:
 
 # ---------------------------------------------------------------- drift
 
+_GITATTRS_EOL = "*.py text eol=lf\n*.ps1 text eol=crlf\n"
+_DEPLOY_PS1 = "Write-Host 'deployed'\n"
+
+
+def _live_release_matching_sha(work: Path, mirror: Path, live: Path, sha: str) -> None:
+    from scripts.deploy.nemo.drift import GIT_SUBMODULE_MODE, tree_blobs
+
+    for rel, (mode, _obj) in tree_blobs(mirror, sha).items():
+        if mode == GIT_SUBMODULE_MODE:
+            continue
+        dest = live / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(subprocess.check_output(["git", "-C", str(work), "show", f"{sha}:{rel}"]))
+
+
+@pytest.fixture
+def ps1_drift_origin(origin):
+    """Origin with ``.gitattributes`` eol rules and a tracked ``.ps1`` at HEAD."""
+    work, mirror, _base = origin
+    sha = _commit(work, {".gitattributes": _GITATTRS_EOL, "tools/deploy.ps1": _DEPLOY_PS1}, "ps1")
+    _git(work, "push", "-q", "origin", "main")
+    _git(mirror, "fetch", "-q", "origin", "main")
+    return work, mirror, sha
+
+
+@pytest.fixture
+def ps1_drift_cfg(tmp_path: Path, ps1_drift_origin):
+    work, mirror, sha = ps1_drift_origin
+    home, releases = _live_home(tmp_path, sha)
+    live = releases / "old"
+    _live_release_matching_sha(work, mirror, live, sha)
+    return Config(home=home, mirror=mirror, releases=releases), live
+
+
+@pytest.mark.platforms("linux", "macos")
+def test_drift_ps1_crlf_only_line_endings_are_clean(ps1_drift_cfg) -> None:
+    cfg, live = ps1_drift_cfg
+    ps1 = live / "tools/deploy.ps1"
+    ps1.write_bytes(ps1.read_bytes().replace(b"\n", b"\r\n"))
+    assert check_drift(cfg, unit_dirs=[], max_lag_s=0).clean
+
+
+@pytest.mark.platforms("linux", "macos")
+def test_drift_ps1_content_edit_is_drift(ps1_drift_cfg) -> None:
+    cfg, live = ps1_drift_cfg
+    ps1 = live / "tools/deploy.ps1"
+    ps1.write_bytes(ps1.read_bytes().replace(b"\n", b"\r\n") + b"# patched\r\n")
+    report = check_drift(cfg, unit_dirs=[], max_lag_s=0)
+    assert report.modified == ["tools/deploy.ps1"]
+
+
+@pytest.mark.platforms("linux", "macos")
+def test_drift_lf_tracked_py_edit_is_drift(ps1_drift_cfg) -> None:
+    cfg, live = ps1_drift_cfg
+    (live / "agent/core.py").write_text("X = 'tampered'\n", encoding="utf-8")
+    report = check_drift(cfg, unit_dirs=[], max_lag_s=0)
+    assert report.modified == ["agent/core.py"]
+
 
 def test_drift_reports_edits_deletions_strays_and_old_units(tmp_path: Path, origin) -> None:
     work, mirror, base = origin
