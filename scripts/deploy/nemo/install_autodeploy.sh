@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install or remove the push-deploy units. Run it from releases/current, so the
+# Install or remove the pull-deploy units. Run it from releases/current, so the
 # units and the code they start come from the same deployed release.
 set -euo pipefail
 
@@ -13,18 +13,20 @@ case "${1:-}" in
 Usage: install_autodeploy.sh install --mirror DIR [options]
        install_autodeploy.sh uninstall [--scope user|system]
 
+  --mirror DIR                  Bare mirror build.sh uses. Its remote must already
+                                fetch the private repo non-interactively.
+  --remote NAME                 Mirror remote to poll. Default origin.
   --hermes-home PATH            Defaults to HERMES_HOME.
   --scope user|system           Default user (needs `loginctl enable-linger`).
-  --bind ADDR / --port N        Listener address. Default 127.0.0.1:8765.
-  --require-tailscale-tag TAG   Also check the peer's Tailscale tag (direct bind only).
+  --poll-every SPAN             systemd time span between polls. Default 60s (+ up to 20s jitter).
   --alert-script PATH           Called as PATH SUBJECT with the details on stdin.
   --profile NAME                Repeatable. Default pdone, then pdneo.
-  --run-as USER                 System scope: user for the listener and drift check.
+  --run-as USER                 System scope: user for the poll and drift check.
   --worker-user USER            System scope: user for the deploy worker.
   --dry-run                     Print the units and change nothing.
 
-Creates <home>/deploy/webhook-secret (0600) on first install. See
-scripts/deploy/nemo/README.md for the one-time GitHub and Tailscale setup.
+Nothing to set up in GitHub or Tailscale. A leftover hermes-deploy-listener.service
+from the push version is disabled and removed. See scripts/deploy/nemo/README.md.
 EOF
     exit 0
     ;;

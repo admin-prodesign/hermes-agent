@@ -1,8 +1,8 @@
-"""Push deploy on nemo: signed requests, the idle gate, rollback, the no-restart path, and drift.
+"""Pull deploy on nemo: the main poller, the idle gate, rollback, the no-restart path, and drift.
 
 Shell steps run the real ``cutover.sh`` against a temp release tree; git steps use a
-real bare origin and ``--mirror`` clone. Nothing here touches systemd or the real
-Hermes home.
+real bare origin and ``--mirror`` clone, so the poller's ``git ls-remote`` is real too.
+Nothing here touches systemd, the network, or the real Hermes home.
 """
 
 from __future__ import annotations
@@ -17,27 +17,21 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 import pytest
 
-from scripts.deploy.nemo import autodeploy
-from scripts.deploy.nemo.autodeploy import Config, Hooks, check_drift, on_main, run_once
-from scripts.deploy.nemo.autodeploy_units import UnitOptions, ensure_secret, render
+from scripts.deploy.nemo import autodeploy, poll
+from scripts.deploy.nemo.autodeploy import Config, Hooks, check_drift, fetch_main, on_main, run_once
+from scripts.deploy.nemo.autodeploy_units import UnitOptions, render
 from scripts.deploy.nemo.changes import NOOP, RESTART, SKILLS, classify
-from scripts.deploy.nemo.listener import ListenerConfig, serve
 from scripts.deploy.nemo.manifest import write_manifest
-from scripts.deploy.nemo.notify import notify
+from scripts.deploy.nemo.poll import PollResult, poll_once
 from scripts.deploy.nemo.retention import keep_set, prune, running_build, set_running
-from scripts.deploy.nemo.spool import enqueue, queue_dir, take_latest
-from scripts.deploy.nemo.webhook import DeployRequest, Rejected, request_body, require_peer_tag, signed_headers
+from scripts.deploy.nemo.spool import enqueue, queue_dir, queued_shas, refuse, refused_shas
 
 ROOT = Path(__file__).resolve().parents[3]
 NEMO = ROOT / "scripts" / "deploy" / "nemo"
-REPO = "admin-prodesign/hermes-agent"
 MAIN = "refs/heads/main"
-SECRET = b"s" * 48
 SHA_A = "a" * 40
 
 
@@ -139,63 +133,101 @@ def running_server():
         server.server_close()
 
 
-def _post(url: str, body: bytes, headers: dict[str, str]) -> tuple[int, dict]:
-    request = Request(url, data=body, method="POST", headers=headers)
-    try:
-        with urlopen(request, timeout=10) as response:
-            return response.status, json.loads(response.read())
-    except HTTPError as exc:
-        return exc.code, json.loads(exc.read())
+# ---------------------------------------------------------------- poll
 
 
-# ---------------------------------------------------------------- auth
+def _poll(home: Path, releases: Path, mirror: Path, **kwargs) -> PollResult:
+    return poll_once(Config(home=home, mirror=mirror, releases=releases), **kwargs)
 
 
-def test_listener_queues_only_signed_main_requests(tmp_path: Path, running_server) -> None:
-    queue = tmp_path / "queue"
-    base = running_server(serve(ListenerConfig(SECRET, queue, REPO), "127.0.0.1", 0))
-    url = base + "/deploy"
-    good = request_body(SHA_A, MAIN, REPO, "1")
+def _push(work: Path, files: dict[str, str]) -> str:
+    sha = _commit(work, files, "change")
+    _git(work, "push", "-q", "origin", "main")
+    return sha
 
-    assert _post(url, good, {})[0] == 401
-    assert _post(url, good, signed_headers(b"x" * 48, good, time.time()))[0] == 401
-    assert _post(url, good, signed_headers(SECRET, good, time.time() - 3600))[0] == 401
-    tampered = signed_headers(SECRET, good, time.time())
-    assert _post(url, request_body("b" * 40, MAIN, REPO, "1"), tampered)[0] == 401
-    branch = request_body(SHA_A, "refs/heads/feature", REPO, "1")
-    assert _post(url, branch, signed_headers(SECRET, branch, time.time()))[0] == 403
-    fork = request_body(SHA_A, MAIN, "someone/fork", "1")
-    assert _post(url, fork, signed_headers(SECRET, fork, time.time()))[0] == 403
-    short = request_body("abc1234", MAIN, REPO, "1")
-    assert _post(url, short, signed_headers(SECRET, short, time.time()))[0] == 400
-    assert not list(queue.glob("*.json"))
 
-    headers = signed_headers(SECRET, good, time.time())
-    assert _post(url, good, headers) == (202, {"queued": SHA_A})
-    assert _post(url, good, headers) == (200, {"duplicate": SHA_A})
+@pytest.mark.platforms("linux", "macos")
+def test_poll_queues_a_new_main_once_and_goes_quiet_after_the_deploy(tmp_path: Path, origin) -> None:
+    work, mirror, base = origin
+    home, releases = _live_home(tmp_path, base)
+    queue = queue_dir(home)
+    assert _poll(home, releases, mirror).action == "live"
+    assert not queued_shas(queue)
+
+    new = _push(work, {"skills/demo/SKILL.md": "v2\n"})
+    result = _poll(home, releases, mirror)
+    assert (result.action, result.main, result.live) == ("queued", new, base)
+    assert _poll(home, releases, mirror).action == "pending"
     assert len(list(queue.glob("*.json"))) == 1
 
-
-def test_ci_notify_reaches_the_listener(tmp_path: Path, running_server) -> None:
-    queue = tmp_path / "queue"
-    base = running_server(serve(ListenerConfig(SECRET, queue, REPO), "127.0.0.1", 0))
-    body = request_body(SHA_A, MAIN, REPO, "42")
-    assert notify(base + "/deploy", SECRET, body, sleep=lambda _s: None) == 0
-    item, _ = take_latest(queue)
-    assert item is not None and item.sha == SHA_A and item.run_id == "42"
-    assert notify(base + "/deploy", b"w" * 48, body, sleep=lambda _s: None) == 1
+    outcome = run_once(Config(home=home, mirror=mirror, releases=releases), _Recorder(releases, home).hooks())
+    assert outcome.result == "deployed" and outcome.sha == new, outcome
+    assert _poll(home, releases, mirror).action == "live"
+    assert not queued_shas(queue)
+    recorded = json.loads((home / "deploy" / "poll.json").read_text(encoding="utf-8"))
+    assert recorded["action"] == "live" and recorded["live"] == new
 
 
-def test_tailscale_tag_is_required_from_a_tagged_peer() -> None:
-    def whois(tags):
-        payload = json.dumps({"Node": {"Tags": tags}}).encode()
-        return lambda argv: subprocess.CompletedProcess(argv, 0, payload, b"")
+@pytest.mark.platforms("linux", "macos")
+def test_poll_does_not_run_beside_a_deploy_that_holds_the_lock(tmp_path: Path, origin) -> None:
+    work, mirror, base = origin
+    _push(work, {"agent/core.py": "X = 2\n"})
+    home, releases = _live_home(tmp_path, base)
+    calls: list[list[str]] = []
 
-    require_peer_tag("100.64.0.5", "tag:ci", run=whois(["tag:ci"]))
-    with pytest.raises(Rejected, match="not tag:ci"):
-        require_peer_tag("100.64.0.5", "tag:ci", run=whois(["tag:laptop"]))
-    with pytest.raises(Rejected, match="loopback"):
-        require_peer_tag("127.0.0.1", "tag:ci", run=whois(["tag:ci"]))
+    def git(argv: list[str], timeout: float) -> subprocess.CompletedProcess:
+        calls.append(argv)
+        return autodeploy.run_cmd(argv, timeout)
+
+    with autodeploy.deploy_lock(autodeploy.lock_path(home)) as held:
+        assert held
+        assert _poll(home, releases, mirror, git=git).action == "busy"
+    assert calls == [] and not queued_shas(queue_dir(home))
+    assert _poll(home, releases, mirror, git=git).action == "queued"
+
+
+@pytest.mark.platforms("linux", "macos")
+def test_poll_skips_a_refused_sha_until_retry(tmp_path: Path, origin) -> None:
+    work, mirror, base = origin
+    new = _push(work, {"agent/core.py": "X = 2\n"})
+    home, releases = _live_home(tmp_path, base)
+    refuse(home, new, "failed", "cutover exited 1; still on old")
+    assert _poll(home, releases, mirror).action == "refused"
+    assert not queued_shas(queue_dir(home))
+
+    assert autodeploy.main(["retry", "--hermes-home", str(home), new]) == 0
+    assert new not in refused_shas(home)
+    assert _poll(home, releases, mirror).action == "queued"
+
+
+@pytest.mark.platforms("linux", "macos")
+def test_a_failed_or_hung_ls_remote_never_queues(tmp_path: Path, origin) -> None:
+    work, mirror, base = origin
+    _push(work, {"agent/core.py": "X = 2\n"})
+    home, releases = _live_home(tmp_path, base)
+    _git(mirror, "remote", "set-url", "origin", str(tmp_path / "gone.git"))
+    result = _poll(home, releases, mirror)
+    assert result.action == "error" and result.exit_code == 1 and result.live == base
+
+    def hang(argv: list[str], timeout: float) -> subprocess.CompletedProcess:
+        raise subprocess.TimeoutExpired(argv, timeout)
+
+    assert "timed out" in _poll(home, releases, mirror, git=hang).detail
+    assert poll.main(["--hermes-home", str(home), "--mirror", str(mirror)]) == 1
+    assert not queued_shas(queue_dir(home))
+
+
+@pytest.mark.platforms("linux", "macos")
+def test_worker_defers_without_refusing_when_main_cannot_be_fetched(tmp_path: Path, origin) -> None:
+    work, mirror, base = origin
+    new = _push(work, {"agent/core.py": "X = 2\n"})
+    home, releases = _live_home(tmp_path, base)
+    _queue(home, new)
+    _git(mirror, "remote", "set-url", "origin", str(tmp_path / "gone.git"))
+    fake = _Recorder(releases, home)
+    outcome = run_once(Config(home=home, mirror=mirror, releases=releases), fake.hooks())
+    assert outcome.result == "deferred" and not outcome.alert
+    assert fake.calls == [] and new not in refused_shas(home)
 
 
 def test_worker_refuses_a_sha_that_is_not_on_main(tmp_path: Path, origin) -> None:
@@ -205,6 +237,7 @@ def test_worker_refuses_a_sha_that_is_not_on_main(tmp_path: Path, origin) -> Non
     _git(work, "push", "-q", "origin", "feature")
     _git(mirror, "fetch", "-q", "origin", "+refs/heads/feature:refs/heads/feature")
     cfg = Config(home=tmp_path / "hermes", mirror=mirror, releases=tmp_path / "hermes" / "releases")
+    assert fetch_main(cfg, autodeploy.run_cmd) is None
     assert on_main(cfg, base, autodeploy.run_cmd) is None
     assert "not on main" in (on_main(cfg, side, autodeploy.run_cmd) or "")
 
@@ -248,7 +281,7 @@ def test_cutover_stays_on_the_new_release_when_healthy(tmp_path: Path, running_s
 
 
 def _queue(home: Path, sha: str) -> None:
-    enqueue(queue_dir(home), DeployRequest(sha, MAIN, REPO, "1"), peer="127.0.0.1")
+    enqueue(queue_dir(home), sha, ref=MAIN)
 
 
 class _Recorder:
@@ -257,7 +290,6 @@ class _Recorder:
     def __init__(self, releases: Path, home: Path, cutover_code: int | None = None) -> None:
         self.releases, self.home, self.cutover_code = releases, home, cutover_code
         self.calls: list[list[str]] = []
-        self.systemctl: list[list[str]] = []
         self.synced: list[Path] = []
 
     def script(self, argv: list[str]) -> int:
@@ -279,12 +311,11 @@ class _Recorder:
         return [{"profile": name, "ok": True, "detail": {}} for name in profiles]
 
     def hooks(self) -> Hooks:
-        return Hooks(script=self.script, sync=self.sync, disk_free=lambda _p: 100.0,
-                     systemctl=lambda argv: self.systemctl.append(argv) or 0)
+        return Hooks(script=self.script, sync=self.sync, disk_free=lambda _p: 100.0)
 
 
 @pytest.mark.platforms("linux", "macos")
-def test_worker_requeues_while_profiles_are_busy(tmp_path: Path, origin) -> None:
+def test_busy_profiles_leave_the_sha_for_the_next_poll(tmp_path: Path, origin) -> None:
     work, mirror, base = origin
     new = _commit(work, {"agent/core.py": "X = 2\n"}, "code")
     _git(work, "push", "-q", "origin", "main")
@@ -294,10 +325,9 @@ def test_worker_requeues_while_profiles_are_busy(tmp_path: Path, origin) -> None
     outcome = run_once(Config(home=home, mirror=mirror, releases=releases), fake.hooks())
     assert outcome.result == "waiting" and outcome.mode == RESTART
     assert os.readlink(releases / "current") == "old"
-    item, _ = take_latest(queue_dir(home))
-    assert item is not None and item.sha == new and item.attempts == 1
     assert (releases / new[:12]).is_dir()
-    assert fake.systemctl == []
+    assert new not in refused_shas(home)
+    assert _poll(home, releases, mirror).action == "queued"
 
 
 @pytest.mark.platforms("linux", "macos")
@@ -315,6 +345,8 @@ def test_worker_prunes_a_rolled_back_build_and_keeps_the_live_one(tmp_path: Path
     assert not (releases / new[:12]).exists()
     status = json.loads((home / "deploy" / "status.json").read_text(encoding="utf-8"))
     assert status["result"] == "failed"
+    assert new in refused_shas(home)
+    assert _poll(home, releases, mirror).action == "refused"
 
 
 # ---------------------------------------------------------------- no-restart path
@@ -342,7 +374,6 @@ def test_skills_only_merge_swaps_without_restarting(tmp_path: Path, origin) -> N
     assert os.readlink(releases / "current") == new[:12]
     assert running_build(releases) == "old"
     assert fake.synced == [releases / new[:12]]
-    assert fake.systemctl == [["--user", "try-restart", autodeploy.LISTENER_UNIT]]
     cutover = next(argv for argv in fake.calls if argv[1].endswith("cutover.sh"))
     assert "--skip-restart" in cutover and "--skip-gate" in cutover
 
@@ -433,26 +464,35 @@ def test_drift_flags_main_moving_ahead_of_the_live_sha(tmp_path: Path, origin) -
 # ---------------------------------------------------------------- install
 
 
-def test_units_run_from_current_and_never_embed_the_secret(tmp_path: Path) -> None:
+def test_units_run_from_current_and_poll_the_mirror_on_a_jittered_timer(tmp_path: Path) -> None:
     home = tmp_path / "hermes"
-    secret = home / "deploy" / "webhook-secret"
-    assert ensure_secret(secret) is True
-    assert ensure_secret(secret) is False
-    assert stat.S_IMODE(secret.stat().st_mode) == 0o600
-    value = secret.read_text(encoding="utf-8").strip()
-    assert len(value) >= 32
-
-    opts = UnitOptions(home=home, releases=home / "releases", mirror=tmp_path / "mirror.git",
-                       require_tag="tag:ci", path_env="/usr/bin")
-    units = render(opts)
-    assert all(value not in text for text in units.values())
+    mirror = tmp_path / "mirror.git"
+    units = render(UnitOptions(home=home, releases=home / "releases", mirror=mirror, path_env="/usr/bin"))
     current = str(home / "releases" / "current")
-    listener = units["hermes-deploy-listener.service"]
-    assert f"{current}/.venv/bin/python -m scripts.deploy.nemo.listener" in listener
-    assert "--require-tailscale-tag tag:ci" in listener
-    assert f"--mirror {tmp_path / 'mirror.git'}" in units["hermes-deploy.service"]
+    poller = units["hermes-deploy-poll.service"]
+    assert f"{current}/.venv/bin/python -m scripts.deploy.nemo.poll" in poller
+    assert f"--mirror {mirror}" in poller and "GIT_TERMINAL_PROMPT=0" in poller
+    timer = units["hermes-deploy-poll.timer"]
+    assert "OnUnitInactiveSec=60s" in timer and "RandomizedDelaySec=" in timer
     assert f"DirectoryNotEmpty={home / 'deploy' / 'queue'}" in units["hermes-deploy.path"]
     assert "User=" not in "".join(units.values())
+    assert not any("listener" in name or "tailscale" in text for name, text in units.items())
+
+
+def test_dry_run_lists_a_leftover_listener_and_writes_nothing(tmp_path: Path, monkeypatch, capsys) -> None:
+    from scripts.deploy.nemo import autodeploy_units
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    units_dir = autodeploy_units.unit_dir("user")
+    units_dir.mkdir(parents=True)
+    (units_dir / "hermes-deploy-listener.service").write_text("[Service]\n", encoding="utf-8")
+    home = tmp_path / "hermes"
+    code = autodeploy_units.main(["install", "--hermes-home", str(home), "--mirror", str(tmp_path / "m.git"),
+                                  "--dry-run"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "hermes-deploy-poll.timer" in out and "would disable and remove" in out
+    assert sorted(p.name for p in units_dir.iterdir()) == ["hermes-deploy-listener.service"]
 
 
 @pytest.mark.platforms("linux", "macos")

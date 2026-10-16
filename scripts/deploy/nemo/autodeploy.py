@@ -1,11 +1,13 @@
-"""Push-deploy worker: drain the listener's queue and deploy the newest merged SHA.
+"""Deploy worker: drain the poller's queue and deploy the newest SHA on main.
 
 Runs from ``releases/current`` as a oneshot systemd unit woken by a ``.path`` unit.
 It builds with ``build.sh`` and swaps with ``cutover.sh``, so the quiet-window gate,
 unit rewrite, health poll, and automatic rollback are the ones a hand deploy uses.
 A deploy whose diff only touches docs or bundled skills swaps ``current`` without a
 restart (see ``changes.py``). Exit 75 from ``cutover.sh`` means the profiles never
-went quiet: nothing changed and the request goes back on the queue.
+went quiet: nothing changed, and the next poll queues main again. A SHA that was
+rejected or failed is refused, so the poller does not retry it until a newer
+commit lands or someone runs ``retry``.
 """
 
 from __future__ import annotations
@@ -33,11 +35,13 @@ from scripts.deploy.nemo.manifest import read_manifest
 from scripts.deploy.nemo.release_swap import current_target
 from scripts.deploy.nemo.retention import keep_set, prune, running_build, set_running
 from scripts.deploy.nemo.source import Run, run_cmd
-from scripts.deploy.nemo.spool import Queued, queue_dir, requeue, state_dir, take_latest
+from scripts.deploy.nemo.spool import (
+    Queued, forgive, queue_dir, refuse, refused_entries, state_dir, take_latest,
+)
 
 HERE = Path(__file__).resolve().parent
 GATE_BUSY = 75
-LISTENER_UNIT = "hermes-deploy-listener.service"
+REFUSED_RESULTS = frozenset({"failed", "rejected"})
 MAIN_REF = "refs/nemo/deploy-main"
 DRIFT_MAIN_REF = "refs/nemo/drift-main"
 DEFAULT_GATE_TIMEOUT_S = 6 * 3600.0
@@ -56,7 +60,6 @@ class Config:
     profiles: tuple[str, ...] = DEFAULT_PROFILES
     remote: str = "origin"
     extra: str = DEFAULT_EXTRA
-    scope: str = "user"
     quiet_s: float = DEFAULT_QUIET_S
     poll_s: float = DEFAULT_POLL_S
     gate_timeout_s: float = DEFAULT_GATE_TIMEOUT_S
@@ -68,7 +71,7 @@ class Config:
 
 @dataclass
 class Outcome:
-    result: str  # idle | live | deployed | waiting | failed | rejected
+    result: str  # idle | live | deployed | waiting | deferred | failed | rejected
     sha: str = ""
     build: str = ""
     mode: str = ""
@@ -88,7 +91,6 @@ class Hooks:
     git: Run = run_cmd
     script: Script | None = None
     sync: Callable[..., list[dict]] = sync_profiles
-    systemctl: Callable[[list[str]], int] | None = None
     disk_free: Callable[[Path], float] = lambda path: shutil.disk_usage(path).free / 1e9
 
 
@@ -96,15 +98,24 @@ def build_name(sha: str) -> str:
     return sha[:12]
 
 
+def lock_path(home: Path) -> Path:
+    return state_dir(home) / "deploy.lock"
+
+
 @contextlib.contextmanager
-def deploy_lock(path: Path) -> Iterator[None]:
+def deploy_lock(path: Path, *, blocking: bool = True) -> Iterator[bool]:
+    """Yields False when ``blocking`` is off and another process holds the lock."""
     import fcntl
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a+", encoding="utf-8") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
         try:
-            yield
+            fcntl.flock(handle, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+        except BlockingIOError:
+            yield False
+            return
+        try:
+            yield True
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
@@ -124,15 +135,8 @@ def run_script(argv: list[str], timeout: float) -> int:
         return 1
 
 
-def run_systemctl(argv: list[str]) -> int:
-    try:
-        return subprocess.run(["systemctl", *argv], timeout=30, stdin=subprocess.DEVNULL, check=False).returncode
-    except (OSError, subprocess.TimeoutExpired):
-        return 1
-
-
-def on_main(cfg: Config, sha: str, git: Run) -> str | None:
-    """``None`` when ``sha`` is reachable from origin/main, else why it is not deployable."""
+def fetch_main(cfg: Config, git: Run) -> str | None:
+    """``None`` when origin/main is in the mirror; else a transient reason worth retrying."""
     refspec = f"+refs/heads/main:{MAIN_REF}"
     try:
         fetched = git(["git", "--git-dir", str(cfg.mirror), "fetch", "--no-tags", cfg.remote, refspec],
@@ -141,6 +145,11 @@ def on_main(cfg: Config, sha: str, git: Run) -> str | None:
         return "git fetch main timed out"
     if fetched.returncode != 0:
         return "git fetch main failed"
+    return None
+
+
+def on_main(cfg: Config, sha: str, git: Run) -> str | None:
+    """``None`` when ``sha`` is reachable from the fetched main, else why it is not deployable."""
     check = git(["git", "--git-dir", str(cfg.mirror), "merge-base", "--is-ancestor", sha, MAIN_REF], 30.0)
     if check.returncode == 1:
         return f"{sha} is not on main"
@@ -188,10 +197,6 @@ def cutover_argv(cfg: Config, sha: str, build: str, old_sha: str | None, mode: s
     return argv + ["--skip-preflight", "--skip-gate", "--skip-restart", "--skip-health", "--skip-postcheck"]
 
 
-def _scope_args(cfg: Config) -> list[str]:
-    return ["--user"] if cfg.scope == "user" else []
-
-
 def _prepare_release(cfg: Config, item: Queued, build: str, hooks: Hooks) -> str | None:
     release = cfg.releases / build
     if release_ready(release):
@@ -231,6 +236,9 @@ def _cutover(cfg: Config, item: Queued, build: str, old_build: str | None, mode:
 
 
 def deploy(cfg: Config, item: Queued, hooks: Hooks) -> Outcome:
+    problem = fetch_main(cfg, hooks.git)
+    if problem:
+        return Outcome("deferred", item.sha, detail=problem)
     reason = on_main(cfg, item.sha, hooks.git)
     if reason:
         return Outcome("rejected", item.sha, detail=reason)
@@ -272,15 +280,13 @@ def send_alert(script: Path | None, subject: str, body: str) -> None:
         print(f"alert script failed: {exc}", file=sys.stderr)
 
 
-def _finish(cfg: Config, item: Queued, outcome: Outcome, hooks: Hooks) -> None:
-    if outcome.result == "waiting":
-        requeue(queue_dir(cfg.home), item)
-    elif outcome.result in {"deployed", "failed"}:
+def _finish(cfg: Config, item: Queued, outcome: Outcome) -> None:
+    if outcome.result in {"deployed", "failed"}:
         removed = prune(cfg.releases, keep_set(cfg.home, cfg.releases, with_previous=True))
         if removed:
             print("pruned " + ", ".join(removed))
-    if outcome.result == "deployed":
-        hooks.systemctl([*_scope_args(cfg), "try-restart", LISTENER_UNIT])
+    if outcome.result in REFUSED_RESULTS:
+        refuse(cfg.home, item.sha, outcome.result, outcome.detail)
     _record(cfg, outcome)
     if outcome.alert:
         send_alert(cfg.alert_script, f"nemo deploy {outcome.result}: {outcome.sha[:12]}",
@@ -290,14 +296,13 @@ def _finish(cfg: Config, item: Queued, outcome: Outcome, hooks: Hooks) -> None:
 def run_once(cfg: Config, hooks: Hooks | None = None) -> Outcome:
     hooks = hooks or Hooks()
     hooks.script = hooks.script or (lambda argv: run_script(argv, cfg.gate_timeout_s + SCRIPT_MARGIN_S))
-    hooks.systemctl = hooks.systemctl or run_systemctl
-    with deploy_lock(state_dir(cfg.home) / "deploy.lock"):
+    with deploy_lock(lock_path(cfg.home)):
         item, older = take_latest(queue_dir(cfg.home))
         if item is None:
             return Outcome("idle")
         outcome = deploy(cfg, item, hooks)
         outcome.superseded = [entry.sha for entry in older]
-        _finish(cfg, item, outcome, hooks)
+        _finish(cfg, item, outcome)
     print(json.dumps(asdict(outcome), sort_keys=True))
     return outcome
 
@@ -328,7 +333,7 @@ def _config(args: argparse.Namespace) -> Config:
         home=home, mirror=Path(args.mirror).expanduser(),
         releases=releases_dir(home, Path(args.releases) if args.releases else None),
         profiles=tuple(args.profiles or ()) or DEFAULT_PROFILES, remote=args.remote,
-        extra=getattr(args, "extra", DEFAULT_EXTRA), scope=getattr(args, "scope", "user"),
+        extra=getattr(args, "extra", DEFAULT_EXTRA),
         quiet_s=getattr(args, "quiet", DEFAULT_QUIET_S), poll_s=getattr(args, "poll", DEFAULT_POLL_S),
         gate_timeout_s=getattr(args, "gate_timeout", DEFAULT_GATE_TIMEOUT_S),
         min_free_gb=getattr(args, "min_free_gb", DEFAULT_MIN_FREE_GB),
@@ -342,10 +347,37 @@ def cmd_run(args: argparse.Namespace) -> int:
     worst = 0
     while True:
         outcome = run_once(cfg)
-        if outcome.result in {"idle", "waiting"}:
+        if outcome.result in {"idle", "waiting", "deferred"}:
             return worst
-        if outcome.result in {"failed", "rejected"}:
+        if outcome.result in REFUSED_RESULTS:
             worst = 1
+
+
+def _read_json(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    home = resolve_hermes_home(Path(args.hermes_home) if args.hermes_home else None)
+    root = state_dir(home)
+    report = {
+        "deploy": _read_json(root / "status.json"),
+        "poll": _read_json(root / "poll.json"),
+        "queued": sorted(path.name for path in queue_dir(home).glob("*.json")),
+        "refused": refused_entries(home),
+    }
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_retry(args: argparse.Namespace) -> int:
+    home = resolve_hermes_home(Path(args.hermes_home) if args.hermes_home else None)
+    dropped = forgive(home, args.sha)
+    print("retrying " + ", ".join(dropped) if dropped else "nothing refused matched")
+    return 0
 
 
 def cmd_drift(args: argparse.Namespace) -> int:
@@ -375,7 +407,6 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="deploy the newest queued SHA, then exit")
     _common(run)
-    run.add_argument("--scope", choices=("user", "system"), default="user")
     run.add_argument("--extra", default=DEFAULT_EXTRA)
     run.add_argument("--quiet", type=float, default=DEFAULT_QUIET_S)
     run.add_argument("--poll", type=float, default=DEFAULT_POLL_S)
@@ -388,6 +419,13 @@ def main(argv: list[str] | None = None) -> int:
     drift.add_argument("--unit-dir", action="append", dest="unit_dirs", default=[])
     drift.add_argument("--max-lag", type=float, default=DEFAULT_MAX_LAG_S)
     drift.set_defaults(func=cmd_drift)
+    status = sub.add_parser("status", help="print the last deploy, the last poll, the queue, and refused SHAs")
+    status.add_argument("--hermes-home", default=None)
+    status.set_defaults(func=cmd_status)
+    retry = sub.add_parser("retry", help="take a refused SHA (default: all) off the list; the next poll queues it")
+    retry.add_argument("--hermes-home", default=None)
+    retry.add_argument("sha", nargs="?", default=None)
+    retry.set_defaults(func=cmd_retry)
     args = parser.parse_args(argv)
     return int(args.func(args))
 
