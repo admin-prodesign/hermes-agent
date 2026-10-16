@@ -126,4 +126,16 @@ def is_environment_failure(detail: str) -> bool:
     text = detail or ""
     if UV_MISSING_MSG in text or "uv is required on PATH" in text:
         return True
+    lower = text.lower()
+    if "eacces" in lower or "permission denied" in lower:
+        return True
+    if "build.sh failed" in lower:
+        for marker in (
+            "node is required",
+            "npm cli is required",
+            "uv is required on path",
+            "timed out after",
+        ):
+            if marker in lower:
+                return True
     return False

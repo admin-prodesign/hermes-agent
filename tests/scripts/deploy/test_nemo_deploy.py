@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
 import tarfile
@@ -32,7 +33,7 @@ from scripts.deploy.nemo.postcheck import (
     HR_SYNC, REAPER, TYPHOON, Invocation, POLICIES, command_list, guard, plan_policy,
     resolve_script, run_postcheck, script_accepts_dry_run,
 )
-from scripts.deploy.nemo.preflight import changed_files, plan_for
+from scripts.deploy.nemo.preflight import changed_files, is_environment_failure, plan_for
 from scripts.deploy.nemo.release_swap import swap_current
 from scripts.deploy.nemo.rollback import apply_rollback
 from scripts.deploy.nemo.source import SourceMissing, acquire_source, extract_tarball, probe_fetch
@@ -577,10 +578,45 @@ def _bash() -> str:
     return bash
 
 
-def _run_build(tmp_path: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+_UV_BIN_DIR: str | None = None
+_UV_BIN_DIR_RESOLVED = False
+
+
+def _resolve_uv_bin_dir() -> str | None:
+    global _UV_BIN_DIR, _UV_BIN_DIR_RESOLVED
+    if _UV_BIN_DIR_RESOLVED:
+        return _UV_BIN_DIR
+    pm_home = os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
+    if "hermes-pytest" in pm_home or "/pytest" in pm_home:
+        pm_home = str(Path.home() / ".hermes")
+    done = subprocess.run(
+        [sys.executable, "-c",
+         "from pm.install import uv_launcher\n"
+         "p = uv_launcher('uv')\n"
+         "print(p.parent if p else '')"],
+        cwd=ROOT, capture_output=True, text=True, timeout=60,
+        env={**os.environ, "HERMES_HOME": pm_home},
+    )
+    parent = (done.stdout or "").strip()
+    _UV_BIN_DIR = parent or None
+    _UV_BIN_DIR_RESOLVED = True
+    return _UV_BIN_DIR
+
+
+def _deploy_script_path() -> str:
+    entries = [str(Path.home() / ".local" / "bin")]
+    uv_dir = _resolve_uv_bin_dir()
+    if uv_dir:
+        entries.append(uv_dir)
+    return ":".join(entries)
+
+
+def _run_build(tmp_path: Path, *extra: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
     home = tmp_path / "hermes"
     env = os.environ.copy()
     env["HERMES_HOME"] = str(home)
+    env["PATH"] = f"{_deploy_script_path()}:{env.get('PATH', '')}"
+    env.setdefault("NEMO_PYTHON", sys.executable)
     env["TMPDIR"] = str(tmp_path / "tmp")
     (tmp_path / "tmp").mkdir(exist_ok=True)
     command = [
@@ -591,7 +627,27 @@ def _run_build(tmp_path: Path, *extra: str) -> subprocess.CompletedProcess[str]:
         "--uv-cache", str(tmp_path / "uv"),
         *extra,
     ]
-    return subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+    return subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, text=True, timeout=timeout)
+
+
+def _chmod_read_only(path: Path) -> None:
+    for root, dirs, files in os.walk(path):
+        root_path = Path(root)
+        for name in files:
+            os.chmod(root_path / name, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+        for name in dirs:
+            os.chmod(
+                root_path / name,
+                stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH,
+            )
+    os.chmod(path, stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+
+
+def test_is_environment_failure_recognizes_build_host_errors() -> None:
+    assert is_environment_failure("uv is required on PATH")
+    assert is_environment_failure("build.sh failed\nError: EACCES, unlink 'node_modules/.hermes-node-deps'")
+    assert is_environment_failure("build.sh failed\nnode is required to preinstall dashboard dependencies")
+    assert not is_environment_failure("build.sh failed\nimport hermes_cli failed")
 
 
 @pytest.mark.platforms("linux", "macos")
@@ -657,6 +713,63 @@ def test_build_rejects_an_unsafe_tarball(tmp_path: Path) -> None:
     assert proc.returncode != 0
     assert not (tmp_path / "hermes" / "releases" / "build-a").exists()
     assert list(tmp_path.rglob("evil")) == []
+
+
+@pytest.mark.platforms("linux", "macos")
+def test_copy_tree_makes_read_only_reused_node_modules_writable(tmp_path: Path) -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required on PATH")
+    src = tmp_path / "previous" / "node_modules"
+    src.mkdir(parents=True)
+    (src / ".hermes-node-deps").write_text("stale-receipt\n", encoding="utf-8")
+    _chmod_read_only(src.parent)
+    dest = tmp_path / "staging" / "node_modules"
+    driver = tmp_path / "copy_tree.sh"
+    driver.write_text(
+        f"#!/usr/bin/env bash\n"
+        f"set -euo pipefail\n"
+        f'source "{NEMO / "common.sh"}"\n'
+        f"eval \"$(sed -n '/^copy_tree()/,/^}}/p' '{NEMO / 'build.sh'}')\"\n"
+        f'copy_tree "$1" "$2"\n',
+        encoding="utf-8",
+    )
+    driver.chmod(0o755)
+    subprocess.run([str(driver), str(src), str(dest)], check=True, timeout=20)
+    cleanup = subprocess.run(
+        [node, "-e", f"require('fs').rmSync({json.dumps(str(dest / '.hermes-node-deps'))}, {{force: true}})"],
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert cleanup.returncode == 0, cleanup.stderr
+
+
+@pytest.mark.platforms("linux", "macos")
+def test_build_frontend_web_step_runs_from_staging_root(tmp_path: Path) -> None:
+    """Vite/babel resolve workspace packages from the checkout cwd (not $HOME)."""
+    bash = _bash()
+    real_node = shutil.which("node")
+    assert real_node is not None
+    staging = tmp_path / "staging"
+    (staging / "scripts" / "build").mkdir(parents=True)
+    record = tmp_path / "web-cwd.txt"
+    wrapper_dir = tmp_path / "bin"
+    wrapper_dir.mkdir()
+    wrapper = wrapper_dir / "node"
+    wrapper.write_text(
+        f"#!/usr/bin/env bash\n"
+        f'if [[ "$1" == scripts/build/web.mjs ]]; then pwd > "{record}"; exit 0; fi\n'
+        f'exec "{real_node}" "$@"\n',
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    subprocess.run(
+        [bash, "-c",
+         f'staging="{staging}"; export PATH="{wrapper_dir}:$PATH"; '
+         f'( cd "${{staging}}" && web_fresh="false"; '
+         f'if [[ "${{web_fresh}}" != "true" ]]; then node "scripts/build/web.mjs"; fi )'],
+        check=True, timeout=10,
+    )
+    assert Path(record.read_text().strip()).resolve() == staging.resolve()
 
 
 def test_probe_cli_missing_mirror_exits_nonzero(tmp_path: Path) -> None:
