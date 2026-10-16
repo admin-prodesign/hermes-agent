@@ -1,0 +1,50 @@
+name: Nemo push deploy
+
+# Tells the nemo host that a commit landed on main. Nemo verifies the signature,
+# checks that the SHA is on main, builds it, waits until every Hermes profile is
+# idle, and cuts over (scripts/deploy/nemo/README.md). This job only notifies:
+# it never holds host credentials beyond the tailnet join and the HMAC secret.
+#
+# Repo secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET (Tailscale OAuth client with
+# the auth_keys scope and tag:ci), NEMO_DEPLOY_URL, NEMO_DEPLOY_HMAC_SECRET.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nemo-deploy
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    if: github.repository == 'admin-prodesign/hermes-agent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          sparse-checkout: scripts/deploy
+          persist-credentials: false
+
+      - name: Join the tailnet as an ephemeral tag:ci node
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Notify nemo
+        env:
+          NEMO_DEPLOY_URL: ${{ secrets.NEMO_DEPLOY_URL }}
+          NEMO_DEPLOY_HMAC_SECRET: ${{ secrets.NEMO_DEPLOY_HMAC_SECRET }}
+        run: >-
+          python3 -m scripts.deploy.nemo.notify
+          --sha "$GITHUB_SHA"
+          --ref "$GITHUB_REF"
+          --repository "$GITHUB_REPOSITORY"
+          --run-id "$GITHUB_RUN_ID"
