@@ -32,7 +32,8 @@ from scripts.deploy.nemo.layout import (
     resolve_hermes_home,
 )
 from scripts.deploy.nemo.manifest import live_sha, resolve_sha_in_mirror
-from scripts.deploy.nemo.preflight import deploy_preflight
+from scripts.deploy.nemo.autodeploy_units import service_path_env
+from scripts.deploy.nemo.preflight import deploy_preflight, is_environment_failure
 from scripts.deploy.nemo.release_swap import current_target
 from scripts.deploy.nemo.retention import keep_set, prune, running_build, set_running
 from scripts.deploy.nemo.source import Run, run_cmd
@@ -124,6 +125,7 @@ def deploy_lock(path: Path, *, blocking: bool = True) -> Iterator[bool]:
 def _script_env() -> dict[str, str]:
     env = dict(os.environ)
     env.setdefault("NEMO_PYTHON", sys.executable)
+    env["PATH"] = service_path_env()
     return env
 
 
@@ -205,7 +207,7 @@ def _prepare_release(cfg: Config, item: Queued, build: str, hooks: Hooks, *, liv
             return f"{release} exists but is not a finished release (live SHA unknown; not pruning)"
         prune(
             cfg.releases,
-            keep_set(cfg.home, cfg.releases, with_previous=False) | {build},
+            keep_set(cfg.home, cfg.releases, with_previous=True) | {build},
             allow=True,
         )
         if release.exists():
@@ -240,8 +242,14 @@ def _cutover(cfg: Config, item: Queued, build: str, old_build: str | None, mode:
     return Outcome("deployed", item.sha, build, mode, "no runtime change; no restart")
 
 
+def _expanded_sha(cfg: Config, sha: str | None, git: Run) -> str | None:
+    if not sha:
+        return None
+    return resolve_sha_in_mirror(cfg.mirror, sha, run=git) or sha
+
+
 def deploy(cfg: Config, item: Queued, hooks: Hooks) -> Outcome:
-    preflight = deploy_preflight()
+    preflight = deploy_preflight(path=service_path_env())
     if preflight:
         return Outcome("failed", item.sha, detail=preflight)
     problem = fetch_main(cfg, hooks.git)
@@ -251,7 +259,7 @@ def deploy(cfg: Config, item: Queued, hooks: Hooks) -> Outcome:
     if reason:
         return Outcome("rejected", item.sha, detail=reason)
     old_build = current_target(cfg.releases)
-    old_sha = deployed_sha(cfg, old_build)
+    old_sha = _expanded_sha(cfg, deployed_sha(cfg, old_build), hooks.git)
     build = build_name(item.sha)
     if old_sha and (old_sha == item.sha.lower() or item.sha.lower().startswith(old_sha)):
         return Outcome("live", item.sha, build, detail="already live")
@@ -265,7 +273,7 @@ def deploy(cfg: Config, item: Queued, hooks: Hooks) -> Outcome:
     if old_sha:
         prune(
             cfg.releases,
-            keep_set(cfg.home, cfg.releases, with_previous=False) | {build},
+            keep_set(cfg.home, cfg.releases, with_previous=True) | {build},
             allow=True,
         )
     problem = _prepare_release(cfg, item, build, hooks, live_known=bool(old_sha))
@@ -300,7 +308,7 @@ def _finish(cfg: Config, item: Queued, outcome: Outcome) -> None:
         removed = prune(cfg.releases, keep_set(cfg.home, cfg.releases, with_previous=True), allow=True)
         if removed:
             print("pruned " + ", ".join(removed))
-    if outcome.result in REFUSED_RESULTS:
+    if outcome.result in REFUSED_RESULTS and not is_environment_failure(outcome.detail):
         refuse(cfg.home, item.sha, outcome.result, outcome.detail)
     _record(cfg, outcome)
     if outcome.alert:

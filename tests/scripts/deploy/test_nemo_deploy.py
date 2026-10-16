@@ -174,6 +174,23 @@ def test_record_build_manifest_writes_sha_time_and_release_name(tmp_path: Path) 
     assert "T" in data["build_time"] and data["build_time"].endswith("Z")
 
 
+@pytest.mark.platforms("linux", "macos")
+def test_build_sh_finds_uv_under_home_local_bin(tmp_path: Path, monkeypatch) -> None:
+    uv = tmp_path / ".local" / "bin" / "uv"
+    uv.parent.mkdir(parents=True)
+    uv.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    uv.chmod(0o755)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    script = NEMO / "common.sh"
+    done = subprocess.run(
+        ["bash", "-c", f'source "{script}" && command -v uv'],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert done.returncode == 0
+    assert str(uv) in done.stdout.strip()
+
+
 def test_gateway_socket_healthy_reports_missing_socket(tmp_path: Path) -> None:
     check = gateway_socket_healthy(tmp_path / "profiles" / "pdone", timeout=0.5)
     assert check.ok is False

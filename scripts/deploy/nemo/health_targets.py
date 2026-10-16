@@ -126,12 +126,17 @@ def resolve_health_plan(home: Path | None) -> HealthPlan:
 
 def socket_profile_homes(home: Path, profiles: tuple[str, ...]) -> list[tuple[str, Path]]:
     resolved = resolve_hermes_home(home)
-    out: list[tuple[str, Path]] = []
+    out: list[tuple[str, Path]] = [("neo", resolved)]
+    seen = {resolved}
     for name in profiles:
         if name in {"", "default"}:
-            out.append(("default", resolved))
+            path = resolved
         else:
-            out.append((name, profile_home(resolved, name)))
+            path = profile_home(resolved, name)
+        if path in seen:
+            continue
+        seen.add(path)
+        out.append((name, path))
     return out
 
 

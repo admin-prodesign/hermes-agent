@@ -22,13 +22,14 @@ from pathlib import Path
 import pytest
 
 from scripts.deploy.nemo import autodeploy, poll
-from scripts.deploy.nemo.autodeploy import Config, Hooks, check_drift, fetch_main, on_main, run_once
+from scripts.deploy.nemo.autodeploy import Config, Hooks, _script_env, check_drift, fetch_main, on_main, run_once
 from scripts.deploy.nemo.autodeploy_units import UnitOptions, render
 from scripts.deploy.nemo.changes import NOOP, RESTART, SKILLS, classify
 from scripts.deploy.nemo.manifest import live_sha, main_matches_live, sha_from_release_name, write_manifest
 from scripts.deploy.nemo.preflight import deploy_preflight
 from scripts.deploy.nemo.poll import PollResult, poll_once
 from scripts.deploy.nemo.retention import keep_set, prune, running_build, set_running
+from scripts.deploy.nemo import autodeploy_units
 from scripts.deploy.nemo.spool import enqueue, queue_dir, queued_shas, refuse, refused_shas
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -394,6 +395,20 @@ def test_skills_only_merge_swaps_without_restarting(tmp_path: Path, origin) -> N
 
 
 @pytest.mark.platforms("linux", "macos")
+def test_worker_rejects_using_full_sha_when_live_is_a_short_prefix(tmp_path: Path, origin) -> None:
+    work, mirror, base = origin
+    home = tmp_path / "hermes"
+    releases = home / "releases"
+    build = "hermes-agent-" + base[:10] + "-live"
+    _release(releases, build)
+    os.symlink(build, releases / "current")
+    _queue(home, base)
+    fake = _Recorder(releases, home)
+    outcome = run_once(Config(home=home, mirror=mirror, releases=releases), fake.hooks())
+    assert outcome.result == "live", outcome
+
+
+@pytest.mark.platforms("linux", "macos")
 def test_worker_ignores_a_request_older_than_the_live_sha(tmp_path: Path, origin) -> None:
     work, mirror, base = origin
     newer = _commit(work, {"agent/core.py": "X = 4\n"}, "code")
@@ -424,9 +439,12 @@ def test_prune_keeps_current_its_rollback_target_and_the_running_build(tmp_path:
     fresh = releases / ".staging-r6.abc"
     fresh.mkdir()
 
+    os.symlink("r1", releases / "previous")
     removed = prune(releases, keep_set(home, releases, with_previous=True))
-    assert removed == [".staging-r5.abc", "r1"]
-    assert sorted(p.name for p in releases.iterdir() if not p.name.startswith(".")) == ["current", "r2", "r3", "r4"]
+    assert removed == [".staging-r5.abc"]
+    assert sorted(p.name for p in releases.iterdir() if not p.name.startswith(".")) == [
+        "current", "previous", "r1", "r2", "r3", "r4",
+    ]
     assert fresh.is_dir()
     assert prune(releases, keep_set(home, releases, with_previous=False)) == []
     assert prune(tmp_path / "empty", set()) == []
@@ -524,6 +542,33 @@ def test_worker_fails_fast_when_uv_is_missing(tmp_path: Path, origin, monkeypatc
     assert deploy_preflight() is not None
     outcome = run_once(Config(home=home, mirror=mirror, releases=releases), _Recorder(releases, home).hooks())
     assert outcome.result == "failed" and "uv" in outcome.detail.lower()
+    assert new not in refused_shas(home)
+
+
+def test_script_env_puts_uv_local_bin_on_path(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    (tmp_path / ".local" / "bin").mkdir(parents=True)
+    assert f"{tmp_path}/.local/bin" in _script_env()["PATH"].split(":")
+
+
+def test_install_preserves_disabled_units_without_enable_flag(monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def fake_systemctl(scope: str, *args: str) -> int:
+        calls.append((scope, *args))
+        if len(args) >= 2 and args[0] == "is-enabled":
+            return 1
+        if len(args) >= 2 and args[0] == "is-active":
+            return 3
+        return 0
+
+    monkeypatch.setattr(autodeploy_units, "_systemctl", fake_systemctl)
+    autodeploy_units._restore_unit_states(
+        "user",
+        {autodeploy_units.POLL_TIMER: (False, False)},
+    )
+    assert ("user", "disable", autodeploy_units.POLL_TIMER) in calls
+    assert not any(call[1] == "enable" and call[2] == "--now" for call in calls)
 
 
 def test_units_run_from_current_and_poll_the_mirror_on_a_jittered_timer(tmp_path: Path) -> None:

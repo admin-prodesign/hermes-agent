@@ -42,6 +42,26 @@ def previous_build(home: Path, current: str | None) -> str | None:
     return str(previous) if previous else None
 
 
+def previous_symlink_target(releases: Path) -> str | None:
+    link = releases / "previous"
+    if link.is_symlink():
+        name = os.readlink(link)
+        return os.path.basename(name) if name else None
+    return None
+
+
+def audit_rollback_targets(home: Path) -> set[str]:
+    root = home / "upgrade-audits"
+    if not root.is_dir():
+        return set()
+    keep: set[str] = set()
+    for manifest in root.glob("*/manifest.json"):
+        previous = read_manifest(manifest).get("previous")
+        if previous:
+            keep.add(os.path.basename(str(previous)))
+    return keep
+
+
 def recent_release_names(releases: Path, keep_recent: int) -> set[str]:
     if keep_recent <= 0 or not releases.is_dir():
         return set()
@@ -59,10 +79,13 @@ def keep_set(
 ) -> set[str]:
     current = current_target(releases)
     keep = {name for name in (current, running_build(releases)) if name}
-    if with_previous:
-        previous = previous_build(home, current)
-        if previous:
-            keep.add(previous)
+    link_previous = previous_symlink_target(releases)
+    if link_previous:
+        keep.add(link_previous)
+    keep |= audit_rollback_targets(home)
+    manifest_previous = previous_build(home, current)
+    if manifest_previous:
+        keep.add(os.path.basename(manifest_previous))
     keep |= recent_release_names(releases, keep_recent)
     return {os.path.basename(name) for name in keep}
 

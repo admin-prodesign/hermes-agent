@@ -119,3 +119,11 @@ def require_uv(path: str | None = None) -> str | None:
 def deploy_preflight(*, path: str | None = None) -> str | None:
     """Fail-fast checks before prune or build. Returns a human-readable error."""
     return require_uv(path)
+
+
+def is_environment_failure(detail: str) -> bool:
+    """Host/tooling problems that should not mark a SHA refused."""
+    text = detail or ""
+    if UV_MISSING_MSG in text or "uv is required on PATH" in text:
+        return True
+    return False
