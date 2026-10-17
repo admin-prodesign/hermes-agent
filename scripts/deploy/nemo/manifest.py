@@ -12,6 +12,8 @@ from typing import Any
 from scripts.deploy.nemo.layout import SHA_RE, audit_dir
 
 RELEASE_NAME_SHA_RE = re.compile(r"^hermes-agent-([0-9a-fA-F]{10})(?:-|$)")
+AUTO_RELEASE_SUFFIX = "auto"
+_SUFFIX_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def read_manifest(path: Path) -> dict[str, Any]:
@@ -46,6 +48,23 @@ def sha_from_release_name(name: str) -> str | None:
     if match:
         return match.group(1).lower()
     return None
+
+
+def release_dir_name(sha: str, suffix: str = AUTO_RELEASE_SUFFIX) -> str:
+    """Hand-built and auto-built directory name: ``hermes-agent-<sha10>-<suffix>``.
+
+    A SHA shorter than 10 hex characters cannot form that name, so the bare SHA
+    is kept (the same default ``build.sh`` used before this convention).
+    """
+    text = (sha or "").strip().lower()
+    label = (suffix or "").strip()
+    if not label or label in {".", ".."} or "/" in label or not _SUFFIX_RE.fullmatch(label):
+        raise ValueError(f"invalid release suffix: {suffix!r}")
+    if SHA_RE.fullmatch(text) and len(text) >= 10:
+        return f"hermes-agent-{text[:10]}-{label}"
+    if SHA_RE.fullmatch(text):
+        return text
+    raise ValueError(f"sha must be 7-40 hex characters, got {sha!r}")
 
 
 def live_sha(home: Path, build: str | None) -> str | None:
