@@ -13,7 +13,7 @@ Usage: build.sh --sha SHA (--mirror DIR | --tarball FILE) [options]
 
   --hermes-home PATH     Profile home. Defaults to HERMES_HOME.
   --releases PATH        Release root. Defaults to <home>/releases.
-  --build NAME           Directory name under releases/. Defaults to the SHA.
+  --build NAME           Directory name under releases/. Defaults to hermes-agent-<sha10>-auto.
   --mirror DIR           Bare git mirror. Fetched with a timeout.
   --tarball FILE         Fallback GitHub tarball, used when fetch hangs or fails.
   --remote NAME          Mirror remote. Default: origin.
@@ -75,7 +75,8 @@ case "${stop_after}" in
   *) die "stop-after must be source, frontend, or publish" ;;
 esac
 if [[ -z "${build}" ]]; then
-  build="${sha}"
+  build="$(nemo_python -m scripts.deploy.nemo.cli release-name --sha "${sha}")" \
+    || die "could not derive release name from sha ${sha}"
 fi
 if [[ "${build}" == "." || "${build}" == ".." || "${build}" == */* ]]; then
   die "invalid build name: ${build}"
@@ -277,9 +278,15 @@ if [[ "${stop_after}" == "frontend" ]]; then
 fi
 
 mkdir -p "${releases}"
+staging_was="${staging}"
 mv "${staging}" "${release_path}"
 staging=""
 created=1
+# uv venv records absolute paths into the staging directory. Rewrite those onto the
+# published path and fail here if the interpreter cannot start after the rename.
+nemo_python -m scripts.deploy.nemo.cli publish-venv \
+  --release "${release_path}" --from-staging "${staging_was}" \
+  || die "release interpreter is not usable at ${release_path}/.venv/bin/python"
 # Tool sources are read by an interpreter, never executed. Publishing them without the exec bit
 # makes any launch that still depends on it fail the cutover selftest instead of a user's call.
 find "${release_path}/tools" -type f -name '*.py' -exec chmod a-x {} +

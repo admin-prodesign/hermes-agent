@@ -15,7 +15,7 @@ nemo: hermes-deploy-poll.timer → hermes-deploy-poll.service   (poll.py, every 
 nemo: hermes-deploy.path → hermes-deploy.service  (oneshot worker, autodeploy.py)
        1. fetches main; refuses a SHA that is not on main, or is older than the live SHA
        2. classifies the diff: noop / skills / restart          (changes.py)
-       3. prunes old releases, then build.sh --sha <sha>
+       3. prunes old releases, then build.sh --sha <sha> --build hermes-agent-<sha10>-auto
        4. restart: cutover.sh  (PD One selftest → idle gate → swap → unit rewrite → restart → /health → rollback)
           noop/skills: cutover.sh without gate or restart, then sync bundled skills
        5. prunes again (keeps current, its rollback target, and the running build)
@@ -90,6 +90,9 @@ That should print one `<sha>\trefs/heads/main` line.
   time. A newly added or removed skill shows in the slash-command list after
   `/reload-skills`. The processes keep running the previous release directory, which
   `releases/.running` protects from pruning until the next restart deploy.
+- **Release names.** Autodeploy publishes `hermes-agent-<sha10>-auto`, the same
+  `hermes-agent-<sha10>-<suffix>` shape as a hand-built release. Existing directories
+  named with a bare SHA still resolve from the audit manifest or the directory name.
 - **Retention.** Nemo's disk is nearly full. Before a build, only `current` and the
   running build stay. After a deploy, `current`, its rollback target, and the running
   build stay. That's 2 releases, or 3 right after a no-restart deploy. A build that rolled back

@@ -25,7 +25,9 @@ from scripts.deploy.nemo.layout import (
     DEFAULT_HEALTH_TIMEOUT_S, DEFAULT_POLL_S, DEFAULT_PROFILES, DEFAULT_QUIET_S,
     audit_dir, pin_uv_cache, releases_dir, resolve_hermes_home, valid_sha,
 )
-from scripts.deploy.nemo.manifest import read_manifest, record_build_manifest, write_manifest
+from scripts.deploy.nemo.manifest import (
+    AUTO_RELEASE_SUFFIX, read_manifest, record_build_manifest, release_dir_name, write_manifest,
+)
 from scripts.deploy.nemo.postcheck import run_postcheck
 from scripts.deploy.nemo.preflight import changed_files, plan_for
 from scripts.deploy.nemo.probe import run_probe
@@ -256,6 +258,26 @@ def cmd_rollback(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_release_name(args: argparse.Namespace) -> int:
+    try:
+        print(release_dir_name(args.sha, args.suffix or AUTO_RELEASE_SUFFIX))
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_publish_venv(args: argparse.Namespace) -> int:
+    from scripts.deploy.nemo.venv_publish import publish_venv
+
+    try:
+        publish_venv(args.release, args.from_staging)
+    except (OSError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
 def _add_home(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--hermes-home", default=None)
 
@@ -371,6 +393,19 @@ def register(sub) -> None:
     rollback = sub.add_parser("rollback", help="restore the previous release from a manifest")
     rollback.add_argument("--manifest", required=True, type=Path)
     rollback.set_defaults(func=cmd_rollback)
+
+    name = sub.add_parser("release-name", help="hermes-agent-<sha10>-<suffix> directory name")
+    name.add_argument("--sha", required=True)
+    name.add_argument("--suffix", default=AUTO_RELEASE_SUFFIX)
+    name.set_defaults(func=cmd_release_name)
+
+    publish_venv = sub.add_parser(
+        "publish-venv",
+        help="rewrite staging venv paths onto the published release and check the interpreter",
+    )
+    publish_venv.add_argument("--release", required=True, type=Path)
+    publish_venv.add_argument("--from-staging", required=True, type=Path)
+    publish_venv.set_defaults(func=cmd_publish_venv)
 
 
 def main(argv: list[str] | None = None) -> int:
