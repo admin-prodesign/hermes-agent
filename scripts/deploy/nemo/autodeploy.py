@@ -31,7 +31,7 @@ from scripts.deploy.nemo.layout import (
     DEFAULT_EXTRA, DEFAULT_POLL_S, DEFAULT_PROFILES, DEFAULT_QUIET_S, releases_dir,
     resolve_hermes_home,
 )
-from scripts.deploy.nemo.manifest import live_sha, resolve_sha_in_mirror
+from scripts.deploy.nemo.manifest import live_sha, release_dir_name, resolve_sha_in_mirror
 from scripts.deploy.nemo.autodeploy_units import service_path_env
 from scripts.deploy.nemo.preflight import deploy_preflight, is_environment_failure
 from scripts.deploy.nemo.release_swap import current_target
@@ -100,7 +100,8 @@ class Hooks:
 
 
 def build_name(sha: str) -> str:
-    return sha[:12]
+    """Published directory: ``hermes-agent-<sha10>-auto``. Bare SHA names still resolve."""
+    return release_dir_name(sha)
 
 
 def lock_path(home: Path) -> Path:

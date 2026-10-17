@@ -23,7 +23,8 @@ import pytest
 
 from scripts.deploy.nemo import autodeploy, poll
 from scripts.deploy.nemo.autodeploy import (
-    Config, Hooks, _script_env, check_drift, fetch_main, on_main, run_once, run_script, script_failure_detail,
+    Config, Hooks, _script_env, build_name, check_drift, fetch_main, on_main, run_once, run_script,
+    script_failure_detail,
 )
 from scripts.deploy.nemo.autodeploy_units import UnitOptions, render
 from scripts.deploy.nemo.changes import NOOP, RESTART, SKILLS, classify
@@ -343,7 +344,7 @@ def test_busy_profiles_leave_the_sha_for_the_next_poll(tmp_path: Path, origin) -
     outcome = run_once(Config(home=home, mirror=mirror, releases=releases), fake.hooks())
     assert outcome.result == "waiting" and outcome.mode == RESTART
     assert os.readlink(releases / "current") == "old"
-    assert (releases / new[:12]).is_dir()
+    assert (releases / build_name(new)).is_dir()
     assert new not in refused_shas(home)
     assert _poll(home, releases, mirror).action == "queued"
 
@@ -360,7 +361,7 @@ def test_worker_keeps_failed_build_dir_and_does_not_prune_on_cutover_failure(tmp
     assert outcome.result == "failed" and "still on old" in outcome.detail
     assert os.readlink(releases / "current") == "old"
     assert running_build(releases) == "old"
-    assert (releases / new[:12]).exists()
+    assert (releases / build_name(new)).exists()
     status = json.loads((home / "deploy" / "status.json").read_text(encoding="utf-8"))
     assert status["result"] == "failed"
     assert new in refused_shas(home)
@@ -389,9 +390,9 @@ def test_skills_only_merge_swaps_without_restarting(tmp_path: Path, origin) -> N
     fake = _Recorder(releases, home)
     outcome = run_once(Config(home=home, mirror=mirror, releases=releases), fake.hooks())
     assert outcome.result == "deployed" and outcome.mode == SKILLS, outcome
-    assert os.readlink(releases / "current") == new[:12]
+    assert os.readlink(releases / "current") == build_name(new)
     assert running_build(releases) == "old"
-    assert fake.synced == [releases / new[:12]]
+    assert fake.synced == [releases / build_name(new)]
     cutover = next(argv for argv in fake.calls if argv[1].endswith("cutover.sh"))
     assert "--skip-restart" in cutover and "--skip-gate" in cutover
 
