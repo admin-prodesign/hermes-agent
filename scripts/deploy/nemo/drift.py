@@ -1,12 +1,14 @@
 """Drift check: does the live release still match the commit it was built from?
 
 Every tracked file is compared by git blob hash against ``git ls-tree`` of the
-deployed SHA (work-tree bytes are hashed with ``git hash-object --path`` so
-``.gitattributes`` ``eol`` normalization matches checkout). Untracked ``.py``/``.sh``
-files outside build output are drift too
-(a hand-dropped module would be imported). Systemd units that point at a release
-other than ``current`` or the running build are reported, as is main moving ahead
-of the deployed SHA for longer than ``max_lag_s``.
+deployed SHA. Work-tree bytes are hashed with ``git hash-object --stdin-paths``,
+one call per effective ``.gitattributes`` group (``text`` / ``eol`` / ``crlf`` /
+``filter`` / ``ident`` from ``git check-attr --source`` of that SHA), so ``eol``
+normalization matches checkout without one process per file. Untracked
+``.py``/``.sh`` files outside build output are drift too (a hand-dropped module
+would be imported). Systemd units that point at a release other than ``current``
+or the running build are reported, as is main moving ahead of the deployed SHA
+for longer than ``max_lag_s``.
 """
 
 from __future__ import annotations
@@ -15,8 +17,10 @@ import hashlib
 import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from scripts.deploy.nemo.source import Run, run_cmd
 
@@ -27,6 +31,8 @@ BUILD_OUTPUT_PATHS = ("hermes_cli/web_dist/", "ui-tui/dist/", "freeze.txt")
 EXTRA_SUFFIXES = (".py", ".sh")
 GIT_LINK_MODE = "120000"
 GIT_SUBMODULE_MODE = "160000"
+ATTR_KEYS = ("text", "eol", "crlf", "filter", "ident")
+GitRun = Callable[..., subprocess.CompletedProcess]
 
 
 @dataclass
@@ -70,16 +76,140 @@ def blob_hash(path: Path) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
+def _git(argv: list[str], timeout: float, *, stdin: bytes | None = None) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    env["GIT_ATTR_NOSYSTEM"] = "1"
+    return subprocess.run(
+        argv, input=stdin, capture_output=True, timeout=timeout, check=False, env=env,
+    )
+
+
+def _git_error(completed: subprocess.CompletedProcess, fallback: str) -> RuntimeError:
+    err = (completed.stderr or b"").decode("utf-8", "replace").strip()
+    return RuntimeError(err or fallback)
+
+
 def worktree_blob_hash(mirror: Path, rel: str, path: Path, *, timeout: float = 60.0) -> str:
-    """Hash *path* as git would after applying attribute clean filters for *rel*."""
+    """Hash *path* as git would after applying attribute clean filters for *rel*.
+
+    One-file form used as the parity reference and for symlinks. Regular files go
+    through :func:`worktree_blob_hashes`.
+    """
     completed = subprocess.run(
         ["git", "--git-dir", str(mirror), "hash-object", f"--path={rel}", "--stdin"],
         input=_file_bytes(path), capture_output=True, timeout=timeout, check=False,
     )
     if completed.returncode != 0:
-        err = (completed.stderr or b"").decode("utf-8", "replace").strip()
-        raise RuntimeError(err or f"git hash-object --path={rel} failed")
+        raise _git_error(completed, f"git hash-object --path={rel} failed")
     return (completed.stdout or b"").decode("ascii").strip()
+
+
+def _parse_check_attr_z(data: bytes) -> dict[str, dict[str, str]]:
+    parts = data.split(b"\0")
+    parsed: dict[str, dict[str, str]] = {}
+    index = 0
+    while index + 2 < len(parts):
+        path_b, attr_b, value_b = parts[index], parts[index + 1], parts[index + 2]
+        index += 3
+        if not path_b:
+            continue
+        path = path_b.decode("utf-8", "surrogateescape")
+        parsed.setdefault(path, {})[attr_b.decode("ascii")] = value_b.decode(
+            "utf-8", "surrogateescape")
+    return parsed
+
+
+def _attr_token(name: str, value: str) -> str | None:
+    if value == "unspecified":
+        return None
+    if value == "unset":
+        return f"-{name}"
+    if value == "set":
+        return name
+    return f"{name}={value}"
+
+
+def _synthetic_attributes(values: tuple[str, ...]) -> str:
+    tokens: list[str] = []
+    for name, value in zip(ATTR_KEYS, values, strict=True):
+        token = _attr_token(name, value)
+        if token:
+            tokens.append(token)
+    return ("* " + " ".join(tokens) + "\n") if tokens else ""
+
+
+def attribute_groups(
+    mirror: Path, sha: str, rels: list[str], *, timeout: float = 60.0, run: GitRun | None = None,
+) -> dict[tuple[str, ...], list[str]]:
+    """Group *rels* by the deployed SHA's effective ``text/eol/crlf/filter/ident``."""
+    if not rels:
+        return {}
+    git = run or _git
+    payload = b"\0".join(rel.encode("utf-8", "surrogateescape") for rel in rels) + b"\0"
+    completed = git(
+        ["git", "--git-dir", str(mirror), "check-attr", "--source", sha, "--stdin", "-z", *ATTR_KEYS],
+        timeout, stdin=payload,
+    )
+    if completed.returncode != 0:
+        raise _git_error(completed, f"git check-attr --source {sha} failed")
+    parsed = _parse_check_attr_z(completed.stdout or b"")
+    groups: dict[tuple[str, ...], list[str]] = {}
+    for rel in rels:
+        attrs = parsed.get(rel, {})
+        key = tuple(attrs.get(name, "unspecified") for name in ATTR_KEYS)
+        groups.setdefault(key, []).append(rel)
+    return groups
+
+
+def _hash_stdin_paths(
+    mirror: Path, items: list[tuple[str, Path]], attr_file: Path, *, timeout: float, run: GitRun,
+) -> dict[str, str]:
+    payload = "".join(f"{path}\n" for _, path in items).encode("utf-8", "surrogateescape")
+    completed = run(
+        ["git", "--git-dir", str(mirror), "-c", f"core.attributesFile={attr_file}",
+         "hash-object", "--stdin-paths"],
+        timeout, stdin=payload,
+    )
+    if completed.returncode != 0:
+        raise _git_error(completed, "git hash-object --stdin-paths failed")
+    digests = (completed.stdout or b"").decode("ascii").split()
+    if len(digests) != len(items):
+        raise RuntimeError(
+            f"git hash-object --stdin-paths returned {len(digests)} hashes for {len(items)} paths")
+    return {rel: digest for (rel, _path), digest in zip(items, digests, strict=True)}
+
+
+def worktree_blob_hashes(
+    mirror: Path, sha: str, items: list[tuple[str, Path]], *, timeout: float = 60.0,
+    run: GitRun | None = None,
+) -> dict[str, str]:
+    """Hash work-tree files, one ``hash-object --stdin-paths`` per attribute group.
+
+    ``--stdin-paths`` cannot take ``--path``, so each group is hashed with a
+    synthetic ``core.attributesFile`` of ``* <attrs>`` taken from
+    :func:`attribute_groups`. Symlinks stay on the per-file ``--stdin`` path
+    (blob bytes are the link text).
+    """
+    git = run or _git
+    hashes: dict[str, str] = {}
+    batched: list[tuple[str, Path]] = []
+    for rel, path in items:
+        if path.is_symlink() or "\n" in rel or "\n" in os.fspath(path):
+            hashes[rel] = worktree_blob_hash(mirror, rel, path, timeout=timeout)
+            continue
+        batched.append((rel, path))
+    if not batched:
+        return hashes
+    groups = attribute_groups(mirror, sha, [rel for rel, _ in batched], timeout=timeout, run=git)
+    by_rel = {rel: path for rel, path in batched}
+    with tempfile.TemporaryDirectory(prefix="nemo-drift-attrs-") as raw:
+        attr_file = Path(raw) / "attributes"
+        for key, rels in groups.items():
+            attr_file.write_text(_synthetic_attributes(key), encoding="utf-8")
+            hashes.update(_hash_stdin_paths(
+                mirror, [(rel, by_rel[rel]) for rel in rels], attr_file, timeout=timeout, run=git,
+            ))
+    return hashes
 
 
 def tree_blobs(mirror: Path, sha: str, *, run: Run = run_cmd, timeout: float = 60.0) -> dict[str, tuple[str, str]]:
@@ -105,7 +235,8 @@ def _is_build_output(rel: str) -> bool:
 
 
 def compare_tree(release: Path, blobs: dict[str, tuple[str, str]], report: DriftReport,
-                 *, mirror: Path) -> None:
+                 *, mirror: Path, sha: str, timeout: float = 60.0, run: GitRun | None = None) -> None:
+    pending: list[tuple[str, Path, str, str]] = []
     for rel, (mode, obj) in sorted(blobs.items()):
         if mode == GIT_SUBMODULE_MODE:
             continue
@@ -113,10 +244,17 @@ def compare_tree(release: Path, blobs: dict[str, tuple[str, str]], report: Drift
         if not path.is_symlink() and not path.exists():
             report.missing.append(rel)
             continue
-        try:
-            on_disk = worktree_blob_hash(mirror, rel, path)
-        except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
-            report.error = f"{rel}: {exc}"
+        pending.append((rel, path, mode, obj))
+    try:
+        hashed = worktree_blob_hashes(
+            mirror, sha, [(rel, path) for rel, path, _, _ in pending], timeout=timeout, run=run)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        report.error = str(exc)
+        return
+    for rel, path, mode, obj in pending:
+        on_disk = hashed.get(rel)
+        if on_disk is None:
+            report.error = f"{rel}: missing hash"
             return
         if (mode == GIT_LINK_MODE) != path.is_symlink() or on_disk != obj:
             report.modified.append(rel)
