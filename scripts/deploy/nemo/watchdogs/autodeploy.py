@@ -71,7 +71,7 @@ def watch_units(
 def refused_nonempty(home: Path) -> list[Finding]:
     path = home / "deploy" / "refused.jsonl"
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")
     except OSError:
         return []
     count = sum(1 for line in text.splitlines() if line.strip())
@@ -90,7 +90,7 @@ def refused_nonempty(home: Path) -> list[Finding]:
 def status_failed(home: Path) -> list[Finding]:
     path = home / "deploy" / "status.json"
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return []
     if not isinstance(data, dict) or data.get("result") != "failed":

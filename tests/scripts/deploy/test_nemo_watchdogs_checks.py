@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import socket
+import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -106,8 +108,9 @@ def test_gateway_http_and_socket_failures(watch_home: Path) -> None:
 
 
 @pytest.mark.platforms("linux", "macos")
-def test_raw_identify_speaks_control_socket_protocol(tmp_path: Path) -> None:
-    sock_path = tmp_path / "gateway.sock"
+def test_raw_identify_speaks_control_socket_protocol() -> None:
+    home = Path(tempfile.mkdtemp(prefix="nemo-wd-", dir="/tmp"))
+    sock_path = home / "gateway.sock"
     ready = threading.Event()
 
     def serve() -> None:
@@ -125,10 +128,13 @@ def test_raw_identify_speaks_control_socket_protocol(tmp_path: Path) -> None:
 
     thread = threading.Thread(target=serve)
     thread.start()
-    assert ready.wait(2)
-    payload = gateway.raw_identify(tmp_path, timeout=2.0)
-    thread.join(2)
-    assert payload == {"protocol": 1, "pid": 9}
+    try:
+        assert ready.wait(2)
+        payload = gateway.raw_identify(home, timeout=2.0)
+        thread.join(2)
+        assert payload == {"protocol": 1, "pid": 9}
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
 
 
 def test_autodeploy_refused_status_units_and_drift(watch_home: Path) -> None:
@@ -168,7 +174,7 @@ def test_host_thresholds(watch_home: Path) -> None:
     total = 1000
     warn = host.collect(
         home=watch_home,
-        disk=(total, 860, 140),
+        disk=(total, 840, 160),
         meminfo={"MemTotal": 1000, "MemAvailable": 200, "SwapTotal": 100, "SwapFree": 50},
         thermals=[("thermal_zone0", 70.0)],
     )

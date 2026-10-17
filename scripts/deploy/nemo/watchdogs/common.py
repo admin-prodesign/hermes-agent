@@ -18,7 +18,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -80,7 +80,7 @@ def now() -> float:
 
 
 def iso(ts: float | None = None) -> str:
-    return datetime.fromtimestamp(ts or now(), tz=timezone.utc).strftime(
+    return datetime.fromtimestamp(ts or now(), tz=UTC).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
     )
 
@@ -161,7 +161,7 @@ class IncidentStore:
             pass
         self.path = root / f"{name}.json"
         try:
-            self.data = json.loads(self.path.read_text(encoding="utf-8"))
+            self.data = json.loads(self.path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError):
             self.data = {}
         self.data.setdefault("incidents", {})
@@ -235,7 +235,7 @@ class IncidentStore:
 
 def load_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
@@ -307,7 +307,7 @@ def post_alert(
         sys.stderr.write("[dry-run] " + raw + "\n")
         return 0
     url, auth = webhook_cfg()
-    if not url or "REPLACE_WITH" in url or "example.invalid" in url:
+    if not url or "REPLACE_WITH" in url or url.rstrip("/") == "https://example.invalid/webhook":
         raise RuntimeError("webhook URL missing or still a placeholder")
     if not auth or any("REPLACE_WITH" in value for value in auth.values()):
         raise RuntimeError("webhook sender key missing or still a placeholder")
@@ -369,6 +369,8 @@ def run_cmd(
             argv,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             env=env,
             check=False,

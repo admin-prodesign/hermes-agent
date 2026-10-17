@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
 
@@ -21,7 +21,7 @@ NAME = "backup"
 DEFAULT_MARKER = "backups/last-successful-push"
 DEFAULT_MAX_AGE_H = 26.0
 _ISO = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
-_SUCCESS = re.compile(r"(success|pushed|ok)", re.I)
+_SUCCESS = re.compile(r"(success|pushed|ok)", re.IGNORECASE)
 Clock = Callable[[], float]
 
 
@@ -41,7 +41,7 @@ def parse_timestamp(text: str, fallback: float | None = None) -> float | None:
     match = _ISO.search(stripped)
     if match:
         parsed = datetime.strptime(match.group(0), "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=timezone.utc
+            tzinfo=UTC
         )
         return parsed.timestamp()
     try:
@@ -53,7 +53,7 @@ def parse_timestamp(text: str, fallback: float | None = None) -> float | None:
 def marker_success(path: Path) -> float | None:
     try:
         mtime = path.stat().st_mtime
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")
     except OSError:
         return None
     return parse_timestamp(text, fallback=mtime)
@@ -61,7 +61,7 @@ def marker_success(path: Path) -> float | None:
 
 def log_success(path: Path) -> float | None:
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
         mtime = path.stat().st_mtime
     except OSError:
         return None
