@@ -78,7 +78,8 @@ def test_build_argv_passes_the_convention_name(tmp_path: Path) -> None:
 def test_release_name_cli_prints_the_convention() -> None:
     proc = subprocess.run(
         [sys.executable, "-m", "scripts.deploy.nemo.cli", "release-name", "--sha", SHA],
-        cwd=ROOT, capture_output=True, text=True, timeout=20,
+        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=20, check=False,
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "hermes-agent-a10be5b8b1-auto"
@@ -101,13 +102,13 @@ def test_venv_works_after_the_staging_dir_is_moved(tmp_path: Path) -> None:
 
     publish_venv(final, staging)
     subprocess.run([str(moved), "-c", "import sys"], check=True, timeout=20, cwd=str(final))
-    cfg = (final / ".venv" / "pyvenv.cfg").read_text(encoding="utf-8")
+    cfg = (final / ".venv" / "pyvenv.cfg").read_text(encoding="utf-8-sig")
     assert str(staging) not in cfg
     assert str(final / ".python" / "bin") in cfg
-    shebang = (final / ".venv" / "bin" / "sample-tool").read_text(encoding="utf-8").splitlines()[0]
+    shebang = (final / ".venv" / "bin" / "sample-tool").read_text(encoding="utf-8-sig").splitlines()[0]
     assert str(final / ".venv" / "bin" / "python") in shebang
     assert str(staging) not in shebang
-    assert (final / ".venv" / "lib" / "site-packages" / "_nemo.pth").read_text(encoding="utf-8") == (
+    assert (final / ".venv" / "lib" / "site-packages" / "_nemo.pth").read_text(encoding="utf-8-sig") == (
         str(final) + "\n"
     )
     target = os.readlink(final / ".venv" / "bin" / "python3")
@@ -123,7 +124,8 @@ def test_publish_venv_cli_fails_clearly_when_the_interpreter_stays_broken(tmp_pa
     proc = subprocess.run(
         [sys.executable, "-m", "scripts.deploy.nemo.cli", "publish-venv",
          "--release", str(final), "--from-staging", str(tmp_path / "other-staging")],
-        cwd=ROOT, capture_output=True, text=True, timeout=20,
+        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=20, check=False,
     )
     assert proc.returncode != 0
     assert "release interpreter missing" in proc.stderr

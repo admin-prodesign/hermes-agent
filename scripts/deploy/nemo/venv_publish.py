@@ -97,6 +97,9 @@ def check_release_interpreter(release: Path, *, timeout: float = 30.0) -> None:
             timeout=timeout,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         )
     except OSError as exc:
         raise RuntimeError(f"release interpreter could not be started at {python}: {exc}") from exc
