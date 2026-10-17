@@ -200,6 +200,75 @@ worker starts.
 - **Retry a refused SHA:** `.venv/bin/python -m scripts.deploy.nemo.autodeploy retry <sha>`.
 - **Remove:** `install_autodeploy.sh uninstall` (add `--scope system` if installed so).
 
+## Watchdogs
+
+No-agent systemd `--user` timers live under `scripts/deploy/nemo/watchdogs/` and
+ship with each release. The installer runs from `releases/current`, so a merged
+change to a check goes live with the release that carries it. A healthy tick is
+silent. A new or changed finding POSTs JSON to `WEBHOOK_URL` with
+`WEBHOOK_SENDER_KEY` as a header; a clear sends one recovery notice. Alerts never
+include secrets or message bodies.
+
+| Timer | Interval | Looks at |
+| --- | --- | --- |
+| `hermes-watchdog-failures.timer` | 5 min | `systemctl --failed` (system + `--user`); enabled cron jobs in `$HERMES_HOME/cron/jobs.json` and `profiles/*/cron/jobs.json` with `failure_streak>0`; PD One repairer/supervisor escalation files; Bitwarden Secrets Manager 503s in recent journal/logs |
+| `hermes-watchdog-gateway.timer` | 2 min | `http://127.0.0.1:8644/health` and `http://127.0.0.1:8765/api/health` return 200; control-socket `identify` for `$HERMES_HOME` and `$HERMES_HOME/profiles/pdone` |
+| `hermes-watchdog-autodeploy.timer` | 5 min | `hermes-deploy-poll.timer` or `hermes-deploy.path` disabled/inactive; `$HERMES_HOME/deploy/refused.jsonl` non-empty; `deploy/status.json` result `failed`; `hermes-deploy-drift.service` failed |
+| `hermes-watchdog-host.timer` | 5 min | disk >85% warn / >90% crit; MemAvailable <10%; swap >75%; thermal (`/sys/class/thermal` or `sensors`) over configurable thresholds |
+| `hermes-watchdog-backup.timer` | 1 h | last successful hermes-backup push older than 26 h |
+
+### Install
+
+From the deployed release, as the user that owns the Hermes home:
+
+```bash
+cd "$HERMES_HOME/releases/current"
+mkdir -p "$HERMES_HOME/watchdogs"
+cp scripts/deploy/nemo/watchdogs/webhook.env.template \
+  "$HERMES_HOME/watchdogs/webhook.env"
+# fill WEBHOOK_URL and WEBHOOK_SENDER_KEY, then:
+chmod 600 "$HERMES_HOME/watchdogs/webhook.env"
+loginctl enable-linger "$USER"
+bash scripts/deploy/nemo/watchdogs/install_watchdogs.sh install
+```
+
+That writes the ten units (five oneshot services + five timers) and does **not**
+enable them. Re-running `install` without `--enable` keeps each timer's current
+enable/active state, the same contract as `install_autodeploy.sh`.
+
+```bash
+bash scripts/deploy/nemo/watchdogs/install_watchdogs.sh install --enable
+bash scripts/deploy/nemo/watchdogs/install_watchdogs.sh --dry-run
+bash scripts/deploy/nemo/watchdogs/install_watchdogs.sh uninstall
+```
+
+`--dry-run` prints the units and writes nothing. `uninstall` disables and
+removes them.
+
+### Env
+
+`$HERMES_HOME/watchdogs/webhook.env` (mode 0600). Ship only the template; never
+commit a filled file:
+
+```
+WEBHOOK_URL=https://example.invalid/webhook
+WEBHOOK_SENDER_KEY=REPLACE_WITH_SENDER_KEY
+```
+
+Optional overrides (paths are relative to `$HERMES_HOME` unless absolute):
+
+- `NEMO_WATCH_PDONE_REPAIRER_STATE` (default `profiles/pdone/state/repairer-escalation.json`)
+- `NEMO_WATCH_PDONE_SUPERVISOR_STATE` (default `profiles/pdone/state/supervisor-escalation.json`)
+- `NEMO_WATCH_GATEWAY_HEALTH` (default `http://127.0.0.1:8644/health`)
+- `NEMO_WATCH_DASHBOARD_HEALTH` (default `http://127.0.0.1:8765/api/health`)
+- `NEMO_WATCH_BACKUP_MARKER` (default `backups/last-successful-push`)
+- `NEMO_WATCH_BACKUP_LOG` / `NEMO_WATCH_BACKUP_REPO` (log line or `git log` of a backup repo)
+- `NEMO_WATCH_BACKUP_MAX_AGE_H` (default 26)
+- `NEMO_WATCH_THERMAL_WARN_C` / `NEMO_WATCH_THERMAL_CRIT_C` (default 80 / 90)
+- `NEMO_WATCH_IGNORE_UNITS` (comma-separated unit names)
+
+State lives in `$HERMES_HOME/watchdogs/state/` (mode 0700).
+
 ## Not covered yet
 
 - Prompts are built in Python and profile `config.yaml` is not in this repo, so neither
