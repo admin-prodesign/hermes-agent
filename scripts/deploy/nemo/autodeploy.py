@@ -388,7 +388,7 @@ def check_drift(cfg: Config, *, unit_dirs: list[Path], max_lag_s: float, git: Ru
     report.sha = full_sha
     try:
         compare_tree(cfg.releases / os.path.basename(build), tree_blobs(cfg.mirror, full_sha, run=git),
-                     report, mirror=cfg.mirror)
+                     report, mirror=cfg.mirror, sha=full_sha)
     except (RuntimeError, subprocess.TimeoutExpired) as exc:
         report.error = str(exc)
     allowed = {os.path.basename(build)} | {running_build(cfg.releases) or ""}
