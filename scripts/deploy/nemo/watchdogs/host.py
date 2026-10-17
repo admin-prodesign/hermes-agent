@@ -116,7 +116,7 @@ def read_thermals(runner=None) -> list[tuple[str, float]]:
         for zone in sorted(root.glob("thermal_zone*")):
             raw = zone / "temp"
             try:
-                millideg = int(raw.read_text(encoding="utf-8").strip())
+                millideg = int(raw.read_text(encoding="utf-8-sig").strip())
             except (OSError, ValueError):
                 continue
             temps.append((zone.name, millideg / 1000.0))
@@ -148,7 +148,7 @@ def thermal_findings(temps: list[tuple[str, float]]) -> list[Finding]:
 def read_meminfo(path: Path | None = None) -> dict[str, int]:
     target = path or Path("/proc/meminfo")
     try:
-        return parse_meminfo(target.read_text(encoding="utf-8"))
+        return parse_meminfo(target.read_text(encoding="utf-8-sig"))
     except OSError:
         return {}
 

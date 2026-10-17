@@ -20,8 +20,8 @@ from scripts.deploy.nemo.watchdogs.common import (
 NAME = "failures"
 DEFAULT_REPAIRER = "profiles/pdone/state/repairer-escalation.json"
 DEFAULT_SUPERVISOR = "profiles/pdone/state/supervisor-escalation.json"
-_BWS_RE = re.compile(r"\b(bws|bitwarden)\b", re.I)
-_503_RE = re.compile(r"\b503\b|service unavailable", re.I)
+_BWS_RE = re.compile(r"\b(bws|bitwarden)\b", re.IGNORECASE)
+_503_RE = re.compile(r"\b503\b|service unavailable", re.IGNORECASE)
 _BAD_STATUS = frozenset(
     {"escalated", "escalate", "escalate_only", "critical", "page", "paging", "failed"}
 )
@@ -34,13 +34,6 @@ def _ignore_units() -> set[str]:
     return {part.strip() for part in raw.split(",") if part.strip()}
 
 
-def _sysctl_env(user: bool) -> dict[str, str]:
-    env = dict(os.environ)
-    if user:
-        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    return env
-
-
 def failed_units(runner: Runner | None = None) -> list[Finding]:
     run = runner or run_cmd
     ignore = _ignore_units()
@@ -50,7 +43,6 @@ def failed_units(runner: Runner | None = None) -> list[Finding]:
         proc = run(
             ["systemctl", *extra, "--failed", "--no-legend", "--plain", "--no-pager"],
             timeout=10,
-            env=_sysctl_env(user),
         )
         stdout = getattr(proc, "stdout", "") or ""
         scope = "user" if user else "system"
@@ -71,7 +63,7 @@ def failed_units(runner: Runner | None = None) -> list[Finding]:
 
 def _jobs_from_file(path: Path) -> list[dict]:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return []
     if isinstance(data, dict):
@@ -130,7 +122,7 @@ def _record_escalated(data: dict) -> bool:
 
 def _escalation_records(path: Path) -> list[dict]:
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")
     except OSError:
         return []
     if path.suffix == ".jsonl":
@@ -229,7 +221,7 @@ def recent_log_lines(home: Path, *, minutes: int = 15, clock: Callable[[], float
         try:
             if not path.is_file() or path.stat().st_mtime < cutoff:
                 continue
-            text = path.read_text(encoding="utf-8", errors="replace")
+            text = path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError:
             continue
         lines.extend(text.splitlines()[-400:])

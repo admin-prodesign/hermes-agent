@@ -41,7 +41,7 @@ def raw_identify(home: Path, timeout: float = 2.0) -> dict[str, Any] | None:
     if not path.exists():
         pointer = home / "gateway.sock.path"
         try:
-            target = pointer.read_text(encoding="utf-8").strip() if pointer.is_file() else ""
+            target = pointer.read_text(encoding="utf-8-sig").strip() if pointer.is_file() else ""
         except OSError:
             target = ""
         path = Path(target) if target else path

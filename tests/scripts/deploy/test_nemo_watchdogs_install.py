@@ -128,10 +128,11 @@ def test_install_script_parses_and_dry_run_help() -> None:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=20,
     )
     assert "install" in help_out.stdout and "--enable" in help_out.stdout
-    template = (WATCHDOGS / "webhook.env.template").read_text(encoding="utf-8")
+    template = (WATCHDOGS / "webhook.env.template").read_text(encoding="utf-8-sig")
     assert "WEBHOOK_URL=" in template
     assert "WEBHOOK_SENDER_KEY=" in template
     assert "REPLACE_WITH_SENDER_KEY" in template
