@@ -104,8 +104,10 @@ def test_check_release_imports_names_a_missing_interpreter(tmp_path: Path) -> No
         check_release_imports(release)
 
 
-def test_check_runtime_imports_passes_on_the_test_interpreter() -> None:
-    check_runtime_imports(sys.executable, cwd=ROOT)
+def test_check_runtime_imports_succeeds_when_the_modules_exist() -> None:
+    # The test environment does not install [nemo] (PyYAML). The probe's
+    # success path is the interpreter returning 0, not this machine's extras.
+    check_runtime_imports(sys.executable, modules=("sys", "json"))
 
 
 @pytest.mark.platforms("linux", "macos")
@@ -176,7 +178,8 @@ def test_build_rejects_an_unsafe_extras_list(tmp_path: Path) -> None:
          "--hermes-home", str(home), "--sha", "abc1234", "--build", "build-a",
          "--tarball", str(tmp_path / "missing.tar"),
          "--extra", "nemo;oops"],
-        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=20,
+        cwd=tmp_path, env=env, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=20, check=False,
     )
     assert proc.returncode != 0
     assert "invalid extras" in proc.stderr
