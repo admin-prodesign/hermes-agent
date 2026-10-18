@@ -203,6 +203,13 @@ worker starts.
 - **Retry a refused SHA:** `.venv/bin/python -m scripts.deploy.nemo.autodeploy retry <sha>`.
 - **Remove:** `install_autodeploy.sh uninstall` (add `--scope system` if installed so).
 
+## PD One Mattermost status timer
+
+The pinned PD One health post on Mattermost is updated by
+`tools/pd_one_ops/mattermost_status` (see that directory's `README.md` for the
+`ExecStart` line pointing at `releases/current/.venv/bin/python -m
+tools.pd_one_ops.mattermost_status`).
+
 ## Not covered yet
 
 - Prompts are built in Python and profile `config.yaml` is not in this repo, so neither
