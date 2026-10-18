@@ -438,10 +438,16 @@ bedrock = ["boto3==1.42.89"]
 # and is not part of this extra. requests is already a core pin on
 # Python 3.14; it is repeated here so the nemo closure names the package
 # profile cron scripts import (HR sync, reaper).
+# hermes-agent[mcp] is composed here because PD One's selftest constructs
+# the MCP stdio server on the release interpreter. Auto-builds install
+# whatever extras the *previous* release's build.sh asks for, so folding
+# mcp into [nemo] is what makes the first deploy of an extras-list fix
+# succeed. termux and [all] compose the same extra.
 nemo = [
   "honcho-ai==2.5.1",
   "pyyaml==6.0.3",
   "requests==2.33.0",
+  "hermes-agent[mcp]",
 ]
 vertex = ["google-auth==2.55.1"]
 azure-identity = ["azure-identity==1.25.3"]

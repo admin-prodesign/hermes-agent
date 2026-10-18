@@ -1,8 +1,8 @@
-"""Compare ``uv pip freeze`` output. A missing nemo pin fails the build."""
+"""Compare ``uv pip freeze`` output. A missing runtime pin fails the build."""
 
 from __future__ import annotations
 
-from scripts.deploy.nemo.layout import NEMO_PACKAGES
+from scripts.deploy.nemo.runtime_deps import RUNTIME_PACKAGES
 
 
 def parse_freeze(text: str) -> dict[str, str]:
@@ -44,7 +44,7 @@ def compare(old_text: str, new_text: str) -> tuple[str, list[str]]:
             lines.append(f"- {name}=={old[name]}")
         elif old[name] != new[name]:
             lines.append(f"~ {name}=={old[name]} -> {name}=={new[name]}")
-    missing = [name for name in NEMO_PACKAGES if name in old and name not in new]
+    missing = [name for name in RUNTIME_PACKAGES if name in old and name not in new]
     if not lines:
         lines.append("(no pin changes)")
     return "\n".join(lines) + "\n", missing

@@ -480,7 +480,10 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="deploy the newest queued SHA, then exit")
     _common(run)
-    run.add_argument("--extra", default=DEFAULT_EXTRA)
+    run.add_argument(
+        "--extra", default=DEFAULT_EXTRA,
+        help="comma-separated pip extras to install (default: nemo,mcp)",
+    )
     run.add_argument("--quiet", type=float, default=DEFAULT_QUIET_S)
     run.add_argument("--poll", type=float, default=DEFAULT_POLL_S)
     run.add_argument("--gate-timeout", type=float, default=DEFAULT_GATE_TIMEOUT_S)

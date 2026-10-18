@@ -269,7 +269,7 @@ files still land under that profile's `upgrade-audits/<build>/`.
 1. `probe.py` checks whether `git fetch <sha>` against the bare mirror
    answers. Exit 75 means it hung; `build.sh` then uses the GitHub tarball.
 2. `build.sh --sha <sha> --mirror <bare-repo>` fetches that commit, installs
-   `.[nemo]` (honcho-ai, PyYAML, and requests), installs the dashboard npm
+   `.[nemo,mcp]` (honcho-ai, PyYAML, requests, and the MCP SDK), installs the dashboard npm
    dependencies, and publishes a read-only release. It creates the release
    directory only after the source tree validates.
 3. `cutover.sh --build <name>` runs the verifies the diff touches (`--full`

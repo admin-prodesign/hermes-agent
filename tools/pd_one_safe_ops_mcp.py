@@ -10,8 +10,8 @@ The profile ``tools/`` directory is not imported unless
 ``pd_one.load_profile_tools`` is true. That flag is off by default. Names the
 release already owns are never taken from the profile file.
 
-Deploy, after the nemo release is rebuilt from main (the ``nemo`` extra
-supplies honcho-ai and PyYAML):
+Deploy, after the nemo release is rebuilt from main (``.[nemo,mcp]``:
+honcho-ai, PyYAML, and the MCP SDK):
 
 1. Point the pdone profile ``mcp_servers.pdone_safe_ops`` command at
    ``tools/pd_one_safe_ops_mcp.py`` in the release checkout, using the

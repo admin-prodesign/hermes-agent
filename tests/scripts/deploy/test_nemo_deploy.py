@@ -553,7 +553,10 @@ def test_mcp_scripts_outside_the_release_are_ignored(tmp_path: Path) -> None:
     (home / "config.yaml").write_text(json.dumps(config), encoding="utf-8")
     found = scripts_in_release(home, release, profiles=())
     assert found == [inside.resolve()]
-    assert compile_plan(sys.executable, found)[0][2] == "import requests, yaml"
+    from scripts.deploy.nemo.runtime_deps import import_statement
+
+    assert compile_plan(sys.executable, found)[0][2] == import_statement()
+    assert "mcp" in import_statement()
 
 
 def test_static_ws_problems_name_a_missing_preinstall(tmp_path: Path) -> None:

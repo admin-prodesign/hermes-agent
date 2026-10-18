@@ -120,7 +120,7 @@ def test_lazy_installable_extras_excluded_from_all():
         "wake", "wake-openwakeword", "wake-sherpa", "wake-porcupine",
         "google-chat",
         "mistral",  # mistralai — Voxtral STT/TTS, lazy-installed (stt.mistral / tts.mistral)
-        "nemo",  # honcho-ai + PyYAML + requests for the production host; not part of [all]
+        "nemo",  # honcho-ai + PyYAML + requests + mcp for the production host; not part of [all]
     }
     all_extra_specs = optional_dependencies["all"]
     for extra in lazy_covered_extras:
@@ -179,6 +179,19 @@ def test_extras_pin_each_package_at_one_version():
 
 
 
+
+
+def test_nemo_extra_composes_mcp_for_the_pd_one_selftest():
+    """Production ``.[nemo]`` must install the MCP SDK.
+
+    The PD One selftest constructs ``build_server`` on the release
+    interpreter. Auto-builds that only ask for ``[nemo]`` (the previous
+    release's build.sh) fail with ``No module named 'mcp'`` unless this
+    extra composes ``hermes-agent[mcp]``.
+    """
+    optional_dependencies = _load_optional_dependencies()
+
+    assert any("hermes-agent[mcp]" in spec for spec in optional_dependencies["nemo"])
 
 
 def test_dingtalk_extra_includes_qrcode_for_qr_auth():

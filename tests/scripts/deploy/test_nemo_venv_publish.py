@@ -73,6 +73,7 @@ def test_build_argv_passes_the_convention_name(tmp_path: Path) -> None:
     argv = build_argv(cfg, SHA, name)
     assert argv[argv.index("--build") + 1] == "hermes-agent-a10be5b8b1-auto"
     assert argv[argv.index("--sha") + 1] == SHA
+    assert argv[argv.index("--extra") + 1] == "nemo,mcp"
 
 
 def test_release_name_cli_prints_the_convention() -> None:

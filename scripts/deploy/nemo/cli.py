@@ -278,6 +278,28 @@ def cmd_publish_venv(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_extras_spec(args: argparse.Namespace) -> int:
+    from scripts.deploy.nemo.runtime_deps import extras_spec, parse_extras
+
+    try:
+        print(extras_spec(parse_extras(args.extra)))
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    return 0
+
+
+def cmd_check_imports(args: argparse.Namespace) -> int:
+    from scripts.deploy.nemo.runtime_deps import check_runtime_imports
+
+    try:
+        check_runtime_imports(args.python, cwd=args.cwd)
+    except (OSError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
 def _add_home(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--hermes-home", default=None)
 
@@ -406,6 +428,18 @@ def register(sub) -> None:
     publish_venv.add_argument("--release", required=True, type=Path)
     publish_venv.add_argument("--from-staging", required=True, type=Path)
     publish_venv.set_defaults(func=cmd_publish_venv)
+
+    extras = sub.add_parser("extras-spec", help="normalize a comma-separated extras list")
+    extras.add_argument("--extra", default=None)
+    extras.set_defaults(func=cmd_extras_spec)
+
+    imports = sub.add_parser(
+        "check-imports",
+        help="import the runtime modules from a release interpreter",
+    )
+    imports.add_argument("--python", required=True)
+    imports.add_argument("--cwd", type=Path, default=None)
+    imports.set_defaults(func=cmd_check_imports)
 
 
 def main(argv: list[str] | None = None) -> int:

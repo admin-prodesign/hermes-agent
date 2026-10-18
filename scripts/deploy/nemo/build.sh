@@ -18,7 +18,7 @@ Usage: build.sh --sha SHA (--mirror DIR | --tarball FILE) [options]
   --tarball FILE         Fallback GitHub tarball, used when fetch hangs or fails.
   --remote NAME          Mirror remote. Default: origin.
   --fetch-timeout SEC    git fetch / git archive timeout. Default: 90.
-  --extra NAME           Pip extra. Default: nemo.
+  --extra LIST           Comma-separated pip extras. Default: nemo,mcp.
   --uv-cache PATH        UV_CACHE_DIR. Default: the existing value, else ~/.cache/uv.
   --previous PATH        Previous release to copy .python and frontend bits from.
   --staging PATH         Keep this directory when --stop-after is source or frontend.
@@ -37,7 +37,7 @@ mirror=""
 tarball=""
 remote="origin"
 fetch_timeout="90"
-extra="nemo"
+extra="nemo,mcp"
 uv_cache=""
 previous_opt=""
 staging_opt=""
@@ -69,7 +69,11 @@ done
 [[ -n "${sha}" ]] || die "pass --sha"
 [[ "${sha}" =~ ^[0-9a-fA-F]{7,40}$ ]] || die "sha must be 7-40 hex characters"
 [[ -n "${mirror}" || -n "${tarball}" ]] || die "pass --mirror and/or --tarball"
-[[ "${extra}" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid extra: ${extra}"
+# Comma-separated extras (nemo,mcp). Python is the name validator.
+extra_raw="${extra}"
+if ! extra="$(nemo_python -m scripts.deploy.nemo.cli extras-spec --extra "${extra_raw}")"; then
+  die "invalid extras: ${extra_raw}"
+fi
 case "${stop_after}" in
   source|frontend|publish) ;;
   *) die "stop-after must be source, frontend, or publish" ;;
@@ -248,7 +252,9 @@ if [[ -f "${audit}/old-freeze.txt" ]]; then
     --old "${audit}/old-freeze.txt" --new "${audit}/freeze.txt" \
     --report "${audit}/freeze-diff.txt"
 fi
-"${venv_python}" -c "import hermes_cli, requests, yaml"
+nemo_python -m scripts.deploy.nemo.cli check-imports \
+  --python "${venv_python}" --cwd "${staging}" \
+  || die "staging import check failed at ${venv_python}"
 
 if [[ "${skip_frontend}" != "1" ]]; then
   command -v node >/dev/null 2>&1 || die "node is required to preinstall dashboard dependencies"
@@ -287,6 +293,11 @@ created=1
 nemo_python -m scripts.deploy.nemo.cli publish-venv \
   --release "${release_path}" --from-staging "${staging_was}" \
   || die "release interpreter is not usable at ${release_path}/.venv/bin/python"
+# Fail here, before chmod and before cutover's selftest, if the published
+# venv is missing mcp (or any other runtime extra module).
+nemo_python -m scripts.deploy.nemo.cli check-imports \
+  --python "${release_path}/.venv/bin/python" --cwd "${release_path}" \
+  || die "release import check failed at ${release_path}/.venv/bin/python"
 # Tool sources are read by an interpreter, never executed. Publishing them without the exec bit
 # makes any launch that still depends on it fail the cutover selftest instead of a user's call.
 find "${release_path}/tools" -type f -name '*.py' -exec chmod a-x {} +

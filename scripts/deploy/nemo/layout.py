@@ -7,7 +7,9 @@ import re
 from pathlib import Path
 
 DEFAULT_PROFILES = ("pdone", "pdneo")
-DEFAULT_EXTRA = "nemo"
+# Comma-separated pip extras. ``nemo`` is the host overlay; ``mcp`` is the
+# PD One selftest / stdio-server extra. Parsed by runtime_deps.parse_extras.
+DEFAULT_EXTRA = "nemo,mcp"
 DEFAULT_QUIET_S = 90.0
 DEFAULT_POLL_S = 30.0
 DEFAULT_FETCH_TIMEOUT_S = 90.0

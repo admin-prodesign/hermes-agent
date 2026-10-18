@@ -1,8 +1,9 @@
 """Check MCP server scripts inside a release import on the release interpreter.
 
 This is the bounded replacement for the host ``verify_mcp.py``. It compiles each
-configured stdio server that points into the release and imports the nemo extra
-(``requests``, ``yaml``). It does not start a live tool call.
+configured stdio server that points into the release and imports the runtime
+modules the published venv must have (nemo extra + mcp). It does not start a
+live tool call.
 """
 
 from __future__ import annotations
@@ -49,6 +50,8 @@ def scripts_in_release(home: Path, release: Path, profiles: tuple[str, ...] = DE
 
 
 def compile_plan(python: str, scripts: list[Path]) -> list[tuple[str, ...]]:
-    commands = [(python, "-c", "import requests, yaml")]
+    from scripts.deploy.nemo.runtime_deps import import_statement
+
+    commands = [(python, "-c", import_statement())]
     commands.extend((python, "-m", "py_compile", str(script)) for script in scripts)
     return commands

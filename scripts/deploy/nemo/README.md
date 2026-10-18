@@ -101,8 +101,9 @@ That should print one `<sha>\trefs/heads/main` line.
 - **Queue.** Only the newest SHA matters. Older queued SHAs are dropped as
   superseded.
 - **Dependencies.** A change to `pyproject.toml` or `uv.lock` is a `restart` deploy like
-  any other code change: `build.sh` installs the locked environment into the new
-  release. There is no separate manual-approval step.
+  any other code change: `build.sh` installs `.[nemo,mcp]` (override with `--extra`)
+  into the new release and import-checks those modules from the published venv.
+  There is no separate manual-approval step.
 
 ## Status
 
