@@ -18,7 +18,7 @@ from scripts.deploy.nemo.gate import MissingProfileDatabase, inspect_db, poll_un
 from scripts.deploy.nemo.layout import DEFAULT_PROFILES, DEFAULT_STALE_GOAL_S, profile_home
 
 DAY = 24 * 3600.0
-NOW = 1_000_000.0
+NOW = 1_800_000_000.0
 
 
 def _write_db(path: Path, *, message_at: float | None = NOW - 120, goals=()) -> None:
@@ -73,14 +73,27 @@ def test_default_profiles_resolve_pd_neo_to_the_top_level_home(tmp_path: Path) -
     assert profile_home(home, neo) == home
 
 
+def _frozen_clock() -> tuple:
+    state = {"mono": 0.0}
+
+    def clock() -> float:
+        return state["mono"]
+
+    def sleep(seconds: float) -> None:
+        state["mono"] += seconds
+
+    return clock, sleep
+
+
 def test_gate_reads_top_level_db_for_default_and_pdneo_alias(tmp_path: Path) -> None:
     home = tmp_path / "hermes"
     _write_db(home / "state.db")
     _write_db(home / "profiles" / "pdone" / "state.db")
     for name in ("default", "pdneo"):
+        clock, sleep = _frozen_clock()
         ok, snaps = poll_until_quiet(
             home, ("pdone", name), quiet_s=90, poll_s=1, timeout_s=1,
-            now_fn=lambda: NOW, sleep_fn=lambda _s: None, clock_fn=lambda: 0.0,
+            now_fn=lambda: NOW, sleep_fn=sleep, clock_fn=clock,
         )
         assert ok is True
         assert snaps[1].profile == name
@@ -95,7 +108,7 @@ def test_missing_db_fails_fast_with_a_clear_message(tmp_path: Path) -> None:
     with pytest.raises(MissingProfileDatabase) as raised:
         poll_until_quiet(
             home, ("pdone",), quiet_s=90, poll_s=30, timeout_s=600,
-            now_fn=lambda: NOW, sleep_fn=slept.append, clock_fn=lambda: 0.0,
+            now_fn=lambda: NOW, sleep_fn=slept.append, clock_fn=lambda: 10.0,
         )
     assert slept == []
     message = str(raised.value)
@@ -169,9 +182,10 @@ def test_poll_treats_stale_zero_turn_goals_as_quiet(tmp_path: Path) -> None:
         home / "profiles" / "pdone" / "state.db",
         goals=[("goal:stale-zero", _goal(created_at=NOW - 30 * DAY))],
     )
+    clock, sleep = _frozen_clock()
     ok, snaps = poll_until_quiet(
         home, ("pdone",), quiet_s=90, poll_s=1, timeout_s=1,
-        now_fn=lambda: NOW, sleep_fn=lambda _s: None, clock_fn=lambda: 0.0,
+        now_fn=lambda: NOW, sleep_fn=sleep, clock_fn=clock,
     )
     assert ok is True
     assert snaps[0].live_goals == 0
