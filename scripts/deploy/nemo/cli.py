@@ -15,17 +15,18 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
-from scripts.deploy.nemo.cutover_steps import apply_cutover, config_candidates, default_unit_dirs
+from scripts.deploy.nemo.adapter_gate import ADAPTERS_FILE, PROBE_TIMEOUT_S, plan_probes, run_gate, summary
+from scripts.deploy.nemo.cutover_steps import UnitProblems, apply_cutover, config_candidates, default_unit_dirs
 from scripts.deploy.nemo.freeze_diff import compare, constraint_text
 from scripts.deploy.nemo.frontend import mark_preinstalled
 from scripts.deploy.nemo.gate import MissingProfileDatabase, poll_until_quiet
 from scripts.deploy.nemo.health import http_healthy, poll_until_healthy
-from scripts.deploy.nemo.health_targets import resolve_health_plan, socket_profile_homes
+from scripts.deploy.nemo.health_targets import load_deploy_section, resolve_health_plan, socket_profile_homes
 from scripts.deploy.nemo.layout import (
-    DEFAULT_DASHBOARD_HEALTH, DEFAULT_GATEWAY_HEALTH, DEFAULT_HEALTH_INTERVAL_S,
+    DEFAULT_EXTRA, DEFAULT_HEALTH_INTERVAL_S,
     DEFAULT_HEALTH_TIMEOUT_S, DEFAULT_POLL_S, DEFAULT_PROFILES, DEFAULT_QUIET_S,
     DEFAULT_STALE_GOAL_S,
-    audit_dir, pin_uv_cache, releases_dir, resolve_hermes_home, valid_sha,
+    audit_dir, gateway_unit_name, pairs, pin_uv_cache, releases_dir, resolve_hermes_home, valid_sha,
 )
 from scripts.deploy.nemo.manifest import (
     AUTO_RELEASE_SUFFIX, read_manifest, record_build_manifest, release_dir_name, write_manifest,
@@ -34,8 +35,12 @@ from scripts.deploy.nemo.postcheck import run_postcheck
 from scripts.deploy.nemo.preflight import changed_files, plan_for
 from scripts.deploy.nemo.probe import run_probe
 from scripts.deploy.nemo.rollback import apply_rollback
+from scripts.deploy.nemo.rollout import (
+    daemon_reload, mark_restarted, plan_stages, restart, restarts_from, rollback_restarts, systemctl,
+)
 from scripts.deploy.nemo.source import SourceMissing, acquire_source
-from scripts.deploy.nemo.units import is_user_unit
+from scripts.deploy.nemo.units import is_user_unit, target_for, unit_files
+from scripts.deploy.nemo.verify import DEFAULT_PORT_HOST, expectations, poll_until_verified
 from scripts.deploy.nemo.verify_mcp import compile_plan, scripts_in_release
 from scripts.deploy.nemo.verify_ws import static_problems
 
@@ -52,7 +57,7 @@ def _profiles(args: argparse.Namespace) -> tuple[str, ...]:
 
 def _spawn(argv: list[str], timeout: float, env: dict[str, str] | None = None) -> int:
     try:
-        completed = subprocess.run(list(argv), env=env, timeout=timeout)
+        completed = subprocess.run(list(argv), env=env, timeout=timeout, check=False)
     except subprocess.TimeoutExpired:
         print(f"timed out after {timeout:.0f}s: {' '.join(argv)}", file=sys.stderr)
         return 1
@@ -180,33 +185,135 @@ def cmd_gate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _unit_dirs(args: argparse.Namespace) -> list[Path]:
+    return [Path(item) for item in args.unit_dirs] or default_unit_dirs()
+
+
+def _build_sha(home: Path, build: str, explicit: str | None) -> str:
+    return str(explicit or read_manifest(audit_dir(home, build) / "manifest.json").get("sha") or "")
+
+
 def cmd_cutover(args: argparse.Namespace) -> int:
     home = _home(args)
     releases = releases_dir(home, args.releases)
     audit = audit_dir(home, args.build)
-    dirs = [Path(item) for item in args.unit_dirs] or default_unit_dirs()
-    result = apply_cutover(
-        releases=releases, build=args.build, unit_dirs=dirs,
-        configs=config_candidates(home), audit=audit,
-    )
-    write_manifest(audit / "manifest.json", result)
     manifest_path = audit / "manifest.json"
-    existing = read_manifest(manifest_path)
-    sha = args.sha or existing.get("sha") or ""
+    sha = _build_sha(home, args.build, args.sha)
+    runtime_links = [Path(item) for item in args.runtime_links] or None
+    try:
+        result = apply_cutover(
+            releases=releases, build=args.build, unit_dirs=_unit_dirs(args),
+            configs=config_candidates(home), audit=audit, sha=sha or None,
+            running=args.running, runtime_links=runtime_links,
+        )
+    except UnitProblems as exc:
+        print(f"{exc}\nnothing was changed", file=sys.stderr)
+        return 1
+    write_manifest(manifest_path, {**result, "restarted": None})
     if sha:
-        record_build_manifest(manifest_path, sha=str(sha), release_name=args.build)
+        record_build_manifest(manifest_path, sha=sha, release_name=args.build)
     if not result["units"]:
-        print("warning: no systemd units embed the previous release path", file=sys.stderr)
+        print("warning: no systemd unit or drop-in runs a release under " + str(releases), file=sys.stderr)
+    for warning in result["warnings"]:
+        print(f"warning: {warning}", file=sys.stderr)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
 
-def cmd_list_units(args: argparse.Namespace) -> int:
-    data = read_manifest(args.manifest)
-    for item in data.get("units") or []:
-        kind = "user" if item.get("user") else "system"
-        print(f"{kind}\t{item['path']}")
+def cmd_adapter_gate(args: argparse.Namespace) -> int:
+    home = _home(args)
+    releases = releases_dir(home, args.releases)
+    release = releases / args.build
+    audit = audit_dir(home, args.build)
+    extras = list(args.extras) or [str(read_manifest(audit / "manifest.json").get("extra") or DEFAULT_EXTRA)]
+    target = target_for(releases, args.build, _build_sha(home, args.build, args.sha) or None)
+    try:
+        overrides = {key: values[-1] for key, values in pairs(args.gateway_units).items()}
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    probes = plan_probes(home, _profiles(args), unit_files(_unit_dirs(args)), target, overrides)
+    ok, results = run_gate(release, probes, audit, extras=extras, timeout=args.timeout)
+    for line in summary(results):
+        print(line)
+    if not ok:
+        print(f"adapter gate failed against {release}; see {audit / ADAPTERS_FILE}", file=sys.stderr)
+    return 0 if ok else 1
+
+
+def _print_checks(checks) -> None:
+    for item in checks:
+        print(f"{'ok' if item.ok else 'fail'}\t{item.name}\t{item.detail}")
+
+
+def _verify_targets(args: argparse.Namespace, home: Path, manifest: Path) -> dict:
+    gate_file = manifest.parent / ADAPTERS_FILE
+    gate = json.loads(gate_file.read_text(encoding="utf-8-sig")) if gate_file.is_file() else {}
+    exps = expectations(
+        home, _profiles(args), verify_config=load_deploy_section(home, "verify"),
+        platforms=pairs(args.expect), ports=pairs(args.expect_port), gate=gate,
+    )
+    return {exp.profile: exp for exp in exps}
+
+
+def _run_stage(args: argparse.Namespace, stage, exps: dict, overrides: dict[str, str]) -> bool:
+    since = time.time()
+    mark_restarted(args.manifest, stage.restarts)
+    failures = restart(stage.restarts, systemctl)
+    for failure in failures:
+        print(failure, file=sys.stderr)
+    if failures:
+        return False
+    if args.skip_verify:
+        return True
+    restarted = {item.unit for item in stage.restarts}
+    chosen = []
+    for profile in stage.profiles:
+        if gateway_unit_name(profile, overrides) in restarted:
+            chosen.append(exps[profile])
+        else:
+            print(f"{profile}: gateway unit was not restarted; not verified")
+    ok, checks = poll_until_verified(
+        chosen, since, timeout_s=args.timeout, interval_s=args.interval,
+        clock_fn=time.monotonic, sleep_fn=time.sleep, host=args.port_host,
+    )
+    _print_checks(checks)
+    return ok
+
+
+def cmd_rollout(args: argparse.Namespace) -> int:
+    home = _home(args)
+    manifest = read_manifest(args.manifest)
+    units = list(manifest.get("units") or [])
+    try:
+        overrides = {key: values[-1] for key, values in pairs(args.gateway_units).items()}
+        exps = _verify_targets(args, home, args.manifest)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    failures = daemon_reload(units, systemctl)
+    if failures:
+        print("\n".join(failures), file=sys.stderr)
+        return 1
+    stages = plan_stages(restarts_from(units), _profiles(args), canary=args.canary, overrides=overrides)
+    for index, stage in enumerate(stages, 1):
+        names = ", ".join(item.unit for item in stage.restarts) or "nothing"
+        print(f"stage {index}/{len(stages)} ({', '.join(stage.profiles) or 'other units'}): {names}")
+        if not _run_stage(args, stage, exps, overrides):
+            print(f"stage {index} failed; later stages were not restarted", file=sys.stderr)
+            return 1
     return 0
+
+
+def cmd_restart(args: argparse.Namespace) -> int:
+    manifest = read_manifest(args.manifest)
+    units = list(manifest.get("units") or [])
+    failures = daemon_reload(units, systemctl) + restart(rollback_restarts(manifest), systemctl)
+    for failure in failures:
+        print(failure, file=sys.stderr)
+    if not units:
+        print("warning: no systemd units to restart", file=sys.stderr)
+    return 1 if failures else 0
 
 
 def _systemctl_active(path: str, user: bool) -> bool:
@@ -216,7 +323,7 @@ def _systemctl_active(path: str, user: bool) -> bool:
     argv.append(Path(path).name)
     try:
         completed = subprocess.run(
-            argv, timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            argv, timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -373,11 +480,40 @@ def register(sub) -> None:
     cutover.add_argument("--build", required=True)
     cutover.add_argument("--sha", default=None)
     cutover.add_argument("--unit-dir", action="append", dest="unit_dirs", default=[])
+    cutover.add_argument("--running", action="store_true", help="also point .running at the build")
+    cutover.add_argument("--runtime-link", action="append", dest="runtime_links", default=[],
+                         help="symlink into a release to retarget; default <releases>/runtime/current")
     cutover.set_defaults(func=cmd_cutover)
 
-    units = sub.add_parser("list-units", help="print kind and path for manifest units")
-    units.add_argument("--manifest", required=True, type=Path)
-    units.set_defaults(func=cmd_list_units)
+    gate_adapters = sub.add_parser("adapter-gate", help="dry-start every enabled adapter from the new release")
+    _add_home(gate_adapters)
+    _add_profiles(gate_adapters)
+    gate_adapters.add_argument("--releases", type=Path, default=None)
+    gate_adapters.add_argument("--build", required=True)
+    gate_adapters.add_argument("--sha", default=None)
+    gate_adapters.add_argument("--unit-dir", action="append", dest="unit_dirs", default=[])
+    gate_adapters.add_argument("--gateway-unit", action="append", dest="gateway_units", default=[])
+    gate_adapters.add_argument("--extra", action="append", dest="extras", default=[])
+    gate_adapters.add_argument("--timeout", type=float, default=PROBE_TIMEOUT_S)
+    gate_adapters.set_defaults(func=cmd_adapter_gate)
+
+    rollout = sub.add_parser("rollout", help="daemon-reload, restart in stages, verify adapters and ports")
+    _add_home(rollout)
+    _add_profiles(rollout)
+    rollout.add_argument("--manifest", required=True, type=Path)
+    rollout.add_argument("--canary", action="store_true")
+    rollout.add_argument("--gateway-unit", action="append", dest="gateway_units", default=[])
+    rollout.add_argument("--expect", action="append", default=[], help="PROFILE=PLATFORM")
+    rollout.add_argument("--expect-port", action="append", default=[], help="PROFILE=PORT")
+    rollout.add_argument("--port-host", default=DEFAULT_PORT_HOST)
+    rollout.add_argument("--timeout", type=float, default=DEFAULT_HEALTH_TIMEOUT_S)
+    rollout.add_argument("--interval", type=float, default=DEFAULT_HEALTH_INTERVAL_S)
+    rollout.add_argument("--skip-verify", action="store_true")
+    rollout.set_defaults(func=cmd_rollout)
+
+    restart_units = sub.add_parser("restart", help="daemon-reload and restart the units a rollout restarted")
+    restart_units.add_argument("--manifest", required=True, type=Path)
+    restart_units.set_defaults(func=cmd_restart)
 
     health = sub.add_parser("health", help="poll systemd and the health endpoints")
     _add_home(health)

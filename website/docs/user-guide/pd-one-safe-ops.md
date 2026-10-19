@@ -269,14 +269,18 @@ files still land under that profile's `upgrade-audits/<build>/`.
 1. `probe.py` checks whether `git fetch <sha>` against the bare mirror
    answers. Exit 75 means it hung; `build.sh` then uses the GitHub tarball.
 2. `build.sh --sha <sha> --mirror <bare-repo>` fetches that commit, installs
-   `.[nemo]` (honcho-ai, PyYAML, requests, and `[mcp]`), installs the dashboard npm
-   dependencies, and publishes a read-only release. It creates the release
-   directory only after the source tree validates.
+   `.[nemo]` (honcho-ai, PyYAML, requests, `[mcp]`, and the gateway adapters'
+   `[messaging]` dependencies), checks that every requirement the extra declares is
+   installed, installs the dashboard npm dependencies, and publishes a read-only
+   release. It creates the release directory only after the source tree validates.
 3. `cutover.sh --build <name>` runs the verifies the diff touches (`--full`
-   runs every verify this deploy knows about), waits until pdone and the
-   top-level default profile (PD Neo) are quiet, swaps `releases/current`,
-   rewrites units and configs, and polls
-   systemd plus the gateway and dashboard health endpoints.
+   runs every verify this deploy knows about), creates every enabled gateway
+   adapter of every profile from the new release without connecting it, waits until
+   pdone and the top-level default profile (PD Neo) are quiet, renders the systemd
+   units and their drop-ins against the new release, rewrites configs, moves
+   `current`, `previous`, `runtime/current`, and `.running`, restarts (PD Neo first
+   with `--canary`), checks that each profile's adapters connected and its ports are
+   bound, and polls systemd plus the gateway and dashboard health endpoints.
 4. The post-cutover check runs the cron scripts' safe checks immediately.
    Typhoon `840af263673e` fetches `cwa.gov.tw` and `www.dgpa.gov.tw` with the
    cron TLS mount. Digest `870dd7349151` must import `yaml`. Reaper
@@ -285,8 +289,8 @@ files still land under that profile's `upgrade-audits/<build>/`.
    declares that flag, and is compiled otherwise. It must not write AppSheet
    `HR_Employees`. Do not wait for the scheduled runs.
 5. `rollback.sh --manifest upgrade-audits/<build>/manifest.json` restores the
-   previous symlink, unit files, and configs. The new release directory stays
-   on disk.
+   units, drop-ins, configs, and release links, then restarts the units the cutover
+   restarted. The new release directory stays on disk.
 
 Before the idle gate, `cutover.sh` runs the safe-ops selftest from the new
 release (`--skip-selftest` turns it off):
@@ -310,6 +314,61 @@ exits 75 when the profiles never went quiet. One-time setup, the no-restart path
 for docs and skills, retention, and the drift check are in
 `scripts/deploy/nemo/README.md`. Stop `hermes-deploy-poll.timer` and
 `hermes-deploy.path` before a hand deploy.
+
+### First rollout of unit rendering and the adapter gate
+
+The worker runs `cutover.sh` from `releases/current`. Until a release with the unit
+rendering is current, the worker's cutover moves `current` without touching the units,
+so ship that release by hand with its own `cutover.sh`. Replace `<mirror>` with the bare
+mirror and the ports with the live ones.
+
+```bash
+export HERMES_HOME=~/.hermes
+releases="$HERMES_HOME/releases"
+mirror=<mirror>
+
+# 1. Pause the worker; nothing may be deploying.
+systemctl --user stop hermes-deploy-poll.timer hermes-deploy.path
+systemctl --user is-active hermes-deploy.service     # must print: inactive
+
+# 2. Build main with the build.sh of the live release (it installs the new SHA's .[nemo]).
+sha="$(git --git-dir "$mirror" ls-remote origin refs/heads/main | cut -f1)"
+build="hermes-agent-${sha:0:10}-auto"
+bash "$releases/current/scripts/deploy/nemo/build.sh" --hermes-home "$HERMES_HOME" \
+  --sha "$sha" --mirror "$mirror" --build "$build"
+new="$releases/$build"
+
+# 3. The check the new build.sh runs: every requirement of .[nemo] is installed.
+(cd "$new" && .venv/bin/python -m scripts.deploy.nemo.extras --extra nemo)
+
+# 4. Optional: what verify expects after the restart, in $HERMES_HOME/config.yaml
+#    deploy:
+#      verify:
+#        default: {platforms: [webhook], ports: [<PD Neo webhook port>]}
+#        pdone: {platforms: [mattermost, line], ports: [<pdone port>]}
+
+# 5. Cut over with the NEW release's tooling and interpreter.
+NEMO_PYTHON="$new/.venv/bin/python" bash "$new/scripts/deploy/nemo/cutover.sh" \
+  --hermes-home "$HERMES_HOME" --build "$build" --sha "$sha" --mirror "$mirror" --canary
+
+# 6. Check the units, drop-ins, and links now name the new release and SHA.
+systemctl --user cat hermes-gateway.service hermes-gateway-pdone.service \
+  | grep -E 'ExecStart|ExecStop|PATH|VIRTUAL_ENV|PYTHONPATH|HERMES_RUNTIME_SHA'
+readlink "$releases/current" "$releases/previous" "$releases/runtime/current"
+cat "$releases/.running"
+(cd "$releases/current" && .venv/bin/python -m scripts.deploy.nemo.autodeploy drift \
+  --hermes-home "$HERMES_HOME" --mirror "$mirror")
+
+# 7. Reinstall the worker units from the new release (adds --canary), then resume.
+(cd "$releases/current" && bash scripts/deploy/nemo/install_autodeploy.sh install \
+  --mirror "$mirror" --canary)
+systemctl --user start hermes-deploy-poll.timer hermes-deploy.path
+```
+
+`cutover.sh` exits 1 with "nothing was changed" when the adapter gate or a rendered
+unit refuses (see `upgrade-audits/<build>/adapters.json` or the listed paths), and rolls
+back by itself when a restart or verify fails. Use the same `install_autodeploy.sh`
+flags as the original install (`--alert-script`, `--scope system --run-as ...`).
 
 ## Dependencies that stay outside the repo
 

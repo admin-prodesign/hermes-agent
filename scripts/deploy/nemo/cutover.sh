@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Swap releases/current onto a built release, poll health, then run safe cron checks.
+# Gate the new release, swap releases/current onto it, render the units against it,
+# restart and verify in stages, poll health, then run safe cron checks.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,10 +34,29 @@ Usage: cutover.sh --build NAME [options]
   --selftest-allow-missing KEY
                           Repeatable. pd_one.external key that is absent on this host on purpose.
   --skip-pytest           Run verifies, and leave pytest to CI.
+  --skip-adapter-gate     Do not dry-start the enabled gateway adapters from the new release.
+  --gateway-unit P=UNIT   Repeatable. Gateway unit of profile P. Default: hermes-gateway.service
+                          for the top-level profile, hermes-gateway-<P>.service otherwise.
+  --runtime-link PATH     Repeatable. Symlink into a release to retarget.
+                          Default: <releases>/runtime/current when it exists.
   --skip-gate             Do not wait for a quiet window.
-  --skip-restart          Do not systemctl restart.
+  --skip-restart          Do not systemctl restart (also skips the adapter gate and verify).
+  --canary                Restart and verify the top-level profile (PD Neo) first, then the
+                          others; a failed stage rolls everything back before pdone restarts.
+  --expect P=PLATFORM     Repeatable. Adapter that must report connected after the restart.
+                          Default: deploy.verify.<P>.platforms, else what the adapter gate started.
+  --expect-port P=PORT    Repeatable. Port that must accept connections after the restart.
+                          Default: deploy.verify.<P>.ports.
+  --port-host HOST        Host the port check connects to. Default: 127.0.0.1.
+  --skip-verify           Do not check adapters and ports after the restart.
   --skip-health           Do not poll. A failed poll rolls the release back.
   --skip-postcheck        Do not run the cron jobs' safe checks.
+
+Before the idle gate, every enabled adapter of every profile is created (not connected)
+by the new release's interpreter with the environment its rendered gateway unit gives
+it; a failure refuses the cutover with nothing changed. The cutover renders every unit
+and drop-in against the new release (paths, .venv/bin for a missing .hermes/bin wrapper,
+HERMES_RUNTIME_SHA) and refuses if a rendered unit names a path the release lacks.
 
 The gate still requires no leases, a newest message at least --quiet seconds
 old, and no live goal (stale 0-turn goals older than --stale-goal-s are
@@ -73,6 +93,14 @@ dashboard=""
 socket_profiles=()
 profiles=()
 unit_dirs=()
+skip_adapter_gate=0
+skip_verify=0
+canary=0
+port_host=""
+gateway_units=()
+runtime_links=()
+expects=()
+expect_ports=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -102,6 +130,14 @@ while [[ $# -gt 0 ]]; do
     --skip-restart) skip_restart=1; shift ;;
     --skip-health) skip_health=1; shift ;;
     --skip-postcheck) skip_postcheck=1; shift ;;
+    --skip-adapter-gate) skip_adapter_gate=1; shift ;;
+    --skip-verify) skip_verify=1; shift ;;
+    --canary) canary=1; shift ;;
+    --port-host) port_host="${2:-}"; shift 2 ;;
+    --gateway-unit) gateway_units+=("${2:-}"); shift 2 ;;
+    --runtime-link) runtime_links+=("${2:-}"); shift 2 ;;
+    --expect) expects+=("${2:-}"); shift 2 ;;
+    --expect-port) expect_ports+=("${2:-}"); shift 2 ;;
     --socket-profile) socket_profiles+=("${2:-}"); shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1" ;;
@@ -213,6 +249,28 @@ if [[ "${skip_selftest}" != "1" ]]; then
   run_selftest || die "pd-one safe-ops selftest failed against ${release}; nothing was changed"
 fi
 
+unit_dir_args=()
+for dir in "${unit_dirs[@]}"; do
+  unit_dir_args+=(--unit-dir "${dir}")
+done
+gateway_unit_args=()
+for item in "${gateway_units[@]}"; do
+  gateway_unit_args+=(--gateway-unit "${item}")
+done
+
+# A no-restart deploy never loads the new release into a gateway, so only a restart is gated.
+if [[ "${skip_restart}" != "1" && "${skip_adapter_gate}" != "1" ]]; then
+  gate_args=(
+    -m scripts.deploy.nemo.cli adapter-gate
+    --hermes-home "${home}" --releases "${releases}" --build "${build}"
+    "${unit_dir_args[@]}" "${gateway_unit_args[@]}" "${profile_args[@]}"
+  )
+  if [[ -n "${sha}" ]]; then
+    gate_args+=(--sha "${sha}")
+  fi
+  nemo_python "${gate_args[@]}" || die "adapter gate failed against ${release}; nothing was changed"
+fi
+
 if [[ "${skip_gate}" != "1" ]]; then
   if ! nemo_python -m scripts.deploy.nemo.cli gate \
       --hermes-home "${home}" --quiet "${quiet}" --poll "${poll}" --timeout "${gate_timeout}" \
@@ -229,15 +287,42 @@ cut_args=(
 if [[ -n "${sha}" ]]; then
   cut_args+=(--sha "${sha}")
 fi
-if [[ "${#unit_dirs[@]}" -gt 0 ]]; then
-  for dir in "${unit_dirs[@]}"; do
-    cut_args+=(--unit-dir "${dir}")
-  done
+cut_args+=("${unit_dir_args[@]}")
+for link in "${runtime_links[@]}"; do
+  cut_args+=(--runtime-link "${link}")
+done
+if [[ "${skip_restart}" != "1" ]]; then
+  cut_args+=(--running)
 fi
 nemo_python "${cut_args[@]}"
 
 if [[ "${skip_restart}" != "1" ]]; then
-  restart_units "${manifest}"
+  rollout_args=(
+    -m scripts.deploy.nemo.cli rollout
+    --hermes-home "${home}" --manifest "${manifest}"
+    --timeout "${health_timeout}" --interval "${health_interval}"
+    "${gateway_unit_args[@]}" "${profile_args[@]}"
+  )
+  if [[ "${canary}" == "1" ]]; then
+    rollout_args+=(--canary)
+  fi
+  if [[ "${skip_verify}" == "1" ]]; then
+    rollout_args+=(--skip-verify)
+  fi
+  if [[ -n "${port_host}" ]]; then
+    rollout_args+=(--port-host "${port_host}")
+  fi
+  for item in "${expects[@]}"; do
+    rollout_args+=(--expect "${item}")
+  done
+  for item in "${expect_ports[@]}"; do
+    rollout_args+=(--expect-port "${item}")
+  done
+  if ! nemo_python "${rollout_args[@]}"; then
+    printf '%s\n' "restart or adapter verify failed; rolling back" >&2
+    bash "${here}/rollback.sh" --manifest "${manifest}" || printf '%s\n' "rollback did not finish cleanly" >&2
+    exit 1
+  fi
 fi
 
 if [[ "${skip_health}" != "1" ]]; then

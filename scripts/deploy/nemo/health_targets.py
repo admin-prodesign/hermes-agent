@@ -35,7 +35,8 @@ class HealthPlan:
     extra_units: tuple[tuple[str, bool], ...]
 
 
-def _load_deploy_health_yaml(home: Path) -> dict[str, Any]:
+def load_deploy_section(home: Path, key: str) -> dict[str, Any]:
+    """``deploy.<key>`` from ``<home>/config.yaml``; ``{}`` when absent or unreadable."""
     path = home / "config.yaml"
     if not path.is_file():
         return {}
@@ -50,8 +51,8 @@ def _load_deploy_health_yaml(home: Path) -> dict[str, Any]:
     deploy = data.get("deploy")
     if not isinstance(deploy, dict):
         return {}
-    health = deploy.get("health")
-    return health if isinstance(health, dict) else {}
+    section = deploy.get(key)
+    return section if isinstance(section, dict) else {}
 
 
 def _parse_units(raw: str) -> tuple[tuple[str, bool], ...]:
@@ -81,7 +82,7 @@ def _socket_profiles_from_yaml(health: dict[str, Any]) -> tuple[str, ...] | None
 
 def resolve_health_plan(home: Path | None) -> HealthPlan:
     resolved = home.expanduser().resolve() if home is not None else resolve_hermes_home(None)
-    yaml_health = _load_deploy_health_yaml(resolved)
+    yaml_health = load_deploy_section(resolved, "health")
 
     gateway = (
         os.environ.get(_ENV_GATEWAY)

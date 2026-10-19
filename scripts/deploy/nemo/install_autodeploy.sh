@@ -23,6 +23,7 @@ Usage: install_autodeploy.sh install --mirror DIR [options]
   --profile NAME                Repeatable. Default pdone, then default (PD Neo).
   --run-as USER                 System scope: user for the poll and drift check.
   --worker-user USER            System scope: user for the deploy worker.
+  --canary                      Restart deploys restart and verify PD Neo before pdone.
   --dry-run                     Print the units and change nothing.
 
 Nothing to set up in GitHub or Tailscale. A leftover hermes-deploy-listener.service

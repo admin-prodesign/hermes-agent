@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 from scripts.deploy.nemo.changes import RESTART, SKILLS, changed_paths, classify
-from scripts.deploy.nemo.drift import DriftReport, compare_tree, main_lag, stray_units, tree_blobs
+from scripts.deploy.nemo.drift import DriftReport, compare_tree, main_lag, tree_blobs, unit_drift
 from scripts.deploy.nemo.hot import sync_profiles
 from scripts.deploy.nemo.layout import (
     DEFAULT_EXTRA, DEFAULT_POLL_S, DEFAULT_PROFILES, DEFAULT_QUIET_S, releases_dir,
@@ -72,6 +72,7 @@ class Config:
     fetch_timeout_s: float = 120.0
     uv_cache: Path | None = None
     alert_script: Path | None = None
+    canary: bool = False
 
 
 @dataclass
@@ -235,6 +236,7 @@ def cutover_argv(cfg: Config, sha: str, build: str, old_sha: str | None, mode: s
     for name in cfg.profiles:
         argv += ["--profile", name]
     if mode == RESTART:
+        argv += ["--canary"] if cfg.canary else []
         return argv + ["--skip-pytest", "--quiet", str(cfg.quiet_s), "--poll", str(cfg.poll_s),
                        "--gate-timeout", str(int(cfg.gate_timeout_s))]
     return argv + ["--skip-preflight", "--skip-selftest", "--skip-gate", "--skip-restart", "--skip-health",
@@ -392,8 +394,11 @@ def check_drift(cfg: Config, *, unit_dirs: list[Path], max_lag_s: float, git: Ru
                      report, mirror=cfg.mirror, sha=full_sha)
     except (RuntimeError, subprocess.TimeoutExpired) as exc:
         report.error = str(exc)
-    allowed = {os.path.basename(build)} | {running_build(cfg.releases) or ""}
-    report.units = stray_units(unit_dirs, cfg.releases, allowed)
+    live: dict[str, str | None] = {os.path.basename(build): full_sha}
+    running = running_build(cfg.releases)
+    if running and running not in live:
+        live[running] = _expanded_sha(cfg, deployed_sha(cfg, running), git)
+    report.units = unit_drift(unit_dirs, cfg.releases, live)
     if max_lag_s > 0 and not any(queue_dir(cfg.home).glob("*.json")):
         report.behind = main_lag(cfg.mirror, full_sha, time.time() if now is None else now, max_lag_s,
                                  remote=cfg.remote, run=git, ref=DRIFT_MAIN_REF)
@@ -412,6 +417,7 @@ def _config(args: argparse.Namespace) -> Config:
         min_free_gb=getattr(args, "min_free_gb", DEFAULT_MIN_FREE_GB),
         uv_cache=Path(args.uv_cache) if getattr(args, "uv_cache", None) else None,
         alert_script=Path(args.alert_script) if args.alert_script else None,
+        canary=bool(getattr(args, "canary", False)),
     )
 
 
@@ -486,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--gate-timeout", type=float, default=DEFAULT_GATE_TIMEOUT_S)
     run.add_argument("--min-free-gb", type=float, default=DEFAULT_MIN_FREE_GB)
     run.add_argument("--uv-cache", default=None)
+    run.add_argument("--canary", action="store_true",
+                     help="restart and verify the top-level profile (PD Neo) before the others")
     run.set_defaults(func=cmd_run)
     drift = sub.add_parser("drift", help="compare the live release with its deployed SHA")
     _common(drift)
