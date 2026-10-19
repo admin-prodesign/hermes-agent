@@ -107,19 +107,26 @@ That should print one `<sha>\trefs/heads/main` line.
   it starts. A unit whose only change is `HERMES_RUNTIME_SHA` gets `try-restart`.
   Restarts run one unit at a time, `--restart-delay` seconds apart
   (`deploy.cutover.restart_delay_s`, default 3), and after a gateway the next unit waits
-  until that gateway writes a fresh `running` state, so two gateways never start together
-  and fetch their secrets at once. Each profile's `gateway_state.json` must then say
+  until that gateway's new process writes a fresh `running` or `degraded` state, so two
+  gateways never start together and fetch their secrets at once. Only a state written
+  after the restart by the unit's `MainPID` counts: the `stopped` the old process stamps
+  on its way out is waited out, not read as a failure; the new process's own `stopped` or
+  `startup_failed` fails at once. Each profile's `gateway_state.json` must then say
   `running` and every expected adapter `connected`, both written after the restart, and
-  every expected port must accept a connection, within `--health-timeout`. Expected
-  adapters are `--expect P=PLATFORM`, else `deploy.verify.<P>.platforms` in
-  `<home>/config.yaml`, else what the adapter gate created. Ports are only checked when
-  configured:
+  every expected port must accept a connection, within `--health-timeout`. `degraded`
+  (a configured platform was parked, e.g. one with no token) passes the same way, but
+  only for a profile that expects at least one adapter or port and with no watchdog
+  `exit_reason`. Adapters nobody expects (a tokenless `telegram` or `discord`) are never
+  checked. Expected adapters are `--expect P=PLATFORM`, else
+  `deploy.verify.<P>.platforms` in `<home>/config.yaml`, else what the adapter gate
+  created. Ports are only checked when configured, on `deploy.verify.<P>.host`, else
+  `--port-host` (default `127.0.0.1`):
 
   ```yaml
   deploy:
     verify:
-      default: {platforms: [webhook], ports: [<PD Neo webhook port>]}
-      pdone: {platforms: [mattermost, line], ports: [<port>]}
+      default: {platforms: [webhook], ports: [8644], host: 127.0.0.1}
+      pdone: {platforms: [mattermost, line], ports: [8646]}
     cutover:
       runtime_links: [runtime/current]   # relative to the home; ~ and $HERMES_HOME work
       restart_delay_s: 3
@@ -127,7 +134,10 @@ That should print one `<sha>\trefs/heads/main` line.
 
   With `--canary` (worker: `install_autodeploy.sh install --canary`), the top-level profile's
   gateway (PD Neo) restarts and is verified alone first; pdone and the other units restart
-  only once it passes.
+  only once it passes. To rehearse a rollout against a build's manifest without touching
+  systemd or the manifest, run `cli rollout --manifest <manifest> --canary --dry-run`
+  (add the same `--profile` flags): it prints each stage and what each profile is
+  expected to serve.
 - **Rollback.** If a restart, the verify, systemd, the gateway control socket (PD One LINE /
   `pdone`), or HTTP health (PD Neo `:8644`, dashboard `:8765` on nemo) fails, `cutover.sh`
   restores the units, drop-ins, configs, and links from `upgrade-audits/<build>/`, reloads
