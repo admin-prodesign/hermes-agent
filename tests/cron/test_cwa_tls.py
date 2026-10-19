@@ -228,6 +228,37 @@ def test_urllib_mount_uses_the_relaxed_context_only_for_cwa(monkeypatch):
     assert supplied["context"] is supplied_ctx
 
 
+def test_urllib_mount_plain_request_with_timeout(monkeypatch):
+    """Cron scripts often call urlopen(Request(...), timeout=...) with no TLS kwargs."""
+    import urllib.request
+
+    captured: list[dict] = []
+
+    def record(url, data=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, *,
+               context=None, **kwargs):
+        forwarded = sorted({"cafile", "capath", "cadefault"}.intersection(kwargs))
+        assert not forwarded, f"urlopen forwarded removed arguments: {forwarded}"
+        captured.append(
+            {"url": url, "data": data, "timeout": timeout, "context": context},
+        )
+        return "ok"
+
+    monkeypatch.setattr(urllib.request, "urlopen", record)
+    install_cwa_tls()
+
+    plain = urllib.request.Request("https://example.com/cron-script")
+    urllib.request.urlopen(plain, timeout=30.0)
+    assert captured[0]["url"] is plain
+    assert captured[0]["timeout"] == 30.0
+    assert captured[0]["context"] is None
+
+    allowlisted = urllib.request.Request("https://www.cwa.gov.tw/V8/C/P/Typhoon/")
+    urllib.request.urlopen(allowlisted, timeout=15.0)
+    _assert_verifying(captured[1]["context"])
+    assert captured[1]["url"] is allowlisted
+    assert captured[1]["timeout"] == 15.0
+
+
 @pytest.mark.parametrize("url", [
     "https://dgpa.gov.tw/typh/daily/nds.html",
     "https://www.dgpa.gov.tw/typh/daily/nds.html",
