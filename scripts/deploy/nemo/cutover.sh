@@ -37,12 +37,16 @@ Usage: cutover.sh --build NAME [options]
   --skip-adapter-gate     Do not dry-start the enabled gateway adapters from the new release.
   --gateway-unit P=UNIT   Repeatable. Gateway unit of profile P. Default: hermes-gateway.service
                           for the top-level profile, hermes-gateway-<P>.service otherwise.
-  --runtime-link PATH     Repeatable. Symlink into a release to retarget.
-                          Default: <releases>/runtime/current when it exists.
+  --runtime-link PATH     Repeatable. Symlink into a release to retarget. Default:
+                          deploy.cutover.runtime_links in <home>/config.yaml, else every
+                          existing <home>/runtime/current and <releases>/runtime/current.
   --skip-gate             Do not wait for a quiet window.
   --skip-restart          Do not systemctl restart (also skips the adapter gate and verify).
   --canary                Restart and verify the top-level profile (PD Neo) first, then the
                           others; a failed stage rolls everything back before pdone restarts.
+  --restart-delay SEC     Pause between unit restarts (also on rollback). Default:
+                          deploy.cutover.restart_delay_s, else 3. A gateway must also be
+                          running before the next unit restarts.
   --expect P=PLATFORM     Repeatable. Adapter that must report connected after the restart.
                           Default: deploy.verify.<P>.platforms, else what the adapter gate started.
   --expect-port P=PORT    Repeatable. Port that must accept connections after the restart.
@@ -57,6 +61,9 @@ by the new release's interpreter with the environment its rendered gateway unit 
 it; a failure refuses the cutover with nothing changed. The cutover renders every unit
 and drop-in against the new release (paths, .venv/bin for a missing .hermes/bin wrapper,
 HERMES_RUNTIME_SHA) and refuses if a rendered unit names a path the release lacks.
+Only active, non-oneshot units are restarted; a template unit (name@.service) is replaced
+by its active instances. A rollback restarts the same units with the same verbs, then
+runs the same verify, and exits 1 with a summary if the gateways did not come back.
 
 The gate still requires no leases, a newest message at least --quiet seconds
 old, and no live goal (stale 0-turn goals older than --stale-goal-s are
@@ -97,6 +104,7 @@ skip_adapter_gate=0
 skip_verify=0
 canary=0
 port_host=""
+restart_delay=""
 gateway_units=()
 runtime_links=()
 expects=()
@@ -134,6 +142,7 @@ while [[ $# -gt 0 ]]; do
     --skip-verify) skip_verify=1; shift ;;
     --canary) canary=1; shift ;;
     --port-host) port_host="${2:-}"; shift 2 ;;
+    --restart-delay) restart_delay="${2:-}"; shift 2 ;;
     --gateway-unit) gateway_units+=("${2:-}"); shift 2 ;;
     --runtime-link) runtime_links+=("${2:-}"); shift 2 ;;
     --expect) expects+=("${2:-}"); shift 2 ;;
@@ -296,6 +305,14 @@ if [[ "${skip_restart}" != "1" ]]; then
 fi
 nemo_python "${cut_args[@]}"
 
+# Exit 1 either way; a rollback that did not bring the gateways back says so on its own.
+roll_back() {
+  if ! bash "${here}/rollback.sh" --manifest "${manifest}"; then
+    printf '%s\n' "ROLLBACK FAILED: the previous release is not verified running; fix it by hand (see above)" >&2
+  fi
+  exit 1
+}
+
 if [[ "${skip_restart}" != "1" ]]; then
   rollout_args=(
     -m scripts.deploy.nemo.cli rollout
@@ -312,6 +329,9 @@ if [[ "${skip_restart}" != "1" ]]; then
   if [[ -n "${port_host}" ]]; then
     rollout_args+=(--port-host "${port_host}")
   fi
+  if [[ -n "${restart_delay}" ]]; then
+    rollout_args+=(--restart-delay "${restart_delay}")
+  fi
   for item in "${expects[@]}"; do
     rollout_args+=(--expect "${item}")
   done
@@ -320,8 +340,7 @@ if [[ "${skip_restart}" != "1" ]]; then
   done
   if ! nemo_python "${rollout_args[@]}"; then
     printf '%s\n' "restart or adapter verify failed; rolling back" >&2
-    bash "${here}/rollback.sh" --manifest "${manifest}" || printf '%s\n' "rollback did not finish cleanly" >&2
-    exit 1
+    roll_back
   fi
 fi
 
@@ -344,8 +363,7 @@ if [[ "${skip_health}" != "1" ]]; then
   done
   if ! nemo_python "${health_args[@]}"; then
     printf '%s\n' "health check failed; rolling back" >&2
-    bash "${here}/rollback.sh" --manifest "${manifest}" || printf '%s\n' "rollback did not finish cleanly" >&2
-    exit 1
+    roll_back
   fi
 fi
 

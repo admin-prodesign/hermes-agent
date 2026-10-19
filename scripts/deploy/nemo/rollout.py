@@ -1,27 +1,37 @@
 """daemon-reload, then restart the rewritten units in stages, verifying each stage.
 
-Without ``--canary`` there is one stage: every rewritten unit, then every profile is
+Only concrete units that are active and not oneshot are restarted (``unit_state.py``): a
+template becomes its active instances, and a stopped unit or a oneshot is never started.
+Without ``--canary`` there is one stage: every restartable unit, then every profile is
 verified. With it, each profile's gateway unit is its own stage in canary order (the
 top-level profile, PD Neo, first) and the other units (dashboard, approval and review
 units) go with the last stage; a stage that fails verification stops the rollout so
 later profiles never restart onto the new release. Units whose only change was
-``HERMES_RUNTIME_SHA`` get ``try-restart``: one that is not running (a oneshot) is not
-started by a deploy. Each unit is recorded in the manifest as restarted before its
-restart, so a rollback restarts exactly those.
+``HERMES_RUNTIME_SHA`` get ``try-restart``.
+
+Restarts run one unit at a time with ``delay_s`` between them, and after a gateway the
+next unit waits until that gateway wrote a fresh ``running`` state (or failed), so two
+gateways never start together and load their secrets at once. Each unit is recorded in
+the manifest with its verb before its restart, so a rollback restarts exactly those, with
+the same verb.
 """
 
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
 from scripts.deploy.nemo.layout import canary_order, gateway_unit_name
 from scripts.deploy.nemo.manifest import read_manifest, write_manifest
-from scripts.deploy.nemo.units import RESTART
+from scripts.deploy.nemo.units import RESTART, TRY_RESTART, is_template
+from scripts.deploy.nemo.verify import Expectation, check, tcp_open
 
 Systemctl = Callable[[list[str]], int]
+Settle = Callable[["Restart", float], "str | None"]
+FAILED_GATEWAY_STATES = frozenset({"startup_failed", "stopped"})
 
 
 @dataclass(frozen=True)
@@ -87,21 +97,70 @@ def daemon_reload(units: list[dict], run: Systemctl) -> list[str]:
 
 def mark_restarted(manifest: Path, restarts: list[Restart]) -> None:
     done = list(read_manifest(manifest).get("restarted") or [])
+    seen = {(item.get("unit"), bool(item.get("user"))) for item in done}
     for item in restarts:
-        record = {"unit": item.unit, "user": item.user}
-        if record not in done:
-            done.append(record)
+        if (item.unit, item.user) not in seen:
+            done.append({"unit": item.unit, "user": item.user, "action": item.action})
+            seen.add((item.unit, item.user))
     write_manifest(manifest, {"restarted": done})
 
 
-def restart(restarts: list[Restart], run: Systemctl) -> list[str]:
-    return [f"systemctl {item.action} {item.unit} failed" for item in restarts
-            if run([*_scope(item.user), item.action, item.unit]) != 0]
+def restart(restarts: list[Restart], run: Systemctl, *, delay_s: float = 0.0,
+            sleep_fn: Callable[[float], None] = time.sleep, settle: Settle | None = None,
+            stop_on_failure: bool = False) -> list[str]:
+    """One unit at a time, ``delay_s`` apart; ``settle`` waits on a restarted gateway."""
+    failures: list[str] = []
+    for index, item in enumerate(restarts):
+        if index and delay_s > 0:
+            sleep_fn(delay_s)
+        since = time.time()
+        problem = None
+        if run([*_scope(item.user), item.action, item.unit]) != 0:
+            problem = f"systemctl {item.action} {item.unit} failed"
+        elif settle is not None:
+            problem = settle(item, since)
+        if problem:
+            failures.append(problem)
+            if stop_on_failure:
+                break
+    return failures
+
+
+def gateway_settle(gateways: dict[str, Expectation], *, timeout_s: float, interval_s: float,
+                   clock_fn: Callable[[], float] = time.monotonic,
+                   sleep_fn: Callable[[float], None] = time.sleep) -> Settle:
+    """Wait after a gateway unit (keyed by unit name) until its state is ``running`` and fresh.
+
+    A fresh ``startup_failed``/``stopped`` ends the wait early as a failure. Adapters and
+    ports are left to the stage verify.
+    """
+
+    def settle(item: Restart, since: float) -> str | None:
+        exp = gateways.get(item.unit)
+        if exp is None:
+            return None
+        bare = replace(exp, platforms=(), ports=())
+        started = clock_fn()
+        while True:
+            gateway = check(bare, since, connect=tcp_open)[0]
+            if gateway.ok:
+                return None
+            if gateway.detail in FAILED_GATEWAY_STATES:
+                return f"{exp.profile}: gateway {gateway.detail} after {item.action} {item.unit}"
+            if clock_fn() - started >= timeout_s:
+                return f"{exp.profile}: gateway not running {timeout_s:.0f}s after {item.action} " \
+                       f"{item.unit} ({gateway.detail})"
+            sleep_fn(interval_s)
+
+    return settle
 
 
 def rollback_restarts(manifest: dict) -> list[Restart]:
-    """What a rollback restarts: the units a rollout restarted, else every rewritten unit."""
-    restarted = manifest.get("restarted")
-    if restarted is not None:
-        return [Restart(str(item["unit"]), bool(item.get("user")), RESTART) for item in restarted]
-    return restarts_from(list(manifest.get("units") or []))
+    """What a rollback restarts: the units the rollout restarted, each with the verb it used.
+
+    The rollout only restarts units that were active and not oneshot, so nothing that was
+    stopped before the cutover is started here. A record without a verb (an older manifest)
+    gets ``try-restart``; a template is never restarted; no record means nothing restarted.
+    """
+    return [Restart(str(item["unit"]), bool(item.get("user")), str(item.get("action") or TRY_RESTART))
+            for item in manifest.get("restarted") or [] if not is_template(str(item["unit"]))]

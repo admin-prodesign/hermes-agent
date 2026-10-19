@@ -290,7 +290,9 @@ files still land under that profile's `upgrade-audits/<build>/`.
    `HR_Employees`. Do not wait for the scheduled runs.
 5. `rollback.sh --manifest upgrade-audits/<build>/manifest.json` restores the
    units, drop-ins, configs, and release links, then restarts the units the cutover
-   restarted. The new release directory stays on disk.
+   restarted (same verbs, one at a time; stopped units, oneshots, and templates stay
+   stopped) and verifies the gateways the same way the cutover did. It exits 1 with a
+   summary when a gateway did not come back. The new release directory stays on disk.
 
 Before the idle gate, `cutover.sh` runs the safe-ops selftest from the new
 release (`--skip-selftest` turns it off):
@@ -321,6 +323,12 @@ The worker runs `cutover.sh` from `releases/current`. Until a release with the u
 rendering is current, the worker's cutover moves `current` without touching the units,
 so ship that release by hand with its own `cutover.sh`. Replace `<mirror>` with the bare
 mirror and the ports with the live ones.
+
+Build a `main` that has the restart fixes (template units skipped, stopped and oneshot
+units left stopped, staggered restarts, verified rollback). The first unit-rendering
+`cutover.sh` ran `try-restart` on a template unit, failed, and its rollback restarted
+every rewritten unit at once. `$HERMES_HOME/runtime/current` is found and moved without a
+flag.
 
 ```bash
 export HERMES_HOME=~/.hermes
@@ -354,7 +362,7 @@ NEMO_PYTHON="$new/.venv/bin/python" bash "$new/scripts/deploy/nemo/cutover.sh" \
 # 6. Check the units, drop-ins, and links now name the new release and SHA.
 systemctl --user cat hermes-gateway.service hermes-gateway-pdone.service \
   | grep -E 'ExecStart|ExecStop|PATH|VIRTUAL_ENV|PYTHONPATH|HERMES_RUNTIME_SHA'
-readlink "$releases/current" "$releases/previous" "$releases/runtime/current"
+readlink "$releases/current" "$releases/previous" "$HERMES_HOME/runtime/current"
 cat "$releases/.running"
 (cd "$releases/current" && .venv/bin/python -m scripts.deploy.nemo.autodeploy drift \
   --hermes-home "$HERMES_HOME" --mirror "$mirror")

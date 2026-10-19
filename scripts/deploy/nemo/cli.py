@@ -24,9 +24,9 @@ from scripts.deploy.nemo.health import http_healthy, poll_until_healthy
 from scripts.deploy.nemo.health_targets import load_deploy_section, resolve_health_plan, socket_profile_homes
 from scripts.deploy.nemo.layout import (
     DEFAULT_EXTRA, DEFAULT_HEALTH_INTERVAL_S,
-    DEFAULT_HEALTH_TIMEOUT_S, DEFAULT_POLL_S, DEFAULT_PROFILES, DEFAULT_QUIET_S,
+    DEFAULT_HEALTH_TIMEOUT_S, DEFAULT_POLL_S, DEFAULT_PROFILES, DEFAULT_QUIET_S, DEFAULT_RESTART_DELAY_S,
     DEFAULT_STALE_GOAL_S,
-    audit_dir, gateway_unit_name, pairs, pin_uv_cache, releases_dir, resolve_hermes_home, valid_sha,
+    audit_dir, pairs, pin_uv_cache, releases_dir, resolve_hermes_home, valid_sha,
 )
 from scripts.deploy.nemo.manifest import (
     AUTO_RELEASE_SUFFIX, read_manifest, record_build_manifest, release_dir_name, write_manifest,
@@ -34,13 +34,12 @@ from scripts.deploy.nemo.manifest import (
 from scripts.deploy.nemo.postcheck import run_postcheck
 from scripts.deploy.nemo.preflight import changed_files, plan_for
 from scripts.deploy.nemo.probe import run_probe
+from scripts.deploy.nemo.release_swap import runtime_links as resolve_runtime_links
 from scripts.deploy.nemo.rollback import apply_rollback
-from scripts.deploy.nemo.rollout import (
-    daemon_reload, mark_restarted, plan_stages, restart, restarts_from, rollback_restarts, systemctl,
-)
+from scripts.deploy.nemo.rollout_run import cmd_restart, cmd_rollout
 from scripts.deploy.nemo.source import SourceMissing, acquire_source
 from scripts.deploy.nemo.units import is_user_unit, target_for, unit_files
-from scripts.deploy.nemo.verify import DEFAULT_PORT_HOST, expectations, poll_until_verified
+from scripts.deploy.nemo.verify import DEFAULT_PORT_HOST
 from scripts.deploy.nemo.verify_mcp import compile_plan, scripts_in_release
 from scripts.deploy.nemo.verify_ws import static_problems
 
@@ -199,7 +198,13 @@ def cmd_cutover(args: argparse.Namespace) -> int:
     audit = audit_dir(home, args.build)
     manifest_path = audit / "manifest.json"
     sha = _build_sha(home, args.build, args.sha)
-    runtime_links = [Path(item) for item in args.runtime_links] or None
+    configured = load_deploy_section(home, "cutover").get("runtime_links") or []
+    runtime_links, link_warnings = resolve_runtime_links(
+        home, releases, explicit=list(args.runtime_links),
+        configured=[configured] if isinstance(configured, str) else [str(item) for item in configured],
+    )
+    for warning in link_warnings:
+        print(f"warning: {warning}", file=sys.stderr)
     try:
         result = apply_cutover(
             releases=releases, build=args.build, unit_dirs=_unit_dirs(args),
@@ -241,81 +246,6 @@ def cmd_adapter_gate(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
-def _print_checks(checks) -> None:
-    for item in checks:
-        print(f"{'ok' if item.ok else 'fail'}\t{item.name}\t{item.detail}")
-
-
-def _verify_targets(args: argparse.Namespace, home: Path, manifest: Path) -> dict:
-    gate_file = manifest.parent / ADAPTERS_FILE
-    gate = json.loads(gate_file.read_text(encoding="utf-8-sig")) if gate_file.is_file() else {}
-    exps = expectations(
-        home, _profiles(args), verify_config=load_deploy_section(home, "verify"),
-        platforms=pairs(args.expect), ports=pairs(args.expect_port), gate=gate,
-    )
-    return {exp.profile: exp for exp in exps}
-
-
-def _run_stage(args: argparse.Namespace, stage, exps: dict, overrides: dict[str, str]) -> bool:
-    since = time.time()
-    mark_restarted(args.manifest, stage.restarts)
-    failures = restart(stage.restarts, systemctl)
-    for failure in failures:
-        print(failure, file=sys.stderr)
-    if failures:
-        return False
-    if args.skip_verify:
-        return True
-    restarted = {item.unit for item in stage.restarts}
-    chosen = []
-    for profile in stage.profiles:
-        if gateway_unit_name(profile, overrides) in restarted:
-            chosen.append(exps[profile])
-        else:
-            print(f"{profile}: gateway unit was not restarted; not verified")
-    ok, checks = poll_until_verified(
-        chosen, since, timeout_s=args.timeout, interval_s=args.interval,
-        clock_fn=time.monotonic, sleep_fn=time.sleep, host=args.port_host,
-    )
-    _print_checks(checks)
-    return ok
-
-
-def cmd_rollout(args: argparse.Namespace) -> int:
-    home = _home(args)
-    manifest = read_manifest(args.manifest)
-    units = list(manifest.get("units") or [])
-    try:
-        overrides = {key: values[-1] for key, values in pairs(args.gateway_units).items()}
-        exps = _verify_targets(args, home, args.manifest)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    failures = daemon_reload(units, systemctl)
-    if failures:
-        print("\n".join(failures), file=sys.stderr)
-        return 1
-    stages = plan_stages(restarts_from(units), _profiles(args), canary=args.canary, overrides=overrides)
-    for index, stage in enumerate(stages, 1):
-        names = ", ".join(item.unit for item in stage.restarts) or "nothing"
-        print(f"stage {index}/{len(stages)} ({', '.join(stage.profiles) or 'other units'}): {names}")
-        if not _run_stage(args, stage, exps, overrides):
-            print(f"stage {index} failed; later stages were not restarted", file=sys.stderr)
-            return 1
-    return 0
-
-
-def cmd_restart(args: argparse.Namespace) -> int:
-    manifest = read_manifest(args.manifest)
-    units = list(manifest.get("units") or [])
-    failures = daemon_reload(units, systemctl) + restart(rollback_restarts(manifest), systemctl)
-    for failure in failures:
-        print(failure, file=sys.stderr)
-    if not units:
-        print("warning: no systemd units to restart", file=sys.stderr)
-    return 1 if failures else 0
-
-
 def _systemctl_active(path: str, user: bool) -> bool:
     argv = ["systemctl", "is-active", "--quiet"]
     if user:
@@ -335,8 +265,9 @@ def cmd_health(args: argparse.Namespace) -> int:
     plan = resolve_health_plan(home)
     units: list[tuple[str, bool]] = list(plan.extra_units)
     if args.manifest:
-        for item in read_manifest(args.manifest).get("units") or []:
-            units.append((str(item["path"]), bool(item.get("user"))))
+        # Only what the rollout restarted: a stopped unit, a oneshot or a template is never active.
+        for item in read_manifest(args.manifest).get("restarted") or []:
+            units.append((str(item["unit"]), bool(item.get("user"))))
     for path in args.unit:
         units.append((path, is_user_unit(Path(path))))
     gateway_url = args.gateway_url or plan.gateway_url
@@ -482,7 +413,8 @@ def register(sub) -> None:
     cutover.add_argument("--unit-dir", action="append", dest="unit_dirs", default=[])
     cutover.add_argument("--running", action="store_true", help="also point .running at the build")
     cutover.add_argument("--runtime-link", action="append", dest="runtime_links", default=[],
-                         help="symlink into a release to retarget; default <releases>/runtime/current")
+                         help="symlink into a release to retarget; default deploy.cutover.runtime_links, "
+                              "else every existing <home>/runtime/current and <releases>/runtime/current")
     cutover.set_defaults(func=cmd_cutover)
 
     gate_adapters = sub.add_parser("adapter-gate", help="dry-start every enabled adapter from the new release")
@@ -509,10 +441,16 @@ def register(sub) -> None:
     rollout.add_argument("--timeout", type=float, default=DEFAULT_HEALTH_TIMEOUT_S)
     rollout.add_argument("--interval", type=float, default=DEFAULT_HEALTH_INTERVAL_S)
     rollout.add_argument("--skip-verify", action="store_true")
+    rollout.add_argument("--restart-delay", type=float, default=None,
+                         help=f"seconds between unit restarts; default deploy.cutover.restart_delay_s, "
+                              f"else {DEFAULT_RESTART_DELAY_S:g}")
     rollout.set_defaults(func=cmd_rollout)
 
-    restart_units = sub.add_parser("restart", help="daemon-reload and restart the units a rollout restarted")
+    restart_units = sub.add_parser(
+        "restart", help="after a rollback: restart what the rollout restarted (same verbs), then verify")
     restart_units.add_argument("--manifest", required=True, type=Path)
+    restart_units.add_argument("--skip-verify", action="store_true")
+    restart_units.add_argument("--restart-delay", type=float, default=None)
     restart_units.set_defaults(func=cmd_restart)
 
     health = sub.add_parser("health", help="poll systemd and the health endpoints")

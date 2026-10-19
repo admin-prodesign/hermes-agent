@@ -15,6 +15,7 @@ import base64
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import time
@@ -61,7 +62,9 @@ def _encrypted_disk_cache_path(home_path: Optional[Path] = None) -> Path:
 # First matching rule wins. The BSM identity endpoint rejects a revoked /
 # expired machine-account token with an OAuth-style
 # `[400 Bad Request] {"error":"invalid_client"}`, hence those AUTH tokens.
+# RATE_LIMITED comes first so a 429 body that mentions the token is not an auth failure.
 _BWS_ERROR_RULES = (
+    (ErrorKind.RATE_LIMITED, ("429", "too many requests", "rate limit")),
     (ErrorKind.TIMEOUT, ("timed out",)),
     (ErrorKind.BINARY_MISSING, ("binary not available", "failed to invoke")),
     (ErrorKind.AUTH_FAILED, ("unauthorized", "invalid token", "access token", "401", "403",
@@ -72,6 +75,30 @@ _BWS_ERROR_RULES = (
 
 def _classify_bws_error(message: str) -> ErrorKind:
     return classify_cli_error(message, _BWS_ERROR_RULES)
+
+
+# Several gateways starting together share one machine account; BSM answers the burst
+# with 429. Retries back off 2, 4, 8 s plus up to half again of jitter so they spread out,
+# well inside the source's fetch budget.
+_BWS_RATE_LIMIT_RETRIES = 3
+_BWS_RATE_LIMIT_BACKOFF_S = 2.0
+_STALE_FALLBACK_KINDS = (ErrorKind.NETWORK, ErrorKind.TIMEOUT, ErrorKind.RATE_LIMITED)
+
+
+def _run_bws_list_retrying(bws: Path, access_token: str, project_id: str,
+                           server_url: str = "") -> tuple[dict[str, str], list[str]]:
+    attempt = 0
+    while True:
+        try:
+            return _run_bws_list(bws, access_token, project_id, server_url)
+        except RuntimeError as exc:
+            if attempt >= _BWS_RATE_LIMIT_RETRIES or _classify_bws_error(str(exc)) != ErrorKind.RATE_LIMITED:
+                raise
+            delay = _BWS_RATE_LIMIT_BACKOFF_S * 2 ** attempt
+            delay += random.uniform(0, delay / 2)
+            logger.warning("bws rate-limited (%s); retrying in %.1fs", exc, delay)
+            time.sleep(delay)
+            attempt += 1
 
 
 # --- Binary discovery + lazy install ----------------------------------------
@@ -186,7 +213,8 @@ def fetch_bitwarden_secrets(
 
     ``server_url``: region / self-hosted instance (empty = US Cloud). With
     ``encrypted_cache_enabled`` fresh entries are written AES-GCM encrypted and a
-    last-good entry may be served after NETWORK/TIMEOUT failures for up to
+    last-good entry may be served after NETWORK/TIMEOUT failures (or a 429 that
+    outlived its retries) for up to
     ``encrypted_cache_max_stale_seconds`` — independent of the fresh TTL, so
     ``cache_ttl_seconds: 0`` can coexist with a break-glass offline cache.
     Raises ``RuntimeError`` on fatal conditions (missing binary, auth failure,
@@ -220,14 +248,15 @@ def fetch_bitwarden_secrets(
                            "`hermes secrets bitwarden setup`.")
 
     try:
-        secrets, warnings = _run_bws_list(bws, access_token, project_id, server_url)
+        secrets, warnings = _run_bws_list_retrying(bws, access_token, project_id, server_url)
     except RuntimeError as exc:
-        # Stale fallback ONLY for transport failures — never AUTH_FAILED / INTERNAL,
-        # where old secrets would mask a real problem (without it a fleet sharing
-        # one project all stops on a network blip). With the encrypted cache on it
-        # is the ONLY fallback (at-rest payload must never be plaintext); else the
-        # plain DiskCache is read with ttl=inf, but only when the real TTL > 0.
-        if use_cache and _classify_bws_error(str(exc)) in (ErrorKind.NETWORK, ErrorKind.TIMEOUT):
+        # Stale fallback ONLY for transport failures and a 429 that outlived its
+        # retries — never AUTH_FAILED / INTERNAL, where old secrets would mask a
+        # real problem (without it a fleet sharing one project all stops on a
+        # network blip). With the encrypted cache on it is the ONLY fallback
+        # (at-rest payload must never be plaintext); else the plain DiskCache is
+        # read with ttl=inf, but only when the real TTL > 0.
+        if use_cache and _classify_bws_error(str(exc)) in _STALE_FALLBACK_KINDS:
             stale = label = None
             if encrypted_cache_enabled:
                 stale = _read_encrypted(encrypted_cache_max_stale_seconds)

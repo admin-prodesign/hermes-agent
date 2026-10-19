@@ -83,6 +83,34 @@ def retarget(link: Path, releases: Path, release: Path) -> str | None:
     return None
 
 
+def _link_path(home: Path, raw: str) -> Path:
+    path = Path(os.path.expandvars(raw.replace("$HERMES_HOME", str(home)))).expanduser()
+    return path if path.is_absolute() else home / path
+
+
+def runtime_links(home: Path, releases: Path, *, explicit: list[str],
+                  configured: list[str]) -> tuple[list[Path], list[str]]:
+    """The runtime links to retarget and a warning for each named one that cannot be.
+
+    ``--runtime-link`` wins, then ``deploy.cutover.runtime_links`` in ``config.yaml``; both may
+    use ``~``, ``$HERMES_HOME``, or a path relative to the home. With neither, every existing
+    ``<home>/runtime/current`` and ``<releases>/runtime/current`` symlink is used.
+    """
+    named = explicit or configured
+    if not named:
+        found = [path for path in (home / RUNTIME_LINK, releases / RUNTIME_LINK) if path.is_symlink()]
+        return list(dict.fromkeys(found)), []
+    links = list(dict.fromkeys(_link_path(home, raw) for raw in named))
+    warnings: list[str] = []
+    for link in links:
+        if not link.is_symlink():
+            warnings.append(f"runtime link {link} is not a symlink; left alone")
+        elif retarget(link, releases, releases) is None:
+            warnings.append(f"runtime link {link} -> {os.readlink(link)} does not name a build under "
+                            f"{releases}; left alone")
+    return links, warnings
+
+
 def point_links(
     releases: Path, build: str, *, running: bool, runtime_links: list[Path] | None = None,
 ) -> list[dict]:
