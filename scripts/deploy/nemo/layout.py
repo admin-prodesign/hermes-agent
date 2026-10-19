@@ -20,7 +20,7 @@ DEFAULT_KEEP_RECENT_RELEASES = 3
 # Same relative path hermes_cli.source_build.FRONTEND_PREINSTALL_MARKER uses.
 FRONTEND_MARKER_RELATIVE = Path(".hermes") / "frontend-preinstalled"
 SHA_RE = re.compile(r"[0-9a-fA-F]{7,40}")
-NEMO_PACKAGES = ("honcho-ai", "pyyaml", "requests")
+NEMO_PACKAGES = ("honcho-ai", "mcp", "pyyaml", "requests")
 
 
 def resolve_hermes_home(explicit: Path | None = None) -> Path:

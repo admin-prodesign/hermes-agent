@@ -437,11 +437,15 @@ bedrock = ["boto3==1.42.89"]
 # YAML stays ruamel.yaml. ruamel.yaml.clib is an optional accelerator
 # and is not part of this extra. requests is already a core pin on
 # Python 3.14; it is repeated here so the nemo closure names the package
-# profile cron scripts import (HR sync, reaper).
+# profile cron scripts import (HR sync, reaper). [mcp] is required for
+# PD One stdio servers (pdone_safe_ops, pdone_worker_scheduling) and for
+# MCP client tooling on the production host; autodeploy installs only
+# `.[nemo]`.
 nemo = [
   "honcho-ai==2.5.1",
   "pyyaml==6.0.3",
   "requests==2.33.0",
+  "hermes-agent[mcp]",
 ]
 vertex = ["google-auth==2.55.1"]
 azure-identity = ["azure-identity==1.25.3"]
