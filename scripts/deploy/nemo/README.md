@@ -93,22 +93,36 @@ That should print one `<sha>\trefs/heads/main` line.
   `releases/current` and the other stable links are left as they are. If a rendered unit
   would run or load a path the release lacks, the cutover stops before writing anything.
   The originals go to `upgrade-audits/<build>/units/`.
-- **Links.** `previous` points at the old `current`, `runtime/current` (and every
-  `--runtime-link`) at the new release, `.running` at the new build when it restarts, and
-  `current` moves last. The prior state of each is in the manifest.
-- **Restart and verify.** After `daemon-reload`, the rewritten units restart. A unit whose
-  only change is `HERMES_RUNTIME_SHA` gets `try-restart`, so a stopped oneshot is not
-  started. Each profile's `gateway_state.json` must then say `running` and every expected
-  adapter `connected`, both written after the restart, and every expected port must accept
-  a connection, within `--health-timeout`. Expected adapters are `--expect P=PLATFORM`, else
-  `deploy.verify.<P>.platforms` in `<home>/config.yaml`, else what the adapter gate created.
-  Ports are only checked when configured:
+- **Links.** `previous` points at the old `current`, the runtime links at the new release,
+  `.running` at the new build when it restarts, and `current` moves last. The runtime links
+  are `--runtime-link PATH` (repeatable), else `deploy.cutover.runtime_links` in
+  `<home>/config.yaml`, else every existing `<home>/runtime/current` and
+  `<releases>/runtime/current` symlink. A link is moved only when it names a build under
+  `releases/`; a named link that is missing or points elsewhere is left alone with a
+  warning. The prior state of each is in the manifest.
+- **Restart and verify.** After `daemon-reload`, the rewritten units restart, but only
+  concrete units that are active and not oneshot. A template (`name@.service`) is never
+  restarted; its active instances are, if any. A stopped unit or a oneshot (a bridge, a
+  scanner, an `OnFailure=` alert) is left as it is and picks up its new file the next time
+  it starts. A unit whose only change is `HERMES_RUNTIME_SHA` gets `try-restart`.
+  Restarts run one unit at a time, `--restart-delay` seconds apart
+  (`deploy.cutover.restart_delay_s`, default 3), and after a gateway the next unit waits
+  until that gateway writes a fresh `running` state, so two gateways never start together
+  and fetch their secrets at once. Each profile's `gateway_state.json` must then say
+  `running` and every expected adapter `connected`, both written after the restart, and
+  every expected port must accept a connection, within `--health-timeout`. Expected
+  adapters are `--expect P=PLATFORM`, else `deploy.verify.<P>.platforms` in
+  `<home>/config.yaml`, else what the adapter gate created. Ports are only checked when
+  configured:
 
   ```yaml
   deploy:
     verify:
       default: {platforms: [webhook], ports: [<PD Neo webhook port>]}
       pdone: {platforms: [mattermost, line], ports: [<port>]}
+    cutover:
+      runtime_links: [runtime/current]   # relative to the home; ~ and $HERMES_HOME work
+      restart_delay_s: 3
   ```
 
   With `--canary` (worker: `install_autodeploy.sh install --canary`), the top-level profile's
@@ -117,7 +131,12 @@ That should print one `<sha>\trefs/heads/main` line.
 - **Rollback.** If a restart, the verify, systemd, the gateway control socket (PD One LINE /
   `pdone`), or HTTP health (PD Neo `:8644`, dashboard `:8765` on nemo) fails, `cutover.sh`
   restores the units, drop-ins, configs, and links from `upgrade-audits/<build>/`, reloads
-  systemd, and restarts the units that had restarted.
+  systemd, and restarts only the units the rollout restarted, each with the verb it used,
+  one at a time as above. Nothing that was stopped before the cutover is started. Then it
+  runs the same verify against the previous release (the rollout stored its targets in the
+  manifest, so `rollback.sh --manifest` alone does the same by hand). If a gateway does not
+  come back, the rollback prints which check failed and `cutover.sh` reports
+  `ROLLBACK FAILED`; either way the cutover exits 1.
 - **Refused SHAs.** A SHA that is `rejected` (not on main, or older than the live one)
   or `failed` (build failed, too little disk, rolled back, skill sync failed) goes into
   `deploy/refused.jsonl`. The poller skips it, so a broken commit does not rebuild every
