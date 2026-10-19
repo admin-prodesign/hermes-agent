@@ -9,8 +9,8 @@ time. This page uses placeholders only.
 ## Rollout
 
 1. Rebuild the nemo release from `main` with the `nemo` extra
-   (`honcho-ai`, PyYAML, and requests): `hermes pm` / the release build you already use,
-   passing `--extra nemo`.
+   (`honcho-ai`, PyYAML, requests, and the `[mcp]` client stack): `hermes pm` / the release
+   build you already use, passing `--extra nemo`.
 2. Point the pdone profile `mcp_servers.pdone_safe_ops` command at
    `tools/pd_one_safe_ops_mcp.py` in that release, using the release
    interpreter. Do not copy the server into `profiles/pdone/tools/`. A script's
@@ -269,7 +269,7 @@ files still land under that profile's `upgrade-audits/<build>/`.
 1. `probe.py` checks whether `git fetch <sha>` against the bare mirror
    answers. Exit 75 means it hung; `build.sh` then uses the GitHub tarball.
 2. `build.sh --sha <sha> --mirror <bare-repo>` fetches that commit, installs
-   `.[nemo]` (honcho-ai, PyYAML, and requests), installs the dashboard npm
+   `.[nemo]` (honcho-ai, PyYAML, requests, and `[mcp]`), installs the dashboard npm
    dependencies, and publishes a read-only release. It creates the release
    directory only after the source tree validates.
 3. `cutover.sh --build <name>` runs the verifies the diff touches (`--full`
