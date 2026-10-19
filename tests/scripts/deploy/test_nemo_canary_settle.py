@@ -19,8 +19,8 @@ from pathlib import Path
 import pytest
 
 from scripts.deploy.nemo.manifest import write_manifest
-from scripts.deploy.nemo.rollout import Restart, gateway_settle
-from scripts.deploy.nemo.verify import Expectation, check, expectations
+from scripts.deploy.nemo.rollout import Restart, gateway_settle, settle_verdict
+from scripts.deploy.nemo.verify import Expectation, check, expectations, settle_timeout_s
 from tests.scripts.deploy.test_nemo_rollout import REPO, _calls, _cutover, _deploy
 
 PDONE_UNIT = "hermes-gateway-pdone.service"
@@ -57,10 +57,26 @@ class _Clock:
             self.steps.pop(0)()
 
 
-def _settle(tmp_path: Path, clock: _Clock, main_pid: int | None = NEW_PID, timeout: float = 10.0):
+def _settle(
+    tmp_path: Path,
+    clock: _Clock,
+    main_pid: int | None = NEW_PID,
+    timeout: float = 10.0,
+    *,
+    unit_active: str | None = "active",
+    process_alive: bool = True,
+):
     exp = Expectation("pdone", tmp_path, ("mattermost", "line"), (8646,))
-    settle = gateway_settle({PDONE_UNIT: exp}, timeout_s=timeout, interval_s=1.0,
-                            main_pid_fn=lambda item: main_pid, clock_fn=clock, sleep_fn=clock.sleep)
+    settle = gateway_settle(
+        {PDONE_UNIT: exp},
+        timeout_s=timeout,
+        interval_s=1.0,
+        main_pid_fn=lambda item: main_pid,
+        unit_active_fn=lambda item: unit_active,
+        process_alive_fn=lambda pid: process_alive if pid == main_pid else True,
+        clock_fn=clock,
+        sleep_fn=clock.sleep,
+    )
     return settle(Restart(PDONE_UNIT, True), datetime.now(UTC).timestamp() - 1)
 
 
@@ -93,12 +109,31 @@ def test_a_stop_mark_written_before_the_restart_is_ignored(tmp_path: Path) -> No
     assert _settle(tmp_path, clock) is None
 
 
-@pytest.mark.parametrize("state", ["stopped", "startup_failed"])
-def test_the_new_pids_own_failure_ends_settle_early(tmp_path: Path, state: str) -> None:
+def test_startup_failed_from_the_new_pid_ends_settle_early(tmp_path: Path) -> None:
     _write(tmp_path, "stopped", OLD_PID)
-    clock = _Clock([lambda: _write(tmp_path, state, NEW_PID)])
+    clock = _Clock([lambda: _write(tmp_path, "startup_failed", NEW_PID)])
 
-    assert _settle(tmp_path, clock) == f"pdone: gateway {state} after restart {PDONE_UNIT}"
+    assert _settle(tmp_path, clock) == f"pdone: gateway startup_failed after restart {PDONE_UNIT}"
+    assert clock.now == 1.0
+
+
+def test_stopped_from_the_new_pid_fails_when_the_unit_is_no_longer_running(tmp_path: Path) -> None:
+    _write(tmp_path, "stopped", NEW_PID)
+
+    assert _settle(tmp_path, _Clock(), unit_active="failed") == f"pdone: gateway stopped after restart {PDONE_UNIT}"
+
+
+def test_stopped_from_the_new_pid_fails_when_the_unit_is_active_but_the_process_is_gone(tmp_path: Path) -> None:
+    _write(tmp_path, "stopped", NEW_PID)
+
+    assert _settle(tmp_path, _Clock(), process_alive=False) == f"pdone: gateway stopped after restart {PDONE_UNIT}"
+
+
+def test_transient_stopped_from_the_new_pid_while_the_unit_stays_active_eventually_passes(tmp_path: Path) -> None:
+    _write(tmp_path, "stopped", NEW_PID)
+    clock = _Clock([lambda: _write(tmp_path, "degraded", NEW_PID, {"mattermost": "connected"})])
+
+    assert _settle(tmp_path, clock) is None
     assert clock.now == 1.0
 
 
@@ -152,6 +187,31 @@ def test_degraded_still_fails_on_a_watchdog_exit_or_with_nothing_expected(tmp_pa
     assert _failed(Expectation("pdone", tmp_path, (), ())) == []
 
 
+def test_pdone_gets_a_longer_default_settle_timeout_than_default(tmp_path: Path) -> None:
+    verify = {"default": {"platforms": ["webhook"]}, "pdone": {"platforms": ["mattermost"]}}
+
+    assert settle_timeout_s(verify, "default", fallback=60.0) == 60.0
+    assert settle_timeout_s(verify, "pdone", fallback=60.0) == 180.0
+    assert settle_timeout_s({"pdone": {"settle_timeout": 240}}, "pdone", fallback=60.0) == 240.0
+
+
+def test_slow_startup_beyond_sixty_seconds_still_passes_within_the_configured_settle_timeout(tmp_path: Path) -> None:
+    _write(tmp_path, "stopped", NEW_PID)
+    clock = _Clock([lambda: None] * 65 + [lambda: _write(tmp_path, "running", NEW_PID)])
+
+    assert _settle(tmp_path, clock, timeout=90.0) is None
+    assert clock.now == 66.0
+
+
+def test_settle_verdict_waits_on_transient_stopped_without_calling_systemd(tmp_path: Path) -> None:
+    since = datetime.now(UTC).timestamp() - 1
+    state = {"gateway_state": "stopped", "pid": NEW_PID, "updated_at": _now()}
+
+    ok, detail = settle_verdict(state, since, NEW_PID, unit_active="activating")
+
+    assert ok is None and "transient" in detail
+
+
 def test_expected_adapters_ports_and_host_come_from_each_profiles_config(tmp_path: Path) -> None:
     verify = {"default": {"platforms": ["webhook"], "ports": [8644], "host": "127.0.0.1"},
               "pdone": {"platforms": "mattermost, line", "ports": 8646}}
@@ -180,7 +240,7 @@ def _verify_config(home: Path, default_port: int, pdone_port: int) -> None:
         f"    pdone: {{platforms: [mattermost, line], ports: [{pdone_port}]}}\n", encoding="utf-8")
 
 
-PDONE_DEGRADED = {"gateway": "degraded", "stale_stop": True,
+PDONE_DEGRADED = {"gateway": "degraded", "transient_stopped": True,
                   "platforms": {"mattermost": "connected", "line": "connected",
                                 "telegram": "fatal", "discord": "fatal"}}
 
@@ -202,6 +262,26 @@ def test_canary_rehearsal_rolls_out_both_profiles_past_the_stop_mark_and_degrade
     assert os.readlink(layout["releases"] / "current") == "new"
     calls = _calls(layout)
     assert calls.index("--user restart hermes-gateway.service") < calls.index(f"--user restart {PDONE_UNIT}")
+
+
+@pytest.mark.platforms("linux")
+def test_canary_rollback_succeeds_when_pdone_only_has_a_transient_stopped_mark(tmp_path: Path) -> None:
+    layout = _deploy(tmp_path)
+    with _listening() as neo, _listening() as pdone:
+        _verify_config(layout["home"], neo.getsockname()[1], pdone.getsockname()[1])
+        proc = _cutover(
+            layout,
+            {"default": {"gateway": "running", "stale_stop": True, "platforms": {"webhook": "connected"}},
+             "pdone": "fatal"},
+            "--canary",
+            old_state={"pdone": PDONE_DEGRADED},
+        )
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "fail\tpdone:" in proc.stdout
+    assert "ROLLBACK FAILED" not in proc.stderr
+    assert "rollback restarted: restart hermes-gateway.service, restart hermes-gateway-pdone.service" in proc.stdout
+    assert os.readlink(layout["releases"] / "current") == "old"
 
 
 @pytest.mark.platforms("linux")

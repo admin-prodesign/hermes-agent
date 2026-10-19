@@ -38,6 +38,8 @@ from scripts.deploy.nemo.layout import TOP_LEVEL_PROFILE_ALIASES, profile_home
 
 STATE_FILE = "gateway_state.json"
 DEFAULT_PORT_HOST = "127.0.0.1"
+DEFAULT_SETTLE_TIMEOUT_S = 90.0
+DEFAULT_PDONE_SETTLE_TIMEOUT_S = 180.0
 SERVING_GATEWAY_STATES = frozenset({"running", "degraded"})
 Connect = Callable[[str, int, float], bool]
 
@@ -57,6 +59,17 @@ def tcp_open(host: str, port: int, timeout: float) -> bool:
             return True
     except OSError:
         return False
+
+
+def settle_timeout_s(verify: dict[str, Any], profile: str, *, fallback: float = DEFAULT_SETTLE_TIMEOUT_S) -> float:
+    """Per-profile settle wait after a gateway restart (``deploy.verify.<profile>.settle_timeout``)."""
+    block = _profile_block(verify, profile)
+    raw = block.get("settle_timeout")
+    if raw is not None:
+        return max(0.0, float(raw))
+    if profile == "pdone":
+        return DEFAULT_PDONE_SETTLE_TIMEOUT_S
+    return fallback
 
 
 def _profile_block(verify: dict[str, Any], profile: str) -> dict[str, Any]:

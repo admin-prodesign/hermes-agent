@@ -110,8 +110,12 @@ That should print one `<sha>\trefs/heads/main` line.
   until that gateway's new process writes a fresh `running` or `degraded` state, so two
   gateways never start together and fetch their secrets at once. Only a state written
   after the restart by the unit's `MainPID` counts: the `stopped` the old process stamps
-  on its way out is waited out, not read as a failure; the new process's own `stopped` or
-  `startup_failed` fails at once. Each profile's `gateway_state.json` must then say
+  on its way out is waited out, not read as a failure. A `stopped` mark from the new
+  `MainPID` is also waited out while systemd still has the unit active and the process
+  alive (heartbeats can refresh `pid` before `gateway_state` advances); `startup_failed`
+  or a terminal `stopped` (unit failed/inactive or the main process exited) fails at once.
+  Settle waits up to `deploy.verify.<profile>.settle_timeout` (default 180s for `pdone`,
+  else `--health-timeout`). Each profile's `gateway_state.json` must then say
   `running` and every expected adapter `connected`, both written after the restart, and
   every expected port must accept a connection, within `--health-timeout`. `degraded`
   (a configured platform was parked, e.g. one with no token) passes the same way, but
@@ -126,7 +130,7 @@ That should print one `<sha>\trefs/heads/main` line.
   deploy:
     verify:
       default: {platforms: [webhook], ports: [8644], host: 127.0.0.1}
-      pdone: {platforms: [mattermost, line], ports: [8646]}
+      pdone: {platforms: [mattermost, line], ports: [8646], settle_timeout: 180}
     cutover:
       runtime_links: [runtime/current]   # relative to the home; ~ and $HERMES_HOME work
       restart_delay_s: 3
