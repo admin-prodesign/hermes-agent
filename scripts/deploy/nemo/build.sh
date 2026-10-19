@@ -248,7 +248,7 @@ if [[ -f "${audit}/old-freeze.txt" ]]; then
     --old "${audit}/old-freeze.txt" --new "${audit}/freeze.txt" \
     --report "${audit}/freeze-diff.txt"
 fi
-"${venv_python}" -c "import hermes_cli, requests, yaml"
+"${venv_python}" -c "import hermes_cli, mcp, requests, yaml"
 
 if [[ "${skip_frontend}" != "1" ]]; then
   command -v node >/dev/null 2>&1 || die "node is required to preinstall dashboard dependencies"

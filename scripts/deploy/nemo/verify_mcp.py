@@ -2,7 +2,7 @@
 
 This is the bounded replacement for the host ``verify_mcp.py``. It compiles each
 configured stdio server that points into the release and imports the nemo extra
-(``requests``, ``yaml``). It does not start a live tool call.
+(``mcp``, ``requests``, ``yaml``). It does not start a live tool call.
 """
 
 from __future__ import annotations
@@ -49,6 +49,6 @@ def scripts_in_release(home: Path, release: Path, profiles: tuple[str, ...] = DE
 
 
 def compile_plan(python: str, scripts: list[Path]) -> list[tuple[str, ...]]:
-    commands = [(python, "-c", "import requests, yaml")]
+    commands = [(python, "-c", "import mcp, requests, yaml")]
     commands.extend((python, "-m", "py_compile", str(script)) for script in scripts)
     return commands

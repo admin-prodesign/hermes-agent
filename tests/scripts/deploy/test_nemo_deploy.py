@@ -553,7 +553,7 @@ def test_mcp_scripts_outside_the_release_are_ignored(tmp_path: Path) -> None:
     (home / "config.yaml").write_text(json.dumps(config), encoding="utf-8")
     found = scripts_in_release(home, release, profiles=())
     assert found == [inside.resolve()]
-    assert compile_plan(sys.executable, found)[0][2] == "import requests, yaml"
+    assert compile_plan(sys.executable, found)[0][2] == "import mcp, requests, yaml"
 
 
 def test_static_ws_problems_name_a_missing_preinstall(tmp_path: Path) -> None:
