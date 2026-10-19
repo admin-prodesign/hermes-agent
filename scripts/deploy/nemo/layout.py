@@ -53,6 +53,32 @@ def profile_home(home: Path, name: str) -> Path:
     return home / "profiles" / name
 
 
+def gateway_unit_name(profile: str, overrides: dict[str, str] | None = None) -> str:
+    """``hermes gateway install`` naming, unless ``--gateway-unit PROFILE=UNIT`` overrides it."""
+    if overrides and profile in overrides:
+        return overrides[profile]
+    if profile in TOP_LEVEL_PROFILE_ALIASES:
+        return "hermes-gateway.service"
+    return f"hermes-gateway-{profile}.service"
+
+
+def canary_order(profiles: tuple[str, ...]) -> tuple[str, ...]:
+    """The top-level profile (PD Neo) first, then the others in the order given."""
+    top = [name for name in profiles if name in TOP_LEVEL_PROFILE_ALIASES]
+    return tuple(top + [name for name in profiles if name not in TOP_LEVEL_PROFILE_ALIASES])
+
+
+def pairs(items: list[str] | None) -> dict[str, list[str]]:
+    """``KEY=VALUE`` arguments grouped by key, values in order."""
+    grouped: dict[str, list[str]] = {}
+    for item in items or []:
+        key, sep, value = item.partition("=")
+        if not sep or not key or not value:
+            raise ValueError(f"expected KEY=VALUE, got {item!r}")
+        grouped.setdefault(key, []).append(value)
+    return grouped
+
+
 def pin_uv_cache(explicit: Path | None = None) -> Path:
     """Export a stable ``UV_CACHE_DIR`` so later builds reuse ``~/.cache/uv``."""
     if explicit is not None:

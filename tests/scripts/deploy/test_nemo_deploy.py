@@ -37,7 +37,7 @@ from scripts.deploy.nemo.preflight import changed_files, is_environment_failure,
 from scripts.deploy.nemo.release_swap import swap_current
 from scripts.deploy.nemo.rollback import apply_rollback
 from scripts.deploy.nemo.source import SourceMissing, acquire_source, extract_tarball, probe_fetch
-from scripts.deploy.nemo.units import rewrite_units, units_embedding
+from scripts.deploy.nemo.units import plan_units, target_for, unit_files, write_plans
 from scripts.deploy.nemo.verify_mcp import compile_plan, scripts_in_release
 from scripts.deploy.nemo.verify_ws import static_problems
 
@@ -417,7 +417,8 @@ def test_cutover_rewrites_units_and_rollback_restores_them(tmp_path: Path) -> No
     old = releases / "old"
     new = releases / "new"
     old.mkdir(parents=True)
-    new.mkdir()
+    (new / ".venv" / "bin").mkdir(parents=True)
+    os.symlink(sys.executable, new / ".venv" / "bin" / "python")
     os.symlink("old", releases / "current")
     unit_dir = tmp_path / "units"
     unit_dir.mkdir()
@@ -455,15 +456,17 @@ def test_swap_refuses_a_missing_release(tmp_path: Path) -> None:
 
 
 def test_unit_rewrite_round_trip(tmp_path: Path) -> None:
+    releases = tmp_path / "releases"
+    (releases / "new").mkdir(parents=True)
     unit_dir = tmp_path / "systemd"
     unit_dir.mkdir()
     unit = unit_dir / "gateway.service"
-    unit.write_text("WorkingDirectory=/opt/old\n", encoding="utf-8")
-    found = units_embedding([unit_dir], "/opt/old")
-    changes = rewrite_units(found, "/opt/old", "/opt/new", tmp_path / "audit")
-    assert "/opt/new" in unit.read_text(encoding="utf-8")
-    assert changes[0].backup
-    assert Path(changes[0].backup).read_text(encoding="utf-8") == "WorkingDirectory=/opt/old\n"
+    original = f"WorkingDirectory={releases}/old\n"
+    unit.write_text(original, encoding="utf-8")
+    plans = plan_units(unit_files([unit_dir]), target_for(releases, "new"))
+    changes = write_plans(plans, tmp_path / "audit")
+    assert str((releases / "new").resolve()) in unit.read_text(encoding="utf-8")
+    assert Path(changes[0].backup).read_text(encoding="utf-8") == original
 
 
 def test_pin_uv_cache_exports_the_given_directory(tmp_path: Path, monkeypatch) -> None:

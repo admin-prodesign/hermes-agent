@@ -439,13 +439,16 @@ bedrock = ["boto3==1.42.89"]
 # Python 3.14; it is repeated here so the nemo closure names the package
 # profile cron scripts import (HR sync, reaper). [mcp] is required for
 # PD One stdio servers (pdone_safe_ops, pdone_worker_scheduling) and for
-# MCP client tooling on the production host; autodeploy installs only
+# MCP client tooling on the production host; [messaging] carries aiohttp for
+# the webhook, Mattermost and LINE gateway adapters. Autodeploy installs only
 # `.[nemo]`.
 nemo = [
   "honcho-ai==2.5.1",
   "pyyaml==6.0.3",
   "requests==2.33.0",
   "hermes-agent[mcp]",
+  # Gateway adapters on the host (webhook, Mattermost, LINE) import aiohttp from here.
+  "hermes-agent[messaging]",
 ]
 vertex = ["google-auth==2.55.1"]
 azure-identity = ["azure-identity==1.25.3"]

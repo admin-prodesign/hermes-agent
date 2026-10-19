@@ -2401,11 +2401,18 @@ modal = [
     { name = "modal" },
 ]
 nemo = [
+    { name = "aiohttp" },
+    { name = "brotlicffi" },
+    { name = "discord-py", extra = ["voice"] },
     { name = "honcho-ai" },
     { name = "httpx2" },
     { name = "mcp" },
+    { name = "python-telegram-bot", extra = ["webhooks"] },
     { name = "pyyaml" },
+    { name = "qrcode" },
     { name = "requests" },
+    { name = "slack-bolt" },
+    { name = "slack-sdk" },
     { name = "starlette" },
 ]
 otlp = [
@@ -2589,6 +2596,7 @@ requires-dist = [
     { name = "hermes-agent", extras = ["mcp"], marker = "extra == 'all'" },
     { name = "hermes-agent", extras = ["mcp"], marker = "extra == 'nemo'" },
     { name = "hermes-agent", extras = ["mcp"], marker = "extra == 'termux'" },
+    { name = "hermes-agent", extras = ["messaging"], marker = "extra == 'nemo'" },
     { name = "hermes-agent", extras = ["pty"], marker = "extra == 'all'" },
     { name = "hermes-agent", extras = ["pty"], marker = "extra == 'termux-all'" },
     { name = "hermes-agent", extras = ["sms"], marker = "extra == 'all'" },

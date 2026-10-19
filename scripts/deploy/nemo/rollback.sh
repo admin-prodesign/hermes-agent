@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Restore the previous release symlink, unit files, and configs from an audit manifest.
+# Restore the previous release links, unit files and drop-ins, and configs from an audit manifest.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,9 +10,10 @@ usage() {
   cat <<'EOF'
 Usage: rollback.sh --manifest PATH [--no-restart]
 
-Restores unit files and configs from the backups named in the manifest, then
-points releases/current at the previous build. The new release directory is
-left in place. --no-restart skips systemctl.
+Restores unit files, drop-ins, and configs from the backups named in the manifest,
+then puts back releases/current, previous, the runtime links, and .running. Then
+daemon-reload and restart the units the cutover restarted. The new release
+directory is left in place. --no-restart skips systemctl.
 EOF
 }
 

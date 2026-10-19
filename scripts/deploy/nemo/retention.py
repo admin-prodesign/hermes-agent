@@ -15,9 +15,8 @@ from pathlib import Path
 
 from scripts.deploy.nemo.layout import DEFAULT_KEEP_RECENT_RELEASES, audit_dir
 from scripts.deploy.nemo.manifest import read_manifest
-from scripts.deploy.nemo.release_swap import current_target
+from scripts.deploy.nemo.release_swap import RUNNING_MARKER, current_target
 
-RUNNING_MARKER = ".running"
 STAGING_STALE_S = 12 * 3600.0
 DEFAULT_KEEP_AUDIT_ROLLBACKS = 2
 

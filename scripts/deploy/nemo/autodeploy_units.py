@@ -66,6 +66,7 @@ class UnitOptions:
     poll_every: str = "60s"
     poll_jitter: str = "20s"
     drift_every: str = "1h"
+    canary: bool = False
     path_env: str = field(default_factory=service_path_env)
 
     @property
@@ -131,7 +132,8 @@ def _wanted_by(scope: str) -> str:
 def render(opts: UnitOptions) -> dict[str, str]:
     python = str(opts.python)
     poll = [python, "-m", "scripts.deploy.nemo.poll", *_location_args(opts)]
-    worker = [python, "-m", "scripts.deploy.nemo.autodeploy", "run", *_common_args(opts)]
+    worker = [python, "-m", "scripts.deploy.nemo.autodeploy", "run", *_common_args(opts),
+              *(["--canary"] if opts.canary else [])]
     drift = [python, "-m", "scripts.deploy.nemo.autodeploy", "drift", *_common_args(opts)]
     install = f"\n[Install]\nWantedBy={_wanted_by(opts.scope)}\n"
     return {
@@ -237,7 +239,7 @@ def _options(args: argparse.Namespace) -> UnitOptions:
         mirror=Path(args.mirror).expanduser().resolve(), scope=args.scope, remote=args.remote,
         alert_script=Path(args.alert_script).resolve() if args.alert_script else None,
         profiles=tuple(args.profiles or ()) or DEFAULT_PROFILES, run_as=run_as,
-        worker_user=args.worker_user, poll_every=args.poll_every,
+        worker_user=args.worker_user, poll_every=args.poll_every, canary=args.canary,
     )
 
 
@@ -289,6 +291,8 @@ def main(argv: list[str] | None = None) -> int:
     install.add_argument("--run-as", default=None, help="system scope: user for the poll and drift check")
     install.add_argument("--worker-user", default=None, help="system scope: user for the deploy worker")
     install.add_argument("--dry-run", action="store_true")
+    install.add_argument("--canary", action="store_true",
+                         help="worker restarts and verifies PD Neo (top-level profile) before pdone")
     install.add_argument(
         "--enable", action="store_true",
         help="enable and start poll/path/drift units (default: preserve existing enable/active state)",
