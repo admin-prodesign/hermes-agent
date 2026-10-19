@@ -45,6 +45,15 @@ def unit_state(unit: str, user: bool, capture: Capture) -> UnitState:
     return UnitState(props.get("ActiveState") == "active", props.get("Type") == "oneshot")
 
 
+def main_pid(unit: str, user: bool, capture: Capture) -> int | None:
+    """systemd's ``MainPID`` (0 while no main process runs); ``None`` when systemd cannot say."""
+    text = capture([*_scope(user), "show", "-p", "MainPID", "--value", unit])
+    try:
+        return int(str(text).strip())
+    except ValueError:
+        return None
+
+
 def active_instances(template: str, user: bool, capture: Capture) -> list[str]:
     prefix = template.split("@", 1)[0] + "@"
     text = capture([*_scope(user), "list-units", "--plain", "--no-legend", "--no-pager", "--state=active",

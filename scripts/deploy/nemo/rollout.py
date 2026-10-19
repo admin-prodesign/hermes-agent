@@ -10,8 +10,9 @@ later profiles never restart onto the new release. Units whose only change was
 ``HERMES_RUNTIME_SHA`` get ``try-restart``.
 
 Restarts run one unit at a time with ``delay_s`` between them, and after a gateway the
-next unit waits until that gateway wrote a fresh ``running`` state (or failed), so two
-gateways never start together and load their secrets at once. Each unit is recorded in
+next unit waits until that gateway's new process (the unit's ``MainPID``) wrote a fresh
+``running`` or ``degraded`` state (or failed); the old process's ``stopped`` is ignored. So
+two gateways never start together and load their secrets at once. Each unit is recorded in
 the manifest with its verb before its restart, so a rollback restarts exactly those, with
 the same verb.
 """
@@ -20,18 +21,18 @@ from __future__ import annotations
 
 import subprocess
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
 from scripts.deploy.nemo.layout import canary_order, gateway_unit_name
 from scripts.deploy.nemo.manifest import read_manifest, write_manifest
 from scripts.deploy.nemo.units import RESTART, TRY_RESTART, is_template
-from scripts.deploy.nemo.verify import Expectation, check, tcp_open
+from scripts.deploy.nemo.verify import SERVING_GATEWAY_STATES, Expectation, read_state, state_pid, written_after
 
 Systemctl = Callable[[list[str]], int]
 Settle = Callable[["Restart", float], "str | None"]
-FAILED_GATEWAY_STATES = frozenset({"startup_failed", "stopped"})
+MainPid = Callable[["Restart"], "int | None"]
 
 
 @dataclass(frozen=True)
@@ -126,30 +127,53 @@ def restart(restarts: list[Restart], run: Systemctl, *, delay_s: float = 0.0,
     return failures
 
 
+def settle_verdict(state: dict, since: float, main_pid: int | None) -> tuple[bool | None, str]:
+    """``(True, _)`` serving, ``(False, why)`` failed, ``(None, why)`` keep waiting.
+
+    Only a record written after the restart by the unit's current main process counts: on a
+    restart the old process stamps ``stopped`` (``running`` after an unexpected signal) with
+    its own PID after ``since``, before the new one writes anything. ``main_pid`` is systemd's
+    ``MainPID`` (0: no main process yet), ``None`` when systemd could not say; then a
+    ``stopped`` cannot be attributed and is waited out rather than failed on.
+    """
+    gateway = str(state.get("gateway_state") or "missing")
+    if not written_after(state.get("updated_at"), since):
+        return None, f"{gateway} (not written since the restart)"
+    pid = state_pid(state)
+    if main_pid is not None and pid != main_pid:
+        return None, f"{gateway} from pid {pid}, not the unit's main pid {main_pid or 'none'}"
+    if gateway in SERVING_GATEWAY_STATES:
+        return True, gateway
+    if gateway == "startup_failed" or (gateway == "stopped" and main_pid is not None):
+        return False, gateway
+    return None, gateway
+
+
 def gateway_settle(gateways: dict[str, Expectation], *, timeout_s: float, interval_s: float,
+                   main_pid_fn: MainPid = lambda item: None,
                    clock_fn: Callable[[], float] = time.monotonic,
                    sleep_fn: Callable[[float], None] = time.sleep) -> Settle:
-    """Wait after a gateway unit (keyed by unit name) until its state is ``running`` and fresh.
+    """Wait after a gateway unit (keyed by unit name) until the new process reports
+    ``running`` or ``degraded`` (see ``settle_verdict``).
 
-    A fresh ``startup_failed``/``stopped`` ends the wait early as a failure. Adapters and
-    ports are left to the stage verify.
+    The new process's own ``startup_failed``/``stopped`` ends the wait early as a failure.
+    Adapters and ports are left to the stage verify.
     """
 
     def settle(item: Restart, since: float) -> str | None:
         exp = gateways.get(item.unit)
         if exp is None:
             return None
-        bare = replace(exp, platforms=(), ports=())
         started = clock_fn()
         while True:
-            gateway = check(bare, since, connect=tcp_open)[0]
-            if gateway.ok:
+            ok, detail = settle_verdict(read_state(exp.home), since, main_pid_fn(item))
+            if ok:
                 return None
-            if gateway.detail in FAILED_GATEWAY_STATES:
-                return f"{exp.profile}: gateway {gateway.detail} after {item.action} {item.unit}"
+            if ok is False:
+                return f"{exp.profile}: gateway {detail} after {item.action} {item.unit}"
             if clock_fn() - started >= timeout_s:
-                return f"{exp.profile}: gateway not running {timeout_s:.0f}s after {item.action} " \
-                       f"{item.unit} ({gateway.detail})"
+                return f"{exp.profile}: gateway not serving {timeout_s:.0f}s after {item.action} " \
+                       f"{item.unit} ({detail})"
             sleep_fn(interval_s)
 
     return settle

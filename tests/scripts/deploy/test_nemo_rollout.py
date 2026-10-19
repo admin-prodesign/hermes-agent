@@ -119,7 +119,7 @@ def test_the_messaging_extra_declares_the_webhook_dependency() -> None:
 
 # ---------------------------------------------------------------- cutover.sh end to end
 
-_FAKE_SYSTEMCTL = """#!{python}
+_FAKE_SYSTEMCTL = """#!@PYTHON@
 import fnmatch, json, os, sys
 from datetime import UTC, datetime
 args = [arg for arg in sys.argv[1:] if arg != "--user"]
@@ -129,39 +129,72 @@ state_path = os.environ["FAKE_SYSTEMD_STATE"]
 with open(state_path, encoding="utf-8") as fh:
     units = json.load(fh)
 verb, unit = args[0], args[-1]
-if verb == "show":
-    info = units.get(unit, {{}})
-    print(f"Type={{info.get('type', 'simple')}}")
-    print(f"ActiveState={{'active' if info.get('active') else 'inactive'}}")
+
+
+def gateway_state_file(unit):
+    profile = unit.removeprefix("hermes-gateway").removeprefix("-").removesuffix(".service")
+    home = os.environ["FAKE_HERMES_HOME"]
+    return profile or "default", os.path.join(home, "profiles", profile) if profile else home
+
+
+def write_state(path, record):
+    now = datetime.now(UTC).isoformat()
+    record = {**record, "updated_at": now,
+              "platforms": {name: {**entry, "updated_at": now} for name, entry in record["platforms"].items()}}
+    with open(os.path.join(path, "gateway_state.json"), "w", encoding="utf-8") as fh:
+        json.dump(record, fh)
+
+
+if verb == "show" and "MainPID" in args:
+    info = units.get(unit, {})
+    # The new process writes its first state only once systemd reports it, so a settle
+    # always sees the old process's stop mark first.
+    pending = os.path.join(gateway_state_file(unit)[1], "pending-state.json")
+    if os.path.exists(pending):
+        with open(pending, encoding="utf-8") as fh:
+            write_state(gateway_state_file(unit)[1], json.load(fh))
+        os.unlink(pending)
+    print(info.get("main_pid", 0))
+elif verb == "show":
+    info = units.get(unit, {})
+    print(f"Type={info.get('type', 'simple')}")
+    print(f"ActiveState={'active' if info.get('active') else 'inactive'}")
 elif verb == "list-units":
     for name, info in units.items():
         if info.get("active") and fnmatch.fnmatch(name, unit):
-            print(f"{{name}} loaded active running fake")
+            print(f"{name} loaded active running fake")
 elif verb in ("restart", "try-restart"):
     if "@." in unit:
-        print(f"Failed to {{verb}} {{unit}}: Unit name {{unit}} is a unit template", file=sys.stderr)
+        print(f"Failed to {verb} {unit}: Unit name {unit} is a unit template", file=sys.stderr)
         sys.exit(1)
-    info = units.setdefault(unit, {{}})
+    info = units.setdefault(unit, {})
     if verb == "try-restart" and not info.get("active"):
         sys.exit(0)
     info["active"] = True
+    old_pid = info.get("main_pid", 0)
+    info["main_pid"] = new_pid = old_pid + 1 if old_pid else 4000
     with open(state_path, "w", encoding="utf-8") as fh:
         json.dump(units, fh)
     if unit.startswith("hermes-gateway"):
-        profile = unit.removeprefix("hermes-gateway").removeprefix("-").removesuffix(".service")
+        profile, path = gateway_state_file(unit)
         with open(os.path.join(os.environ["FAKE_UNIT_DIR"], unit), encoding="utf-8") as fh:
             release = "new" if "/new/" in fh.read() else "old"
-        state = json.loads(os.environ["FAKE_STATES"]).get(release, {{}}).get(profile or "default", "connected")
-        home = os.environ["FAKE_HERMES_HOME"]
-        path = os.path.join(home, "profiles", profile) if profile else home
-        now = datetime.now(UTC).isoformat()
-        gateway = "startup_failed" if state == "startup_failed" else "running"
-        with open(os.path.join(path, "gateway_state.json"), "w", encoding="utf-8") as fh:
-            json.dump({{"gateway_state": gateway, "updated_at": now,
-                       "platforms": {{"webhook": {{"state": state, "updated_at": now}}}}}}, fh)
+        spec = json.loads(os.environ["FAKE_STATES"]).get(release, {}).get(profile, "connected")
+        if isinstance(spec, str):
+            spec = {"gateway": "startup_failed" if spec == "startup_failed" else "running",
+                    "platforms": {"webhook": spec}}
+        record = {"gateway_state": spec["gateway"], "pid": new_pid,
+                  "platforms": {name: {"state": state} for name, state in spec["platforms"].items()}}
+        if spec.get("stale_stop") and old_pid:
+            write_state(path, {"gateway_state": "stopped", "pid": old_pid, "platforms": {}})
+            with open(os.path.join(path, "pending-state.json"), "w", encoding="utf-8") as fh:
+                json.dump(record, fh)
+        else:
+            write_state(path, record)
 """
 
-GATEWAYS = {"hermes-gateway.service": {"active": True}, "hermes-gateway-pdone.service": {"active": True}}
+GATEWAYS = {"hermes-gateway.service": {"active": True, "main_pid": 3100},
+            "hermes-gateway-pdone.service": {"active": True, "main_pid": 3200}}
 
 
 def _release(releases: Path, name: str) -> Path:
@@ -211,7 +244,7 @@ def _deploy(tmp_path: Path, extra_units: dict[str, dict] | None = None) -> dict:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake = bin_dir / "systemctl"
-    fake.write_text(_FAKE_SYSTEMCTL.format(python=sys.executable), encoding="utf-8")
+    fake.write_text(_FAKE_SYSTEMCTL.replace("@PYTHON@", sys.executable), encoding="utf-8")
     fake.chmod(0o755)
     return {"home": home, "releases": releases, "unit_dir": unit_dir, "bin": bin_dir,
             "log": tmp_path / "systemctl.log", "systemd": systemd}
@@ -219,7 +252,9 @@ def _deploy(tmp_path: Path, extra_units: dict[str, dict] | None = None) -> dict:
 
 def _cutover(layout: dict, new_state: str | dict, *extra: str,
              old_state: dict | None = None) -> subprocess.CompletedProcess[str]:
-    """``new_state``/``old_state``: webhook state per profile once its gateway runs that release."""
+    """``new_state``/``old_state``: per profile once its gateway runs that release, either the
+    webhook state or ``{"gateway": STATE, "platforms": {NAME: STATE}, "stale_stop": bool}``
+    (``stale_stop``: the old process's ``stopped`` mark is all a settle sees at first)."""
     new = new_state if isinstance(new_state, dict) else {"default": new_state, "pdone": new_state}
     env = {**os.environ, "NEMO_PYTHON": sys.executable, "PATH": f"{layout['bin']}:{os.environ['PATH']}",
            "FAKE_SYSTEMCTL_LOG": str(layout["log"]), "FAKE_SYSTEMD_STATE": str(layout["systemd"]),
