@@ -16,11 +16,12 @@ Usage: cutover.sh --build NAME [options]
   --mirror DIR            Bare mirror used to diff the old and new SHA.
   --old-sha SHA           Previous commit. Defaults to the previous build manifest.
   --full                  Run every verify and the deploy tests.
-  --profile NAME          Repeatable. Default order is pdone, then pdneo.
+  --profile NAME          Repeatable. Default order is pdone, then default (PD Neo).
   --unit-dir PATH         Repeatable. Default: system and user systemd dirs.
   --quiet SEC             Newest message must be at least this old. Default: 90.
   --poll SEC              Gate poll interval. Default: 30.
   --gate-timeout SEC      Default: 600.
+  --stale-goal-s SEC      Ignore active 0-turn goals older than this. Default: 604800 (7 days).
   --gateway-health URL    Default: http://127.0.0.1:8644/health (PD Neo on nemo).
   --dashboard-health URL  Default: http://127.0.0.1:8765/api/health.
   --socket-profile NAME   Repeatable. Gateway control-socket check (default: pdone, default).
@@ -38,7 +39,9 @@ Usage: cutover.sh --build NAME [options]
   --skip-postcheck        Do not run the cron jobs' safe checks.
 
 The gate still requires no leases, a newest message at least --quiet seconds
-old, and no live goal. Exit 75 means the gate timed out and nothing changed.
+old, and no live goal (stale 0-turn goals older than --stale-goal-s are
+ignored). A missing state.db for a configured profile fails immediately.
+Exit 75 means the gate timed out or the database was missing; nothing changed.
 HR sync is dry-run only during the post-check.
 EOF
 }
@@ -62,6 +65,7 @@ skip_postcheck=0
 quiet="90"
 poll="30"
 gate_timeout="600"
+stale_goal_s="604800"
 health_timeout="90"
 health_interval="2"
 gateway=""
@@ -84,6 +88,7 @@ while [[ $# -gt 0 ]]; do
     --quiet) quiet="${2:-}"; shift 2 ;;
     --poll) poll="${2:-}"; shift 2 ;;
     --gate-timeout) gate_timeout="${2:-}"; shift 2 ;;
+    --stale-goal-s) stale_goal_s="${2:-}"; shift 2 ;;
     --gateway-health) gateway="${2:-}"; shift 2 ;;
     --dashboard-health) dashboard="${2:-}"; shift 2 ;;
     --health-timeout) health_timeout="${2:-}"; shift 2 ;;
@@ -211,7 +216,7 @@ fi
 if [[ "${skip_gate}" != "1" ]]; then
   if ! nemo_python -m scripts.deploy.nemo.cli gate \
       --hermes-home "${home}" --quiet "${quiet}" --poll "${poll}" --timeout "${gate_timeout}" \
-      "${profile_args[@]}"; then
+      --stale-goal-s "${stale_goal_s}" "${profile_args[@]}"; then
     printf '%s\n' "profiles never went quiet; nothing was changed" >&2
     exit 75
   fi
