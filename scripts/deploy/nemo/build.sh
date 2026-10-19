@@ -249,6 +249,12 @@ if [[ -f "${audit}/old-freeze.txt" ]]; then
     --report "${audit}/freeze-diff.txt"
 fi
 "${venv_python}" -c "import hermes_cli, mcp, requests, yaml"
+# Every requirement pyproject.toml declares for the extra at this SHA (the nemo extra
+# pulls [messaging], which every gateway adapter's aiohttp comes from) must be installed.
+(
+  cd "${staging}"
+  "${venv_python}" -m scripts.deploy.nemo.extras --extra "${extra}"
+) || die "the release venv is missing requirements declared for .[${extra}]"
 
 if [[ "${skip_frontend}" != "1" ]]; then
   command -v node >/dev/null 2>&1 || die "node is required to preinstall dashboard dependencies"
