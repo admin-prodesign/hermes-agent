@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import subprocess
 import sys
 import time
@@ -17,12 +18,13 @@ from pathlib import Path
 from scripts.deploy.nemo.cutover_steps import apply_cutover, config_candidates, default_unit_dirs
 from scripts.deploy.nemo.freeze_diff import compare, constraint_text
 from scripts.deploy.nemo.frontend import mark_preinstalled
-from scripts.deploy.nemo.gate import poll_until_quiet
+from scripts.deploy.nemo.gate import MissingProfileDatabase, poll_until_quiet
 from scripts.deploy.nemo.health import http_healthy, poll_until_healthy
 from scripts.deploy.nemo.health_targets import resolve_health_plan, socket_profile_homes
 from scripts.deploy.nemo.layout import (
     DEFAULT_DASHBOARD_HEALTH, DEFAULT_GATEWAY_HEALTH, DEFAULT_HEALTH_INTERVAL_S,
     DEFAULT_HEALTH_TIMEOUT_S, DEFAULT_POLL_S, DEFAULT_PROFILES, DEFAULT_QUIET_S,
+    DEFAULT_STALE_GOAL_S,
     audit_dir, pin_uv_cache, releases_dir, resolve_hermes_home, valid_sha,
 )
 from scripts.deploy.nemo.manifest import (
@@ -158,10 +160,16 @@ def cmd_verify_ws(args: argparse.Namespace) -> int:
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
-    ok, snaps = poll_until_quiet(
-        _home(args), _profiles(args),
-        quiet_s=args.quiet, poll_s=args.poll, timeout_s=args.timeout,
-    )
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    try:
+        ok, snaps = poll_until_quiet(
+            _home(args), _profiles(args),
+            quiet_s=args.quiet, poll_s=args.poll, timeout_s=args.timeout,
+            stale_goal_s=args.stale_goal_s,
+        )
+    except MissingProfileDatabase as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     for snap in snaps:
         payload = asdict(snap)
         payload["db"] = str(snap.db)
@@ -356,6 +364,7 @@ def register(sub) -> None:
     gate.add_argument("--quiet", type=float, default=DEFAULT_QUIET_S)
     gate.add_argument("--poll", type=float, default=DEFAULT_POLL_S)
     gate.add_argument("--timeout", type=float, default=600.0)
+    gate.add_argument("--stale-goal-s", type=float, default=DEFAULT_STALE_GOAL_S)
     gate.set_defaults(func=cmd_gate)
 
     cutover = sub.add_parser("cutover", help="swap current, then rewrite units and configs")

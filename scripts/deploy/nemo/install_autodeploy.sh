@@ -20,7 +20,7 @@ Usage: install_autodeploy.sh install --mirror DIR [options]
   --scope user|system           Default user (needs `loginctl enable-linger`).
   --poll-every SPAN             systemd time span between polls. Default 60s (+ up to 20s jitter).
   --alert-script PATH           Called as PATH SUBJECT with the details on stdin.
-  --profile NAME                Repeatable. Default pdone, then pdneo.
+  --profile NAME                Repeatable. Default pdone, then default (PD Neo).
   --run-as USER                 System scope: user for the poll and drift check.
   --worker-user USER            System scope: user for the deploy worker.
   --dry-run                     Print the units and change nothing.

@@ -66,11 +66,15 @@ That should print one `<sha>\trefs/heads/main` line.
   nemo on purpose is passed as `--selftest-allow-missing <key>`; `--skip-selftest` turns it off.
   No-restart deploys skip it. `build.sh` publishes `tools/**/*.py` without the exec bit, so a
   launch that still depends on it fails here.
-- **Idle gate.** `cutover.sh` waits until pdone and pdneo have no turn or compression
-  lease, no live goal, and no message newer than 90 s (`gate.py`). It waits up to 6 h.
-  If the profiles are still busy it exits 75 and nothing changes. You get a `waiting`
-  alert, and the next poll queues the newest `main` again for another wait. A running
-  turn is never interrupted.
+- **Idle gate.** `cutover.sh` waits until pdone and the top-level default profile
+  (PD Neo; `--profile default`, with `pdneo` as an alias) have no turn or
+  compression lease, no live goal, and no message newer than 90 s (`gate.py`).
+  Active goals with 0 turns whose creation (and last update, if tracked) is older
+  than 7 days are ignored and logged; the gate does not write goal state. A
+  configured profile whose `state.db` is missing fails immediately instead of
+  waiting. It waits up to 6 h. If the profiles are still busy it exits 75 and
+  nothing changes. You get a `waiting` alert, and the next poll queues the newest
+  `main` again for another wait. A running turn is never interrupted.
 - **Rollback.** If systemd, the gateway control socket (PD One LINE / `pdone`), or HTTP
   health (PD Neo `:8644`, dashboard `:8765` on nemo) is not healthy within 90 s of the
   restart, `cutover.sh` restores the previous symlink,
