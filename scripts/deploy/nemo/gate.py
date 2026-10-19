@@ -1,10 +1,13 @@
 """Quiet-window gate. pdone, then the top-level default profile (PD Neo).
 
 A profile is quiet when it has no leases, newest message >= 90s, and no live
-goal. Active goals that never took a turn and whose creation (and last update,
-if tracked) is older than ``stale_goal_s`` are ignored; the gate does not
-write goal state. A missing ``state.db`` for a configured profile is a
-configuration error and fails immediately.
+goal. An active goal whose last activity is older than ``stale_goal_s`` is
+ignored, unless its session holds a live lease. Last activity is
+``last_turn_at`` (written with every ``turns_used`` increment) or
+``updated_at``; ``created_at`` stands in only for a goal that never took a
+turn. A goal with turns but no last-activity stamp still blocks. The gate
+does not write goal state. A missing ``state.db`` for a configured profile is
+a configuration error and fails immediately.
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from scripts.deploy.nemo.layout import (
     profile_home,
 )
 
-LEASE_TABLES = ("session_turn_leases", "compression_locks")
+LEASE_TABLES = {"session_turn_leases": "conversation_id", "compression_locks": "session_id"}
 logger = logging.getLogger(__name__)
 
 
@@ -63,21 +66,20 @@ def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
 
 
-def _count_leases(conn: sqlite3.Connection, tables: set[str], now: float) -> int:
-    total = 0
-    for table in LEASE_TABLES:
+def _live_lease_keys(conn: sqlite3.Connection, tables: set[str], now: float) -> list[str | None]:
+    """One entry per live lease row: its session key, or None when the table has no key column."""
+    keys: list[str | None] = []
+    for table, key_column in LEASE_TABLES.items():
         if table not in tables:
             continue
         columns = _columns(conn, table)
-        if "expires_at" not in columns:
-            row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+        sql = f"SELECT {key_column if key_column in columns else 'NULL'} FROM {table}"
+        if "expires_at" in columns:
+            rows = conn.execute(sql + " WHERE expires_at IS NULL OR expires_at > ?", (now,))
         else:
-            row = conn.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE expires_at IS NULL OR expires_at > ?",
-                (now,),
-            ).fetchone()
-        total += int(row[0])
-    return total
+            rows = conn.execute(sql)
+        keys.extend(None if row[0] is None else str(row[0]) for row in rows)
+    return keys
 
 
 def _newest_message(conn: sqlite3.Connection, tables: set[str]) -> float | None:
@@ -108,26 +110,30 @@ def _as_int(raw: object, default: int = 0) -> int | None:
         return None
 
 
-def _goal_activity_at(data: dict) -> float | None:
-    """Newest tracked timestamp: created_at, and last_turn_at when present."""
-    stamps = [_as_float(data.get(key)) for key in ("created_at", "last_turn_at")]
-    known = [stamp for stamp in stamps if stamp is not None]
+def _goal_last_activity(data: dict) -> float | None:
+    """Newest known activity stamp, or None when unknown.
+
+    ``created_at`` alone only describes a goal that never took a turn; a goal with
+    turns needs ``last_turn_at`` or ``updated_at``, otherwise its activity is unknown.
+    """
+    stamps = {key: _as_float(data.get(key)) for key in ("last_turn_at", "updated_at", "created_at")}
+    if _as_int(data.get("turns_used"), 0) != 0 and stamps["last_turn_at"] is None and stamps["updated_at"] is None:
+        return None
+    known = [stamp for stamp in stamps.values() if stamp is not None]
     return max(known) if known else None
 
 
-def _stale_zero_turn_active(data: dict, now: float, stale_s: float) -> bool:
-    if data.get("status") != "active":
-        return False
-    if _as_int(data.get("turns_used"), 0) != 0:
-        return False
-    activity = _goal_activity_at(data)
-    if activity is None:
-        return False
-    return (now - activity) >= stale_s
+def _idle_age(data: dict, now: float, stale_s: float) -> float | None:
+    """Seconds since last activity when that is at least ``stale_s``; None when the goal may be busy."""
+    activity = _goal_last_activity(data)
+    if activity is None or (now - activity) < stale_s:
+        return None
+    return now - activity
 
 
 def _live_goals(
-    conn: sqlite3.Connection, tables: set[str], now: float, stale_s: float, *, profile: str,
+    conn: sqlite3.Connection, tables: set[str], now: float, stale_s: float, *,
+    profile: str, leased: set[str],
 ) -> int:
     if "state_meta" not in tables:
         return 0
@@ -141,10 +147,17 @@ def _live_goals(
             continue
         if not isinstance(data, dict) or data.get("status") != "active":
             continue
-        if _stale_zero_turn_active(data, now, stale_s):
-            logger.info("gate: ignoring stale 0-turn goal %s on profile %s", key, profile)
+        if str(key).removeprefix("goal:") in leased:
+            live += 1
             continue
-        live += 1
+        age = _idle_age(data, now, stale_s)
+        if age is None:
+            live += 1
+            continue
+        logger.info(
+            "gate: ignoring idle goal %s on profile %s (last activity %.0fs / %.1fd ago)",
+            key, profile, age, age / 86400,
+        )
     return live
 
 
@@ -159,11 +172,15 @@ def inspect_db(
     try:
         conn.execute("PRAGMA query_only = ON")
         tables = _table_names(conn)
+        leases = _live_lease_keys(conn, tables, now)
         return ProfileSnapshot(
             profile, db_path, False,
-            _count_leases(conn, tables, now),
+            len(leases),
             _newest_message(conn, tables),
-            _live_goals(conn, tables, now, stale_goal_s, profile=profile),
+            _live_goals(
+                conn, tables, now, stale_goal_s, profile=profile,
+                leased={key for key in leases if key},
+            ),
         )
     finally:
         conn.close()
