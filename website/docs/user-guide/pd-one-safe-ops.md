@@ -273,8 +273,9 @@ files still land under that profile's `upgrade-audits/<build>/`.
    dependencies, and publishes a read-only release. It creates the release
    directory only after the source tree validates.
 3. `cutover.sh --build <name>` runs the verifies the diff touches (`--full`
-   runs every verify this deploy knows about), waits until pdone and pdneo
-   are quiet, swaps `releases/current`, rewrites units and configs, and polls
+   runs every verify this deploy knows about), waits until pdone and the
+   top-level default profile (PD Neo) are quiet, swaps `releases/current`,
+   rewrites units and configs, and polls
    systemd plus the gateway and dashboard health endpoints.
 4. The post-cutover check runs the cron scripts' safe checks immediately.
    Typhoon `840af263673e` fetches `cwa.gov.tw` and `www.dgpa.gov.tw` with the

@@ -6,10 +6,14 @@ import os
 import re
 from pathlib import Path
 
-DEFAULT_PROFILES = ("pdone", "pdneo")
+# PD Neo is the top-level/default Hermes profile (``$HERMES_HOME``), not
+# ``profiles/pdneo``. Installed autodeploy units may still pass ``--profile pdneo``.
+DEFAULT_PROFILES = ("pdone", "default")
+TOP_LEVEL_PROFILE_ALIASES = frozenset({"", "default", "pdneo"})
 DEFAULT_EXTRA = "nemo"
 DEFAULT_QUIET_S = 90.0
 DEFAULT_POLL_S = 30.0
+DEFAULT_STALE_GOAL_S = 7 * 24 * 3600.0
 DEFAULT_FETCH_TIMEOUT_S = 90.0
 DEFAULT_PROBE_TIMEOUT_S = 20.0
 DEFAULT_HEALTH_TIMEOUT_S = 90.0
@@ -44,7 +48,7 @@ def audit_dir(home: Path, build: str) -> Path:
 
 
 def profile_home(home: Path, name: str) -> Path:
-    if name in {"", "default"}:
+    if name in TOP_LEVEL_PROFILE_ALIASES:
         return home
     return home / "profiles" / name
 
