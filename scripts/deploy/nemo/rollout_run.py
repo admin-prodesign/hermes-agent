@@ -32,8 +32,10 @@ from scripts.deploy.nemo.rollout import (
     Restart, daemon_reload, gateway_settle, mark_restarted, plan_stages, restart, restarts_from,
     rollback_restarts, systemctl,
 )
-from scripts.deploy.nemo.unit_state import concrete_restarts, main_pid, systemctl_output
-from scripts.deploy.nemo.verify import DEFAULT_PORT_HOST, Expectation, expectations, poll_until_verified
+from scripts.deploy.nemo.unit_state import concrete_restarts, main_pid, systemctl_output, unit_active_state
+from scripts.deploy.nemo.verify import (
+    DEFAULT_PORT_HOST, Expectation, expectations, poll_until_verified, settle_timeout_s,
+)
 
 ROLLOUT_KEY = "rollout"
 
@@ -48,13 +50,25 @@ class Plan:
     port_host: str
     delay: float
     skip_verify: bool
+    settle_timeouts: dict[str, float]
 
     def gateways(self) -> dict[str, Expectation]:
         return {gateway_unit_name(name, self.overrides): exp for name, exp in self.exps.items()}
 
+    def _settle_timeout(self, item: Restart) -> float:
+        exp = self.gateways().get(item.unit)
+        if exp is None:
+            return self.timeout
+        return self.settle_timeouts.get(exp.profile, self.timeout)
+
     def settle(self):
-        return gateway_settle(self.gateways(), timeout_s=self.timeout, interval_s=self.interval,
-                              main_pid_fn=lambda item: main_pid(item.unit, item.user, systemctl_output))
+        return gateway_settle(
+            self.gateways(),
+            timeout_s=self._settle_timeout,
+            interval_s=self.interval,
+            main_pid_fn=lambda item: main_pid(item.unit, item.user, systemctl_output),
+            unit_active_fn=lambda item: unit_active_state(item.unit, item.user, systemctl_output),
+        )
 
 
 def _restart_delay(explicit: float | None, home: Path) -> float:
@@ -72,15 +86,21 @@ def _plan(settings: dict, manifest: Path, delay: float | None) -> Plan:
     overrides = {key: values[-1] for key, values in pairs(settings.get("gateway_units")).items()}
     gate_file = manifest.parent / ADAPTERS_FILE
     gate = json.loads(gate_file.read_text(encoding="utf-8-sig")) if gate_file.is_file() else {}
-    exps = expectations(home, profiles, verify_config=load_deploy_section(home, "verify"),
+    verify_config = load_deploy_section(home, "verify")
+    exps = expectations(home, profiles, verify_config=verify_config,
                         platforms=pairs(settings.get("expect")), ports=pairs(settings.get("expect_port")),
                         gate=gate)
+    health_timeout = float(settings.get("timeout", DEFAULT_HEALTH_TIMEOUT_S))
+    settle_timeouts = {
+        exp.profile: settle_timeout_s(verify_config, exp.profile, fallback=health_timeout)
+        for exp in exps
+    }
     return Plan(profiles, overrides, {exp.profile: exp for exp in exps},
-                float(settings.get("timeout", DEFAULT_HEALTH_TIMEOUT_S)),
+                health_timeout,
                 float(settings.get("interval", DEFAULT_HEALTH_INTERVAL_S)),
                 str(settings.get("port_host") or DEFAULT_PORT_HOST),
                 _restart_delay(delay if delay is not None else settings.get("restart_delay"), home),
-                bool(settings.get("skip_verify")))
+                bool(settings.get("skip_verify")), settle_timeouts)
 
 
 def _print_checks(checks) -> None:
