@@ -36,40 +36,8 @@ nemo_python() {
   PYTHONPATH="${prefix}" "${NEMO_PYTHON}" "$@"
 }
 
-run_systemctl() {
-  if command -v timeout >/dev/null 2>&1; then
-    timeout 30 systemctl "$@"
-  else
-    systemctl "$@"
-  fi
-}
-
+# daemon-reload, then restart the units a rollout restarted (every rewritten unit when
+# none was recorded). Unit files must already be restored for a rollback.
 restart_units() {
-  local manifest="$1"
-  local lines kind path name
-  local saw_system=0
-  local saw_user=0
-  local any=0
-  lines="$(nemo_python -m scripts.deploy.nemo.cli list-units --manifest "${manifest}")"
-  while IFS=$'\t' read -r kind path; do
-    [[ -n "${path:-}" ]] || continue
-    any=1
-    name="$(basename "${path}")"
-    if [[ "${kind}" == "user" ]]; then
-      if [[ "${saw_user}" == "0" ]]; then
-        run_systemctl --user daemon-reload
-        saw_user=1
-      fi
-      run_systemctl --user restart "${name}"
-    else
-      if [[ "${saw_system}" == "0" ]]; then
-        run_systemctl daemon-reload
-        saw_system=1
-      fi
-      run_systemctl restart "${name}"
-    fi
-  done <<< "${lines}"
-  if [[ "${any}" == "0" ]]; then
-    printf '%s\n' "warning: no systemd units to restart" >&2
-  fi
+  nemo_python -m scripts.deploy.nemo.cli restart --manifest "$1"
 }

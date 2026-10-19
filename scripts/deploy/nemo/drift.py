@@ -6,9 +6,10 @@ one call per effective ``.gitattributes`` group (``text`` / ``eol`` / ``crlf`` /
 ``filter`` / ``ident`` from ``git check-attr --source`` of that SHA), so ``eol``
 normalization matches checkout without one process per file. Untracked
 ``.py``/``.sh`` files outside build output are drift too (a hand-dropped module
-would be imported). Systemd units that point at a release other than ``current``
-or the running build are reported, as is main moving ahead of the deployed SHA
-for longer than ``max_lag_s``.
+would be imported). Systemd units and their drop-ins that do not match a render
+against ``current`` or the running build (another release's path, a missing
+wrapper, a stale ``HERMES_RUNTIME_SHA``) are reported, as is main moving ahead of
+the deployed SHA for longer than ``max_lag_s``.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import Callable
 
 from scripts.deploy.nemo.source import Run, run_cmd
+from scripts.deploy.nemo.units import SHA_ENV, referenced_builds, render, root_spellings, target_for, unit_files
 
 BUILD_OUTPUT_DIRS = frozenset({
     ".venv", ".python", "node_modules", "__pycache__", ".hermes", ".pytest_cache",
@@ -269,17 +271,29 @@ def compare_tree(release: Path, blobs: dict[str, tuple[str, str]], report: Drift
     report.extra.sort()
 
 
-def stray_units(unit_dirs: list[Path], releases: Path, allowed: set[str]) -> list[str]:
-    root = re.escape(str(releases.resolve()))
-    pattern = re.compile(root + r"/([A-Za-z0-9._-]+)")
+def unit_drift(unit_dirs: list[Path], releases: Path, live: dict[str, str | None]) -> list[str]:
+    """Base units and drop-ins that differ from a render against a live release.
+
+    ``live`` maps each build a unit may run (``current``, and the ``.running`` build after
+    a no-restart deploy) to its SHA. A file is clean when rendering it against one of them
+    changes nothing: no other release path, no missing wrapper, the right SHA.
+    """
+    targets = [(build, target_for(releases, build, sha)) for build, sha in live.items() if build]
+    if not targets:
+        return []
+    roots = root_spellings(releases)
     found: list[str] = []
-    for directory in unit_dirs:
-        if not directory.is_dir():
+    for item in unit_files(unit_dirs):
+        text = item.path.read_text(encoding="utf-8-sig")
+        if any(render(text, target) == text for _build, target in targets):
             continue
-        for unit in sorted(directory.glob("*.service")):
-            for build in set(pattern.findall(unit.read_text(encoding="utf-8-sig"))):
-                if build != "current" and build not in allowed:
-                    found.append(f"{unit} -> {build}")
+        stale = sorted(referenced_builds(text, roots) - set(live))
+        if stale:
+            found.append(f"{item.path} -> {', '.join(stale)}")
+            continue
+        build, target = targets[0]
+        sha = (target.sha or "")[:12]
+        found.append(f"{item.path} does not match {build}" + (f" ({SHA_ENV} {sha})" if sha else ""))
     return found
 
 
