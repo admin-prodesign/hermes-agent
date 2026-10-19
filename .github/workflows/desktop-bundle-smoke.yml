@@ -245,10 +245,10 @@ jobs:
     name: Windows install and chat
     needs: validate
     if: inputs.platform == 'win32'
-    runs-on: ${{ inputs.arch == 'arm64' && 'windows-latest-32-arm-core' || 'windows-latest-32-core' }}
+    runs-on: ${{ inputs.arch == 'arm64' && (vars.WINDOWS_ARM_LARGE_RUNNER || 'windows-11-arm') || (vars.WINDOWS_LARGE_RUNNER || 'windows-latest') }}
     # windows-11-arm runners are much slower (npm ci alone runs 12+ minutes and
     # the MSIX leg exceeds 30 total); x64 legs complete in ~14.
-    timeout-minutes: 45
+    timeout-minutes: 60
     cache-mode: read
     env: *smoke-env
     steps: *smoke-steps
