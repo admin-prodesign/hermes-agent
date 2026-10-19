@@ -9,6 +9,7 @@ file the next time systemd starts it.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass, replace
 from typing import Callable
@@ -52,6 +53,26 @@ def main_pid(unit: str, user: bool, capture: Capture) -> int | None:
         return int(str(text).strip())
     except ValueError:
         return None
+
+
+def unit_active_state(unit: str, user: bool, capture: Capture) -> str | None:
+    """``ActiveState`` from systemd, or ``None`` when systemd cannot say."""
+    text = capture([*_scope(user), "show", "-p", "ActiveState", "--value", unit])
+    if text is None:
+        return None
+    state = str(text).strip()
+    return state or None
+
+
+def process_alive(pid: int | None) -> bool:
+    """True when ``pid`` names a live process (``MainPID`` 0 or unknown counts as not alive)."""
+    if pid is None or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
 
 
 def active_instances(template: str, user: bool, capture: Capture) -> list[str]:

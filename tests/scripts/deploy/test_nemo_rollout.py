@@ -145,7 +145,10 @@ def write_state(path, record):
         json.dump(record, fh)
 
 
-if verb == "show" and "MainPID" in args:
+if verb == "show" and "ActiveState" in args and "--value" in args:
+    info = units.get(unit, {})
+    print("active" if info.get("active") else "inactive")
+elif verb == "show" and "MainPID" in args:
     info = units.get(unit, {})
     # The new process writes its first state only once systemd reports it, so a settle
     # always sees the old process's stop mark first.
@@ -172,7 +175,8 @@ elif verb in ("restart", "try-restart"):
         sys.exit(0)
     info["active"] = True
     old_pid = info.get("main_pid", 0)
-    info["main_pid"] = new_pid = old_pid + 1 if old_pid else 4000
+    new_pid = os.getpid()
+    info["main_pid"] = new_pid
     with open(state_path, "w", encoding="utf-8") as fh:
         json.dump(units, fh)
     if unit.startswith("hermes-gateway"):
@@ -187,6 +191,10 @@ elif verb in ("restart", "try-restart"):
                   "platforms": {name: {"state": state} for name, state in spec["platforms"].items()}}
         if spec.get("stale_stop") and old_pid:
             write_state(path, {"gateway_state": "stopped", "pid": old_pid, "platforms": {}})
+            with open(os.path.join(path, "pending-state.json"), "w", encoding="utf-8") as fh:
+                json.dump(record, fh)
+        elif spec.get("transient_stopped"):
+            write_state(path, {"gateway_state": "stopped", "pid": new_pid, "platforms": {}})
             with open(os.path.join(path, "pending-state.json"), "w", encoding="utf-8") as fh:
                 json.dump(record, fh)
         else:

@@ -19,6 +19,7 @@ the same verb.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -33,6 +34,20 @@ from scripts.deploy.nemo.verify import SERVING_GATEWAY_STATES, Expectation, read
 Systemctl = Callable[[list[str]], int]
 Settle = Callable[["Restart", float], "str | None"]
 MainPid = Callable[["Restart"], "int | None"]
+UnitActive = Callable[["Restart"], str | None]
+_TERMINAL_UNIT_STATES = frozenset({"failed", "inactive", "dead"})
+ProcessAlive = Callable[[int | None], bool]
+SettleTimeout = Callable[["Restart"], float]
+
+
+def _process_alive(pid: int | None) -> bool:
+    if pid is None or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -127,7 +142,14 @@ def restart(restarts: list[Restart], run: Systemctl, *, delay_s: float = 0.0,
     return failures
 
 
-def settle_verdict(state: dict, since: float, main_pid: int | None) -> tuple[bool | None, str]:
+def settle_verdict(
+    state: dict,
+    since: float,
+    main_pid: int | None,
+    *,
+    unit_active: str | None = "active",
+    process_alive_fn: ProcessAlive = _process_alive,
+) -> tuple[bool | None, str]:
     """``(True, _)`` serving, ``(False, why)`` failed, ``(None, why)`` keep waiting.
 
     Only a record written after the restart by the unit's current main process counts: on a
@@ -135,6 +157,11 @@ def settle_verdict(state: dict, since: float, main_pid: int | None) -> tuple[boo
     its own PID after ``since``, before the new one writes anything. ``main_pid`` is systemd's
     ``MainPID`` (0: no main process yet), ``None`` when systemd could not say; then a
     ``stopped`` cannot be attributed and is waited out rather than failed on.
+
+    A ``stopped`` mark whose PID matches ``MainPID`` is often transient while the new gateway
+    is still starting (runtime heartbeats refresh ``pid`` before ``gateway_state`` advances).
+    Fail on it only when the unit has reached a terminal state or the main process has exited;
+    ``startup_failed`` always fails fast.
     """
     gateway = str(state.get("gateway_state") or "missing")
     if not written_after(state.get("updated_at"), since):
@@ -144,35 +171,64 @@ def settle_verdict(state: dict, since: float, main_pid: int | None) -> tuple[boo
         return None, f"{gateway} from pid {pid}, not the unit's main pid {main_pid or 'none'}"
     if gateway in SERVING_GATEWAY_STATES:
         return True, gateway
-    if gateway == "startup_failed" or (gateway == "stopped" and main_pid is not None):
+    if gateway == "startup_failed":
         return False, gateway
+    if gateway == "stopped" and main_pid is not None:
+        if main_pid <= 0:
+            return None, f"{gateway} (no main process yet)"
+        active = (unit_active or "").strip()
+        if not active or active in _TERMINAL_UNIT_STATES:
+            return False, gateway
+        if active == "active" and not process_alive_fn(main_pid):
+            return False, gateway
+        return None, f"{gateway} (transient while the unit is still starting)"
     return None, gateway
 
 
-def gateway_settle(gateways: dict[str, Expectation], *, timeout_s: float, interval_s: float,
-                   main_pid_fn: MainPid = lambda item: None,
-                   clock_fn: Callable[[], float] = time.monotonic,
-                   sleep_fn: Callable[[float], None] = time.sleep) -> Settle:
+def gateway_settle(
+    gateways: dict[str, Expectation],
+    *,
+    timeout_s: float | SettleTimeout,
+    interval_s: float,
+    main_pid_fn: MainPid = lambda item: None,
+    unit_active_fn: UnitActive = lambda item: "active",
+    process_alive_fn: ProcessAlive = _process_alive,
+    clock_fn: Callable[[], float] = time.monotonic,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> Settle:
     """Wait after a gateway unit (keyed by unit name) until the new process reports
     ``running`` or ``degraded`` (see ``settle_verdict``).
 
-    The new process's own ``startup_failed``/``stopped`` ends the wait early as a failure.
-    Adapters and ports are left to the stage verify.
+    ``startup_failed`` and a terminal ``stopped`` (unit failed/inactive or main process gone)
+    end the wait early as a failure. Adapters and ports are left to the stage verify.
     """
+
+    def _timeout(item: Restart) -> float:
+        return timeout_s(item) if callable(timeout_s) else timeout_s
 
     def settle(item: Restart, since: float) -> str | None:
         exp = gateways.get(item.unit)
         if exp is None:
             return None
         started = clock_fn()
+        limit = _timeout(item)
         while True:
-            ok, detail = settle_verdict(read_state(exp.home), since, main_pid_fn(item))
+            # Query MainPID before reading gateway_state.json so side channels (tests, agents)
+            # can publish the new process's first status once systemd names a main process.
+            main = main_pid_fn(item)
+            ok, detail = settle_verdict(
+                read_state(exp.home),
+                since,
+                main,
+                unit_active=unit_active_fn(item),
+                process_alive_fn=process_alive_fn,
+            )
             if ok:
                 return None
             if ok is False:
                 return f"{exp.profile}: gateway {detail} after {item.action} {item.unit}"
-            if clock_fn() - started >= timeout_s:
-                return f"{exp.profile}: gateway not serving {timeout_s:.0f}s after {item.action} " \
+            if clock_fn() - started >= limit:
+                return f"{exp.profile}: gateway not serving {limit:.0f}s after {item.action} " \
                        f"{item.unit} ({detail})"
             sleep_fn(interval_s)
 
