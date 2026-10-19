@@ -403,3 +403,62 @@ def test_stale_fallback_skipped_on_auth_failure(monkeypatch, tmp_path):
 
 
 
+
+
+_RATE_LIMITED = ("Error: Received error message from server: [429 Too Many Requests] "
+                 "{\"message\":\"Slow down! Too many requests. Try again in 1s.\"}")
+
+
+def test_rate_limited_fetch_is_retried_with_growing_backoff(monkeypatch, tmp_path):
+    """BSM answers a burst of simultaneous gateway starts with 429; the fetch backs
+    off and retries instead of starting the gateway without its secrets."""
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    fake_binary = tmp_path / "bws"
+    fake_binary.write_text("")
+    replies = [mock.Mock(returncode=1, stdout="", stderr=_RATE_LIMITED)] * 2 + [
+        mock.Mock(returncode=0, stdout=_fake_bws_payload([{"key": "K1", "value": "v1"}]), stderr="")]
+    calls = []
+
+    def run(*args, **kwargs):
+        calls.append(args)
+        return replies[len(calls) - 1]
+
+    monkeypatch.setattr(subprocess, "run", run)
+    sleeps = []
+    monkeypatch.setattr(bw.time, "sleep", sleeps.append)
+
+    secrets, warnings = bw.fetch_bitwarden_secrets(
+        access_token="0.t", project_id="proj-1", binary=fake_binary,
+        cache_ttl_seconds=300, home_path=home,
+    )
+
+    assert secrets == {"K1": "v1"} and warnings == []
+    assert len(calls) == 3
+    assert len(sleeps) == 2 and 0 < sleeps[0] < sleeps[1]
+
+
+def test_rate_limit_that_outlives_retries_serves_the_stale_cache(monkeypatch, tmp_path):
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    fake_binary = tmp_path / "bws"
+    fake_binary.write_text("")
+    _seed_stale_disk_cache(home, secrets={"K1": "v-old"}, age_seconds=3600)
+    calls = []
+
+    def run(*args, **kwargs):
+        calls.append(args)
+        return mock.Mock(returncode=1, stdout="", stderr=_RATE_LIMITED)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(bw.time, "sleep", lambda _s: None)
+
+    secrets, warnings = bw.fetch_bitwarden_secrets(
+        access_token="0.t", project_id="proj-1", binary=fake_binary,
+        cache_ttl_seconds=300, home_path=home,
+    )
+
+    assert secrets == {"K1": "v-old"}
+    assert len(calls) == bw._BWS_RATE_LIMIT_RETRIES + 1
+    assert "stale disk cache" in warnings[0] and "429" in warnings[0]
+    assert bw._classify_bws_error(_RATE_LIMITED) == bw.ErrorKind.RATE_LIMITED
