@@ -225,6 +225,14 @@ To find a channel ID in Mattermost: open the channel, click the channel name hea
 
 When the bot is `@mentioned`, the mention is automatically stripped from the message before processing.
 
+If the bot account was renamed, people may keep typing the old `@name`. Mattermost keeps the same user id across a rename, but the old handle no longer matches the bot's username. List old handles under `legacy_bot_usernames` (default: empty) and the gateway treats them as mentions of the bot:
+
+```yaml
+mattermost:
+  legacy_bot_usernames:
+    - old_bot_name
+```
+
 ## Channel allowlist (`allowed_channels`)
 
 Restrict the bot to a fixed set of Mattermost channels. When set, the bot **only** responds in channels whose ID appears in the list — messages from any other channel are silently ignored, even if the bot is `@mentioned`.

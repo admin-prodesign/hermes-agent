@@ -349,6 +349,59 @@ class TestMattermostWebSocketParsing:
 
 
 # ---------------------------------------------------------------------------
+# Renamed bot: current username plus configured legacy usernames
+# ---------------------------------------------------------------------------
+
+def _channel_post_event(message: str) -> dict:
+    post = {"id": "post_rename", "user_id": "user_123", "channel_id": "chan_456", "message": message}
+    return {"event": "posted", "data": {"post": json.dumps(post), "channel_type": "O", "sender_name": "@alice"}}
+
+
+def _renamed_bot_adapter(legacy=None):
+    from plugins.platforms.mattermost.adapter import MattermostAdapter
+    extra = {"url": "https://mm.example.com"}
+    if legacy is not None:
+        extra["legacy_bot_usernames"] = legacy
+    adapter = MattermostAdapter(PlatformConfig(enabled=True, token="test-token", extra=extra))
+    adapter._bot_user_id = "renamed_bot_id"
+    adapter._bot_username = "pdone"
+    adapter.handle_message = AsyncMock()
+    return adapter
+
+
+class TestMattermostRenamedBotMentions:
+    @pytest.mark.asyncio
+    async def test_current_username_mention_is_accepted_and_stripped(self):
+        adapter = _renamed_bot_adapter()
+        await adapter._handle_ws_event(_channel_post_event("@pdone status please"))
+        assert adapter.handle_message.call_args[0][0].text == "status please"
+
+    @pytest.mark.asyncio
+    async def test_legacy_username_is_not_a_mention_by_default(self):
+        adapter = _renamed_bot_adapter()
+        await adapter._handle_ws_event(_channel_post_event("@pd_one_bot status please"))
+        assert not adapter.handle_message.called
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("legacy", [["pd_one_bot"], "@pd_one_bot, ", ("pd_one_bot",)])
+    async def test_configured_legacy_username_is_accepted_and_stripped(self, legacy):
+        adapter = _renamed_bot_adapter(legacy)
+        await adapter._handle_ws_event(_channel_post_event("@pd_one_bot status please"))
+        assert adapter.handle_message.call_args[0][0].text == "status please"
+
+    @pytest.mark.asyncio
+    async def test_current_username_still_works_with_legacy_configured(self):
+        adapter = _renamed_bot_adapter(["pd_one_bot"])
+        await adapter._handle_ws_event(_channel_post_event("@pdone status please"))
+        assert adapter.handle_message.call_args[0][0].text == "status please"
+
+    def test_yaml_bridge_seeds_legacy_usernames_into_extra(self):
+        from plugins.platforms.mattermost.adapter import _apply_yaml_config
+        seeded = _apply_yaml_config({}, {"legacy_bot_usernames": ["pd_one_bot"]}) or {}
+        assert seeded.get("legacy_bot_usernames") == ["pd_one_bot"]
+
+
+# ---------------------------------------------------------------------------
 # Mention behavior (require_mention + free_response_channels)
 # ---------------------------------------------------------------------------
 

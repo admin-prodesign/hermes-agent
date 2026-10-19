@@ -534,6 +534,6 @@ def build_parser():
     lb.add_argument('--dry-run', action='store_true')
     lb.add_argument('--no-ensure-headers', action='store_true')
     lb.set_defaults(func=cmd_backfill_mattermost_user_post_links)
-    return ap
+    return p
 if __name__ == '__main__':
     main()
