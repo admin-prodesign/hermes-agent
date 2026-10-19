@@ -34,6 +34,9 @@ from plugins.platforms.mattermost.hr_private_output import (
     guard_adapter_outbound as _guard_hr_outbound,
     guard_standalone_outbound as _guard_hr_standalone,
 )
+from plugins.platforms.mattermost.mentions import (
+    bot_mention_patterns, legacy_bot_usernames, with_mentions_disabled as _with_mentions_disabled,
+)
 from agent.auxiliary_client import async_call_llm
 
 logger = logging.getLogger(__name__)
@@ -46,20 +49,11 @@ MAX_POST_LENGTH = 4000
 # Channel type codes returned by the Mattermost API ("P" private → treat as group).
 _CHANNEL_TYPE_MAP = {"D": "dm", "G": "group", "P": "group", "O": "channel"}
 
-_MATTERMOST_DISABLE_MENTIONS_PROPS = {"disable_mentions": True}
-
 _RECONNECT_BASE_DELAY, _RECONNECT_MAX_DELAY, _RECONNECT_JITTER = 2.0, 60.0, 0.2  # exponential backoff
 
 _POST_WITH_FILE_ERROR = "Failed to post with file"
 _MEDIA_MSG_TYPES = (("image/", MessageType.PHOTO), ("audio/", MessageType.VOICE))  # first match wins
 _INBOUND_CACHE_EXT = {"image/": ".png", "audio/": ".ogg"}  # mime prefix → default extension for cached media
-
-
-def _with_mentions_disabled(payload: dict[str, Any]) -> dict[str, Any]:
-    """Return a post payload that prevents Mattermost from firing mentions."""
-    props, disable = payload.get("props"), _MATTERMOST_DISABLE_MENTIONS_PROPS
-    payload["props"] = {**props, **disable} if isinstance(props, dict) else dict(disable)
-    return payload
 
 
 def _channel_id_set(raw: Any) -> set:
@@ -218,6 +212,7 @@ class MattermostAdapter(BasePlatformAdapter):
         self._base_url, self._token = _url_and_token(config)
         self._base_url = self._base_url.rstrip("/")
         self._bot_user_id = self._bot_username = ""
+        self._legacy_bot_usernames = legacy_bot_usernames(config.extra.get("legacy_bot_usernames"))
         self._session: Any = None  # aiohttp.ClientSession
         self._ws: Any = None  # aiohttp.ClientWebSocketResponse
         self._ws_task: Optional[asyncio.Task] = None
@@ -653,7 +648,7 @@ class MattermostAdapter(BasePlatformAdapter):
                               ).lower() not in {"false", "0", "no"}
         free_channels = _channel_id_set(
             _extra_or_secret(self.config.extra, "free_response_channels", "MATTERMOST_FREE_RESPONSE_CHANNELS", blank_is_unset=False))
-        mention_patterns = [f"@{self._bot_username}", f"@{self._bot_user_id}"]
+        mention_patterns = bot_mention_patterns(self._bot_username, self._bot_user_id, self._legacy_bot_usernames)
         has_mention = any(pattern.lower() in message_text.lower() for pattern in mention_patterns)
         if require_mention and channel_id not in free_channels and not has_mention:
             logger.debug("Mattermost: skipping non-DM message without @mention (channel=%s)", channel_id)
@@ -1792,7 +1787,7 @@ class MattermostAdapter(BasePlatformAdapter):
             return
         message_text = post.get("message", "")
         if not is_dm:  # DMs need no gating; channels are mention-gated.
-            mention_patterns = [f"@{self._bot_username}", f"@{self._bot_user_id}"]
+            mention_patterns = bot_mention_patterns(self._bot_username, self._bot_user_id, self._legacy_bot_usernames)
             has_mention = any(p.lower() in message_text.lower() for p in mention_patterns)
             if has_mention:
                 await self._maybe_append_mention_translation(
@@ -1978,6 +1973,7 @@ def _apply_yaml_config(yaml_cfg: dict, mattermost_cfg: dict) -> dict | None:
         "pd_one_admin_prefix",
         "auto_thread_root_heading",
         "auto_thread_root_heading_disabled_channels",
+        "legacy_bot_usernames",
     ):
         if extra_key in mattermost_cfg:
             seeded[extra_key] = mattermost_cfg[extra_key]
