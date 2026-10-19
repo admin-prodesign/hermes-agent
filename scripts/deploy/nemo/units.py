@@ -64,6 +64,11 @@ class UnitPlan:
     warnings: list[str] = field(default_factory=list)
 
 
+def is_template(unit: str) -> bool:
+    """``name@.service``: systemd refuses to restart it; only its instances run."""
+    return "@." in unit
+
+
 def is_user_unit(path: Path) -> bool:
     parts = path.parts
     return "user" in parts and "systemd" in parts

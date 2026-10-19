@@ -36,8 +36,10 @@ nemo_python() {
   PYTHONPATH="${prefix}" "${NEMO_PYTHON}" "$@"
 }
 
-# daemon-reload, then restart the units a rollout restarted (every rewritten unit when
-# none was recorded). Unit files must already be restored for a rollback.
+# daemon-reload, restart the units a rollout restarted with the verbs it used, then verify.
+# Unit files must already be restored for a rollback.
 restart_units() {
-  nemo_python -m scripts.deploy.nemo.cli restart --manifest "$1"
+  local manifest="$1"
+  shift
+  nemo_python -m scripts.deploy.nemo.cli restart --manifest "${manifest}" "$@"
 }
