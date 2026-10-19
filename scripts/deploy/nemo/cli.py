@@ -441,6 +441,9 @@ def register(sub) -> None:
     rollout.add_argument("--timeout", type=float, default=DEFAULT_HEALTH_TIMEOUT_S)
     rollout.add_argument("--interval", type=float, default=DEFAULT_HEALTH_INTERVAL_S)
     rollout.add_argument("--skip-verify", action="store_true")
+    rollout.add_argument("--dry-run", action="store_true",
+                         help="print the stages and each profile's expected adapters and ports; "
+                              "touch neither systemd nor the manifest")
     rollout.add_argument("--restart-delay", type=float, default=None,
                          help=f"seconds between unit restarts; default deploy.cutover.restart_delay_s, "
                               f"else {DEFAULT_RESTART_DELAY_S:g}")

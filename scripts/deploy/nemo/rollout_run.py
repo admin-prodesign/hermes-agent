@@ -3,8 +3,13 @@ restart plus verify after a rollback.
 
 ``rollout`` records how it verified (home, profiles, gateway units, expectations, timings)
 in the manifest, so ``rollback.sh --manifest`` alone can restart the same units with the
-same verbs, one at a time, and run the same verify (fresh ``running`` gateway, adapters
-connected, ports bound). A rollback whose gateways do not come back exits non-zero.
+same verbs, one at a time, and run the same verify (fresh ``running`` gateway, or
+``degraded`` with every expected adapter connected and port bound). A rollback whose
+gateways do not come back exits non-zero.
+
+``rollout --dry-run`` is the rehearsal: it resolves the same plan from the manifest and
+config and prints each stage and what each profile is expected to serve, without calling
+systemctl or writing the manifest.
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ from scripts.deploy.nemo.rollout import (
     Restart, daemon_reload, gateway_settle, mark_restarted, plan_stages, restart, restarts_from,
     rollback_restarts, systemctl,
 )
-from scripts.deploy.nemo.unit_state import concrete_restarts, systemctl_output
+from scripts.deploy.nemo.unit_state import concrete_restarts, main_pid, systemctl_output
 from scripts.deploy.nemo.verify import DEFAULT_PORT_HOST, Expectation, expectations, poll_until_verified
 
 ROLLOUT_KEY = "rollout"
@@ -48,7 +53,8 @@ class Plan:
         return {gateway_unit_name(name, self.overrides): exp for name, exp in self.exps.items()}
 
     def settle(self):
-        return gateway_settle(self.gateways(), timeout_s=self.timeout, interval_s=self.interval)
+        return gateway_settle(self.gateways(), timeout_s=self.timeout, interval_s=self.interval,
+                              main_pid_fn=lambda item: main_pid(item.unit, item.user, systemctl_output))
 
 
 def _restart_delay(explicit: float | None, home: Path) -> float:
@@ -99,6 +105,24 @@ def _verify(plan: Plan, profiles: tuple[str, ...], restarted: list[Restart], sin
     return ok, checks
 
 
+def _describe(exp: Expectation, port_host: str) -> str:
+    platforms = ", ".join(exp.platforms) or "no adapter"
+    ports = ", ".join(f"{exp.host or port_host}:{port}" for port in exp.ports) or "no port"
+    return f"{exp.profile}: expects {platforms}; {ports}"
+
+
+def _rehearse(plan: Plan, units: list[dict], canary: bool) -> int:
+    stages = plan_stages(restarts_from(units), plan.profiles, canary=canary, overrides=plan.overrides)
+    print("dry run: systemctl is not called and the manifest is not written; inactive units, "
+          "templates and oneshots would still be skipped")
+    for index, stage in enumerate(stages, 1):
+        names = ", ".join(f"{item.action} {item.unit}" for item in stage.restarts) or "nothing"
+        print(f"stage {index}/{len(stages)} ({', '.join(stage.profiles) or 'other units'}): {names}")
+        for profile in stage.profiles:
+            print(f"  {_describe(plan.exps[profile], plan.port_host)}")
+    return 0
+
+
 def _run_stage(plan: Plan, manifest: Path, stage) -> bool:
     since = time.time()
     mark_restarted(manifest, stage.restarts)
@@ -127,6 +151,8 @@ def cmd_rollout(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.dry_run:
+        return _rehearse(plan, units, args.canary)
     write_manifest(args.manifest, {ROLLOUT_KEY: {**settings, "restart_delay": plan.delay}})
     failures = daemon_reload(units, systemctl)
     if failures:
