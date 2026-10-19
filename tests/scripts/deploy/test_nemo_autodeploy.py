@@ -120,7 +120,7 @@ def _cutover(home: Path, build: str, *extra: str) -> subprocess.CompletedProcess
     env = {**os.environ, "NEMO_PYTHON": sys.executable, "NEMO_DEPLOY_SOCKET_PROFILES": ""}
     argv = ["bash", str(NEMO / "cutover.sh"), "--hermes-home", str(home), "--build", build,
             "--sha", "b" * 40, "--unit-dir", str(home / "units"), "--skip-preflight", "--skip-selftest",
-            "--skip-postcheck", *extra]
+            "--skip-postcheck", "--skip-adapter-gate", *extra]
     return subprocess.run(argv, env=env, capture_output=True, text=True, timeout=120, check=False)
 
 

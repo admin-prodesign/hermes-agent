@@ -16,7 +16,8 @@ nemo: hermes-deploy.path → hermes-deploy.service  (oneshot worker, autodeploy.
        1. fetches main; refuses a SHA that is not on main, or is older than the live SHA
        2. classifies the diff: noop / skills / restart          (changes.py)
        3. prunes old releases, then build.sh --sha <sha> --build hermes-agent-<sha10>-auto
-       4. restart: cutover.sh  (PD One selftest → idle gate → swap → unit rewrite → restart → /health → rollback)
+       4. restart: cutover.sh  (PD One selftest → adapter gate → idle gate → render units → swap links
+                                → daemon-reload → staged restart + adapter/port verify → /health → rollback)
           noop/skills: cutover.sh without gate or restart, then sync bundled skills
        5. prunes again (keeps current, its rollback target, and the running build)
 nemo: hermes-deploy-drift.timer  (hourly: live files vs the deployed SHA)
@@ -66,6 +67,15 @@ That should print one `<sha>\trefs/heads/main` line.
   nemo on purpose is passed as `--selftest-allow-missing <key>`; `--skip-selftest` turns it off.
   No-restart deploys skip it. `build.sh` publishes `tools/**/*.py` without the exec bit, so a
   launch that still depends on it fails here.
+- **Adapter gate.** Next, for every profile, the gateway unit and its drop-ins are rendered
+  against the new release in memory, and `adapter_probe.py` runs in the new release's
+  interpreter with the environment that unit would give the gateway (`Environment=`,
+  `EnvironmentFile=`, the profile's `HERMES_HOME` and `.env`). Every enabled adapter is
+  created but not connected: its dependency check (e.g. `aiohttp` for webhook and
+  Mattermost), its config validation, and its constructor. The requirements `pyproject.toml`
+  declares for the build's extra must also be installed. Any failure stops the deploy with
+  nothing changed; `upgrade-audits/<build>/adapters.json` says which adapter and why.
+  No-restart deploys skip it; `--skip-adapter-gate` turns it off.
 - **Idle gate.** `cutover.sh` waits until pdone and the top-level default profile
   (PD Neo; `--profile default`, with `pdneo` as an alias) have no turn or
   compression lease, no live goal, and no message newer than 90 s (`gate.py`).
@@ -75,10 +85,39 @@ That should print one `<sha>\trefs/heads/main` line.
   waiting. It waits up to 6 h. If the profiles are still busy it exits 75 and
   nothing changes. You get a `waiting` alert, and the next poll queues the newest
   `main` again for another wait. A running turn is never interrupted.
-- **Rollback.** If systemd, the gateway control socket (PD One LINE / `pdone`), or HTTP
-  health (PD Neo `:8644`, dashboard `:8765` on nemo) is not healthy within 90 s of the
-  restart, `cutover.sh` restores the previous symlink,
-  unit files, and configs from `upgrade-audits/<build>/` and restarts again.
+- **Units.** Every `*.service` and `*.service.d/*.conf` in the unit directories is
+  rendered against the new release, whichever release it named before: each
+  `<releases>/<build>` path (`ExecStart`, `ExecStop`, `ExecStopPost`, `PATH`, `VIRTUAL_ENV`,
+  `PYTHONPATH`, `WorkingDirectory`) moves to the new release, a `.hermes/bin` wrapper the
+  release does not have becomes `.venv/bin`, and `HERMES_RUNTIME_SHA` becomes the new SHA.
+  `releases/current` and the other stable links are left as they are. If a rendered unit
+  would run or load a path the release lacks, the cutover stops before writing anything.
+  The originals go to `upgrade-audits/<build>/units/`.
+- **Links.** `previous` points at the old `current`, `runtime/current` (and every
+  `--runtime-link`) at the new release, `.running` at the new build when it restarts, and
+  `current` moves last. The prior state of each is in the manifest.
+- **Restart and verify.** After `daemon-reload`, the rewritten units restart. A unit whose
+  only change is `HERMES_RUNTIME_SHA` gets `try-restart`, so a stopped oneshot is not
+  started. Each profile's `gateway_state.json` must then say `running` and every expected
+  adapter `connected`, both written after the restart, and every expected port must accept
+  a connection, within `--health-timeout`. Expected adapters are `--expect P=PLATFORM`, else
+  `deploy.verify.<P>.platforms` in `<home>/config.yaml`, else what the adapter gate created.
+  Ports are only checked when configured:
+
+  ```yaml
+  deploy:
+    verify:
+      default: {platforms: [webhook], ports: [<PD Neo webhook port>]}
+      pdone: {platforms: [mattermost, line], ports: [<port>]}
+  ```
+
+  With `--canary` (worker: `install_autodeploy.sh install --canary`), the top-level profile's
+  gateway (PD Neo) restarts and is verified alone first; pdone and the other units restart
+  only once it passes.
+- **Rollback.** If a restart, the verify, systemd, the gateway control socket (PD One LINE /
+  `pdone`), or HTTP health (PD Neo `:8644`, dashboard `:8765` on nemo) fails, `cutover.sh`
+  restores the units, drop-ins, configs, and links from `upgrade-audits/<build>/`, reloads
+  systemd, and restarts the units that had restarted.
 - **Refused SHAs.** A SHA that is `rejected` (not on main, or older than the live one)
   or `failed` (build failed, too little disk, rolled back, skill sync failed) goes into
   `deploy/refused.jsonl`. The poller skips it, so a broken commit does not rebuild every
@@ -106,7 +145,10 @@ That should print one `<sha>\trefs/heads/main` line.
   superseded.
 - **Dependencies.** A change to `pyproject.toml` or `uv.lock` is a `restart` deploy like
   any other code change: `build.sh` installs the locked environment into the new
-  release. There is no separate manual-approval step.
+  release. The `nemo` extra includes `messaging` (the gateway adapters' dependencies);
+  after the install `build.sh` checks that every requirement the extra declares at that
+  SHA is installed (`extras.py`), so a release cannot publish without them. There is no
+  separate manual-approval step.
 
 ## Status
 
@@ -134,7 +176,9 @@ This prints:
   missing (git blob hashes, so mode-only noise does not count);
 - an untracked `.py` or `.sh` file sits in the release outside build output (`.venv`,
   `.python`, `node_modules`, `web_dist`, `ui-tui/dist`, `__pycache__`);
-- a systemd unit points at a release other than `current` or the running build;
+- a systemd unit or drop-in differs from a render against `current` or the running build:
+  another release's path, a `.hermes/bin` wrapper the release lacks, or a stale
+  `HERMES_RUNTIME_SHA`;
 - `main` has been ahead of the live SHA for more than 2 h with nothing queued. That covers
   a refused SHA, a poller that keeps failing, and a gate that never goes quiet.
 
@@ -146,6 +190,11 @@ Nothing changes in GitHub or Tailscale. Everything below runs on nemo.
 
 Build and cut over a `main` SHA that contains this directory with the hand flow in
 `website/docs/user-guide/pd-one-safe-ops.md` (`build.sh`, then `cutover.sh`).
+
+The worker runs `cutover.sh` from `releases/current`, so the deploy that ships a change
+to this directory still runs the old one. See
+[the first rollout](../../../website/docs/user-guide/pd-one-safe-ops.md#first-rollout-of-unit-rendering-and-the-adapter-gate)
+for the hand steps that put the unit rendering and adapter gate live.
 
 ### 2. Check the mirror's read credential
 
