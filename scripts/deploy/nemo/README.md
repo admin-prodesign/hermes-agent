@@ -215,6 +215,18 @@ This prints:
 - `main` has been ahead of the live SHA for more than 2 h with nothing queued. That covers
   a refused SHA, a poller that keeps failing, and a gate that never goes quiet.
 
+## Runtime drift check
+
+`hermes-runtime-drift-check.timer` runs daily at 07:50 Asia/Taipei (up to 60 s jitter).
+It runs `python -m scripts.deploy.nemo.runtime_drift` from `releases/current` and compares
+each running gateway's live release tree to `origin/main` in the deploy mirror: runtime SHA
+markers, an archive hash of tracked files, and writes after build time. Exit codes:
+
+- `0` — clean
+- `1` — drift found (writes `state/runtime_drift_notify/drift-*.json`; systemd treats this as success)
+- `2` — check failed (for example could not resolve the release directory from the running
+  interpreter); systemd marks the unit failed
+
 ## One-time setup
 
 Nothing changes in GitHub or Tailscale. Everything below runs on nemo.
@@ -245,8 +257,8 @@ bash scripts/deploy/nemo/install_autodeploy.sh install \
   --alert-script ~/.hermes/deploy/alert.sh     # optional, see below
 ```
 
-- `--dry-run` prints the six units (poll service and timer, worker service and path,
-  drift service and timer) without writing anything.
+- `--dry-run` prints the eight units (poll service and timer, worker service and path,
+  release drift service and timer, runtime drift service and timer) without writing anything.
 - `--poll-every 2min` polls less often. Each poll waits an extra 0–20 s of jitter.
 - If the Hermes gateway units are system units (`/etc/systemd/system`), run the
   installer with `sudo` and `--scope system --run-as <hermes user>`. The worker
