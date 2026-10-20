@@ -22,7 +22,7 @@ Usage: cutover.sh --build NAME [options]
   --quiet SEC             Newest message must be at least this old. Default: 90.
   --poll SEC              Gate poll interval. Default: 30.
   --gate-timeout SEC      Default: 600.
-  --stale-goal-s SEC      Ignore active 0-turn goals older than this. Default: 604800 (7 days).
+  --stale-goal-s SEC      Ignore active goals idle longer than this. Default: 604800 (7 days).
   --gateway-health URL    Default: http://127.0.0.1:8644/health (PD Neo on nemo).
   --dashboard-health URL  Default: http://127.0.0.1:8765/api/health.
   --socket-profile NAME   Repeatable. Gateway control-socket check (default: pdone, default).
@@ -66,8 +66,8 @@ by its active instances. A rollback restarts the same units with the same verbs,
 runs the same verify, and exits 1 with a summary if the gateways did not come back.
 
 The gate still requires no leases, a newest message at least --quiet seconds
-old, and no live goal (stale 0-turn goals older than --stale-goal-s are
-ignored). A missing state.db for a configured profile fails immediately.
+old, and no live goal (active goals with no activity within --stale-goal-s
+are ignored unless their session holds a live lease). A missing state.db for a configured profile fails immediately.
 Exit 75 means the gate timed out or the database was missing; nothing changed.
 HR sync is dry-run only during the post-check.
 EOF

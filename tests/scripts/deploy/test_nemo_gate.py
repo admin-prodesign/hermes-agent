@@ -1,4 +1,4 @@
-"""Quiet-window gate: profile resolution, missing DBs, and stale 0-turn goals.
+"""Quiet-window gate: profile resolution, missing DBs, and idle goals.
 
 Nothing here writes to the real Hermes home. Paths are temp placeholders.
 """
@@ -21,14 +21,16 @@ DAY = 24 * 3600.0
 NOW = 1_800_000_000.0
 
 
-def _write_db(path: Path, *, message_at: float | None = NOW - 120, goals=()) -> None:
+def _write_db(path: Path, *, message_at: float | None = NOW - 120, goals=(), turn_leases=()) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.execute("CREATE TABLE messages (timestamp REAL)")
     if message_at is not None:
         conn.execute("INSERT INTO messages (timestamp) VALUES (?)", (message_at,))
-    conn.execute("CREATE TABLE session_turn_leases (expires_at REAL)")
-    conn.execute("CREATE TABLE compression_locks (expires_at REAL)")
+    conn.execute("CREATE TABLE session_turn_leases (conversation_id TEXT, expires_at REAL)")
+    conn.execute("CREATE TABLE compression_locks (session_id TEXT, expires_at REAL)")
+    for conversation_id, expires_at in turn_leases:
+        conn.execute("INSERT INTO session_turn_leases VALUES (?, ?)", (conversation_id, expires_at))
     conn.execute("CREATE TABLE state_meta (key TEXT, value TEXT)")
     for key, value in goals:
         conn.execute("INSERT INTO state_meta (key, value) VALUES (?, ?)", (key, value))
@@ -150,7 +152,7 @@ def test_recent_zero_turn_active_goal_still_blocks(tmp_path: Path) -> None:
     assert snap.quiet(NOW, 90) is False
 
 
-def test_turned_active_goal_still_blocks_even_when_old(tmp_path: Path) -> None:
+def test_turned_goal_without_last_activity_still_blocks(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _write_db(db, goals=[("goal:turned", _goal(turns_used=1, created_at=NOW - 30 * DAY))])
     snap = inspect_db("pdone", db, NOW)
@@ -174,6 +176,73 @@ def test_stale_goal_threshold_is_configurable(tmp_path: Path) -> None:
     assert inspect_db("pdone", db, NOW).live_goals == 1
     assert inspect_db("pdone", db, NOW, stale_goal_s=2 * DAY).live_goals == 0
     assert inspect_db("pdone", db, NOW, stale_goal_s=DEFAULT_STALE_GOAL_S).live_goals == 1
+
+
+def test_idle_multi_turn_goal_is_ignored(tmp_path: Path, caplog) -> None:
+    db = tmp_path / "state.db"
+    _write_db(db, goals=[("goal:idle-turned", _goal(
+        turns_used=1, created_at=NOW - 90 * DAY, last_turn_at=NOW - 90 * DAY,
+    ))])
+    caplog.set_level(logging.INFO, logger="scripts.deploy.nemo.gate")
+    snap = inspect_db("pdone", db, NOW)
+    assert snap.live_goals == 0
+    assert snap.quiet(NOW, 90) is True
+    assert "goal:idle-turned" in caplog.text
+    assert "90.0d ago" in caplog.text
+
+
+def test_recent_multi_turn_goal_blocks(tmp_path: Path) -> None:
+    db = tmp_path / "state.db"
+    _write_db(db, goals=[("goal:busy", _goal(
+        turns_used=5, created_at=NOW - 90 * DAY, last_turn_at=NOW - DAY,
+    ))])
+    snap = inspect_db("pdone", db, NOW)
+    assert snap.live_goals == 1
+    assert snap.quiet(NOW, 90) is False
+
+
+def test_idle_multi_turn_threshold_is_configurable(tmp_path: Path) -> None:
+    db = tmp_path / "state.db"
+    _write_db(db, goals=[("goal:turned", _goal(
+        turns_used=2, created_at=NOW - 30 * DAY, last_turn_at=NOW - 3 * DAY,
+    ))])
+    assert inspect_db("pdone", db, NOW).live_goals == 1
+    assert inspect_db("pdone", db, NOW, stale_goal_s=2 * DAY).live_goals == 0
+
+
+def test_goal_with_live_lease_blocks_regardless_of_age(tmp_path: Path) -> None:
+    db = tmp_path / "state.db"
+    _write_db(
+        db,
+        goals=[("goal:leased", _goal(turns_used=1, created_at=NOW - 90 * DAY, last_turn_at=NOW - 90 * DAY))],
+        turn_leases=[("leased", NOW + 60)],
+    )
+    assert inspect_db("pdone", db, NOW).live_goals == 1
+    assert inspect_db("pdone", db, NOW, stale_goal_s=1.0).live_goals == 1
+
+
+def test_expired_lease_does_not_pin_an_idle_goal(tmp_path: Path) -> None:
+    db = tmp_path / "state.db"
+    _write_db(
+        db,
+        goals=[("goal:was-leased", _goal(turns_used=1, created_at=NOW - 90 * DAY, last_turn_at=NOW - 90 * DAY))],
+        turn_leases=[("was-leased", NOW - 60)],
+    )
+    snap = inspect_db("pdone", db, NOW)
+    assert snap.leases == 0
+    assert snap.live_goals == 0
+
+
+def test_gate_does_not_write_goal_state(tmp_path: Path) -> None:
+    db = tmp_path / "state.db"
+    goals = [
+        ("goal:idle", _goal(turns_used=1, last_turn_at=NOW - 90 * DAY)),
+        ("goal:busy", _goal(turns_used=1, last_turn_at=NOW - 60)),
+    ]
+    _write_db(db, goals=goals)
+    before = db.read_bytes()
+    inspect_db("pdone", db, NOW)
+    assert db.read_bytes() == before
 
 
 def test_poll_treats_stale_zero_turn_goals_as_quiet(tmp_path: Path) -> None:
