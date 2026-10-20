@@ -30,8 +30,9 @@ from scripts.deploy.nemo.layout import DEFAULT_DASHBOARD_HEALTH, DEFAULT_GATEWAY
 from scripts.deploy.nemo.manifest import record_build_manifest
 from scripts.deploy.nemo.layout import FRONTEND_MARKER_RELATIVE, pin_uv_cache
 from scripts.deploy.nemo.postcheck import (
-    HR_SYNC, REAPER, TYPHOON, Invocation, POLICIES, command_list, guard, plan_policy,
-    resolve_script, run_postcheck, script_accepts_dry_run,
+    HR_SYNC, REAPER, TYPHOON, Invocation, POLICIES, classify_script, command_list, guard,
+    plan_policy, postcheck_ok, resolve_script, run_postcheck, script_accepts_dry_run,
+    syntax_check_plan,
 )
 from scripts.deploy.nemo.preflight import changed_files, is_environment_failure, plan_for
 from scripts.deploy.nemo.release_swap import swap_current
@@ -480,6 +481,51 @@ def test_pin_uv_cache_exports_the_given_directory(tmp_path: Path, monkeypatch) -
 def test_dry_run_flag_must_be_an_argparse_declaration() -> None:
     assert script_accepts_dry_run("import argparse\np.add_argument('--dry-run')\n") is True
     assert script_accepts_dry_run("help = '--dry-run is mentioned'\n") is False
+
+
+def test_syntax_check_valid_python_compiles(tmp_path: Path) -> None:
+    script = tmp_path / "job.py"
+    script.write_text("print('ok')\n", encoding="utf-8")
+    source = script.read_text(encoding="utf-8")
+    assert classify_script(script, source) == "python"
+    plan = syntax_check_plan(script, source, sys.executable)
+    assert plan.action == "compile"
+    assert plan.argv[:3] == (sys.executable, "-m", "py_compile")
+    assert subprocess.run(plan.argv, check=False).returncode == 0
+
+
+def test_syntax_check_shell_wrapper_uses_bash_n(tmp_path: Path) -> None:
+    bash = _bash()
+    script = tmp_path / "wrap.sh"
+    script.write_text("#!/bin/bash\necho ok\n", encoding="utf-8")
+    source = script.read_text(encoding="utf-8")
+    assert classify_script(script, source) == "shell"
+    plan = syntax_check_plan(script, source, sys.executable)
+    assert plan.action == "compile"
+    assert plan.argv == (bash, "-n", str(script))
+    assert subprocess.run(plan.argv, check=False).returncode == 0
+
+
+def test_syntax_check_shebang_shell_without_extension(tmp_path: Path) -> None:
+    bash = _bash()
+    script = tmp_path / "cron-runner"
+    script.write_text("#!/usr/bin/env bash\ntrue\n", encoding="utf-8")
+    source = script.read_text(encoding="utf-8")
+    assert classify_script(script, source) == "shell"
+    plan = syntax_check_plan(script, source, sys.executable)
+    assert plan.argv == (bash, "-n", str(script))
+    assert subprocess.run(plan.argv, check=False).returncode == 0
+
+
+def test_syntax_check_python_syntax_error_fails(tmp_path: Path) -> None:
+    script = tmp_path / "broken.py"
+    script.write_text("def broken(\n", encoding="utf-8")
+    source = script.read_text(encoding="utf-8")
+    plan = syntax_check_plan(script, source, sys.executable)
+    assert plan.action == "compile"
+    assert subprocess.run(plan.argv, check=False).returncode != 0
+    invocation = Invocation("x", "y", plan.action, plan.argv, plan.reason)
+    assert postcheck_ok(invocation, [subprocess.run(plan.argv, check=False).returncode]) is False
 
 
 def test_hr_sync_and_reaper_are_not_executed_live(tmp_path: Path) -> None:

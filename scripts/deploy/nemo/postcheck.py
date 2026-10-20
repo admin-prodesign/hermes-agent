@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,9 @@ DIGEST = "870dd7349151"
 TYPHOON = "840af263673e"
 REAPER = "c9287579f167"
 _DRY_FLAGS = {"--dry-run", "--dry_run"}
+_PYTHON_SUFFIXES = {".py", ".pyw"}
+_SHELL_SUFFIXES = {".sh", ".bash"}
+_SHELL_INTERPRETERS = frozenset({"bash", "sh", "dash", "zsh", "ksh"})
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,66 @@ class Invocation:
     action: str  # exec | compile | skip
     argv: tuple[str, ...]
     reason: str
+
+
+@dataclass(frozen=True)
+class SyntaxCheckPlan:
+    action: str
+    argv: tuple[str, ...]
+    reason: str
+
+
+def _shebang_kind(first_line: str) -> str | None:
+    stripped = first_line.strip()
+    if not stripped.startswith("#!"):
+        return None
+    body = stripped[2:].strip()
+    if not body:
+        return None
+    parts = body.split()
+    token = parts[1] if parts[0].endswith("env") and len(parts) > 1 else parts[0]
+    name = Path(token).name
+    if name == "python" or name.startswith("python"):
+        return "python"
+    if name in _SHELL_INTERPRETERS:
+        return "shell"
+    if name.endswith("sh") and name not in {"fish", "wish"}:
+        return "shell"
+    return None
+
+
+def classify_script(script: Path, source: str) -> str:
+    """Return ``python``, ``shell``, or ``unknown`` for syntax-check routing."""
+    suffix = script.suffix.lower()
+    if suffix in _PYTHON_SUFFIXES:
+        return "python"
+    if suffix in _SHELL_SUFFIXES:
+        return "shell"
+    first_line = source.splitlines()[0] if source else ""
+    kind = _shebang_kind(first_line)
+    return kind if kind is not None else "unknown"
+
+
+def syntax_check_plan(script: Path, source: str, python: str) -> SyntaxCheckPlan:
+    """Pick ``py_compile`` or ``bash -n`` (or a benign skip) from the script type."""
+    reason = "no --dry-run in argparse; not executing"
+    kind = classify_script(script, source)
+    if kind == "python":
+        return SyntaxCheckPlan(
+            "compile", (python, "-m", "py_compile", str(script)), reason,
+        )
+    if kind == "shell":
+        bash = shutil.which("bash")
+        if bash is None:
+            return SyntaxCheckPlan("skip", (), "skipped: shell")
+        return SyntaxCheckPlan("compile", (bash, "-n", str(script)), reason)
+    return SyntaxCheckPlan("skip", (), "skipped: unknown")
+
+
+def postcheck_ok(invocation: Invocation, codes: list[int]) -> bool:
+    if invocation.action == "skip":
+        return invocation.reason.startswith("skipped:")
+    return all(code == 0 for code in codes)
 
 
 def script_accepts_dry_run(source: str) -> bool:
@@ -122,10 +186,9 @@ def plan_policy(policy: Policy, script: Path | None, source: str, python: str) -
         )
     if script is None:
         return Invocation(policy.job_id, policy.name, "skip", (), "job script not found")
+    planned = syntax_check_plan(script, source, python)
     return Invocation(
-        policy.job_id, policy.name, "compile",
-        (python, "-m", "py_compile", str(script)),
-        "no --dry-run in argparse; not executing",
+        policy.job_id, policy.name, planned.action, planned.argv, planned.reason,
     )
 
 
@@ -183,7 +246,7 @@ def run_postcheck(
         commands = command_list(invocation, policy, python)
         env = child_env(script, base_env)
         codes = [int(run(argv, env)) for argv in commands]
-        ok = invocation.action != "skip" and all(code == 0 for code in codes)
+        ok = postcheck_ok(invocation, codes)
         results.append({
             "job_id": policy.job_id,
             "name": policy.name,
