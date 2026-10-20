@@ -192,17 +192,30 @@ def test_strict_flag_rejects_ca_missing_ski_and_cwa_context_accepts(tmp_path):
         thread.join(timeout=2)
 
 
+def _py313_urlopen(captured: list[dict]):
+    """Stand-in for ``urllib.request.urlopen`` on Python 3.13+.
+
+    The real function accepts ``context`` and rejects ``cafile``, ``capath``,
+    and ``cadefault``. Asserting those keywords never arrive makes the
+    pre-fix wrapper fail on every supported interpreter, including 3.12.
+    """
+
+    def record(url, data=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, *,
+               context=None, **kwargs):
+        forwarded = sorted({"cafile", "capath", "cadefault"}.intersection(kwargs))
+        assert not forwarded, f"urlopen forwarded removed arguments: {forwarded}"
+        captured.append({"url": url, "context": context})
+        return "ok"
+
+    return record
+
+
 def test_urllib_mount_uses_the_relaxed_context_only_for_cwa(monkeypatch):
     import urllib.request
 
     captured: list[dict] = []
 
-    def record(url, data=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, *,
-               cafile=None, capath=None, cadefault=False, context=None):
-        captured.append({"url": url, "context": context, "cafile": cafile})
-        return "ok"
-
-    monkeypatch.setattr(urllib.request, "urlopen", record)
+    monkeypatch.setattr(urllib.request, "urlopen", _py313_urlopen(captured))
     install_cwa_tls()
     supplied_ctx = ssl.create_default_context()
     urllib.request.urlopen("https://www.cwa.gov.tw/V8/C/P/Typhoon/")
@@ -225,12 +238,7 @@ def test_urllib_mount_relaxes_dgpa_hosts(monkeypatch, url):
 
     captured: list[dict] = []
 
-    def record(url, data=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, *,
-               cafile=None, capath=None, cadefault=False, context=None):
-        captured.append({"url": url, "context": context})
-        return "ok"
-
-    monkeypatch.setattr(urllib.request, "urlopen", record)
+    monkeypatch.setattr(urllib.request, "urlopen", _py313_urlopen(captured))
     install_cwa_tls()
     urllib.request.urlopen(url)
     _assert_verifying(captured[0]["context"])
@@ -241,12 +249,7 @@ def test_urllib_mount_leaves_other_hosts_on_the_strict_default(monkeypatch):
 
     captured: list[dict] = []
 
-    def record(url, data=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, *,
-               cafile=None, capath=None, cadefault=False, context=None):
-        captured.append({"url": url, "context": context})
-        return "ok"
-
-    monkeypatch.setattr(urllib.request, "urlopen", record)
+    monkeypatch.setattr(urllib.request, "urlopen", _py313_urlopen(captured))
     install_cwa_tls()
     supplied_ctx = ssl.create_default_context()
     urllib.request.urlopen("https://www.dgpa.gov.tw/typh/daily/nds.html")
@@ -267,6 +270,81 @@ def test_urllib_mount_leaves_other_hosts_on_the_strict_default(monkeypatch):
     if _STRICT:
         assert default.verify_flags & _STRICT
         assert not (dgpa["context"].verify_flags & _STRICT)
+
+
+def test_urllib_mount_loads_caller_ca_bundle_and_drops_removed_kwargs(
+    monkeypatch, tmp_path,
+):
+    """A caller cafile or capath becomes a context; cadefault is not forwarded.
+
+    The allowlist still applies only when the caller supplied neither a
+    context nor a CA bundle. Python 3.13 removed the three keywords from
+    urlopen, so the stand-in rejects them.
+    """
+    import urllib.request
+
+    captured: list[dict] = []
+    created: list[tuple[dict, ssl.SSLContext]] = []
+    real_create = ssl.create_default_context
+
+    def spy_create(
+        purpose=ssl.Purpose.SERVER_AUTH, *, cafile=None, capath=None, cadata=None,
+    ):
+        ctx = real_create(purpose, cafile=cafile, capath=capath, cadata=cadata)
+        created.append(({"cafile": cafile, "capath": capath, "cadata": cadata}, ctx))
+        return ctx
+
+    monkeypatch.setattr(ssl, "create_default_context", spy_create)
+    monkeypatch.setattr(urllib.request, "urlopen", _py313_urlopen(captured))
+    install_cwa_tls()
+
+    ca_pem, _cert_pem, _key_pem, _cryptography = _ca_without_subject_key_identifier(
+        tmp_path,
+    )
+    capath = tmp_path / "capath"
+    capath.mkdir()
+
+    urllib.request.urlopen(
+        "https://example.com/bundle",
+        cafile=str(ca_pem),
+        capath=str(capath),
+        cadefault=True,
+    )
+    kwargs, bundle_ctx = created[-1]
+    assert kwargs == {"cafile": str(ca_pem), "capath": str(capath), "cadata": None}
+    assert captured[-1]["context"] is bundle_ctx
+    expected = real_create(cafile=str(ca_pem), capath=str(capath))
+    assert bundle_ctx.get_ca_certs() == expected.get_ca_certs()
+    baseline = real_create()
+    if _STRICT and (baseline.verify_flags & _STRICT):
+        assert bundle_ctx.verify_flags & _STRICT
+
+    before = len(created)
+    urllib.request.urlopen("https://example.com/plain", cadefault=True)
+    assert captured[-1]["context"] is None
+    assert len(created) == before
+
+    urllib.request.urlopen("https://www.cwa.gov.tw/V8/C/P/Typhoon/", cadefault=True)
+    _assert_verifying(captured[-1]["context"])
+
+    urllib.request.urlopen(
+        "https://opendata.cwa.gov.tw/file",
+        cafile=str(ca_pem),
+        capath=str(capath),
+    )
+    custom_on_allowlist = captured[-1]["context"]
+    assert custom_on_allowlist.get_ca_certs() == bundle_ctx.get_ca_certs()
+    if _STRICT and (baseline.verify_flags & _STRICT):
+        assert custom_on_allowlist.verify_flags & _STRICT
+
+    supplied = real_create()
+    urllib.request.urlopen(
+        "https://www.cwa.gov.tw/",
+        context=supplied,
+        cafile=str(ca_pem),
+        cadefault=True,
+    )
+    assert captured[-1]["context"] is supplied
 
 
 def test_requests_session_routes_cwa_and_leaves_other_hosts():

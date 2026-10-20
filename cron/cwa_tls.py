@@ -110,13 +110,15 @@ def _install_urllib() -> None:
                 cafile=None, capath=None, cadefault=False, context=None):
         # A caller-supplied context is left alone. The default path for an
         # allowlisted URL gets the strict-flag exception and nothing else.
+        # urllib.request.urlopen dropped cafile, capath, and cadefault in
+        # 3.13, so those keywords are never forwarded. A caller CA bundle is
+        # loaded into a context; cadefault is accepted and ignored.
         allowlisted = _is_relaxed_host(_request_host(url))
         if context is None and cafile is None and capath is None and allowlisted:
             context = cwa_ssl_context()
-        return current(
-            url, data, timeout, cafile=cafile, capath=capath,
-            cadefault=cadefault, context=context,
-        )
+        elif context is None and (cafile is not None or capath is not None):
+            context = ssl.create_default_context(cafile=cafile, capath=capath)
+        return current(url, data, timeout, context=context)
 
     urlopen._hermes_cwa_tls = True  # type: ignore[attr-defined]
     urllib.request.urlopen = urlopen
