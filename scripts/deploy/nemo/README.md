@@ -257,8 +257,9 @@ bash scripts/deploy/nemo/install_autodeploy.sh install \
   --alert-script ~/.hermes/deploy/alert.sh     # optional, see below
 ```
 
-- `--dry-run` prints the eight units (poll service and timer, worker service and path,
-  release drift service and timer, runtime drift service and timer) without writing anything.
+- `--dry-run` prints all ten units (poll service and timer, worker service and path,
+  release drift service and timer, runtime drift service and timer, and PD One
+  neo-watch alert service and timer) without writing anything.
 - `--poll-every 2min` polls less often. Each poll waits an extra 0–20 s of jitter.
 - If the Hermes gateway units are system units (`/etc/systemd/system`), run the
   installer with `sudo` and `--scope system --run-as <hermes user>`. The worker
@@ -300,6 +301,58 @@ worker starts.
   lock (`deploy/deploy.lock`).
 - **Retry a refused SHA:** `.venv/bin/python -m scripts.deploy.nemo.autodeploy retry <sha>`.
 - **Remove:** `install_autodeploy.sh uninstall` (add `--scope system` if installed so).
+
+## PD One neo-watch alert watchdog
+
+`hermes-pdone-alert-watch.timer` runs every five minutes and executes
+`python -m scripts.deploy.nemo.pdone_alert_watchdog` from `releases/current`.
+It posts `neo-watch.alert.v1` JSON to the URL in
+`<home>/secrets/neo-watch-webhook.env` (mode `600` only; group/world readable
+files are refused). Create that file on nemo before enabling the timer:
+
+```bash
+install -d -m 700 ~/.hermes/secrets
+umask 077
+cat > ~/.hermes/secrets/neo-watch-webhook.env <<'EOF'
+NEO_WATCH_WEBHOOK_URL=https://example.invalid/hooks/neo-watch
+NEO_WATCH_WEBHOOK_KEY=replace-me
+# optional:
+# NEO_WATCH_WEBHOOK_KEY_HEADER=Authorization
+# NEO_WATCH_WEBHOOK_KEY_PREFIX=Bearer 
+# NEO_WATCH_FALLBACK_TARGET=mattermost:@your-user-id
+EOF
+chmod 600 ~/.hermes/secrets/neo-watch-webhook.env
+```
+
+After a release containing this module is live, re-run the autodeploy installer
+with the same flags you already use, then smoke-test without posting:
+
+```bash
+cd ~/.hermes/releases/current
+bash scripts/deploy/nemo/install_autodeploy.sh install \
+  --mirror /path/to/hermes-agent.git \
+  --alert-script ~/.hermes/deploy/alert.sh    # if you use one
+.venv/bin/python -m scripts.deploy.nemo.pdone_alert_watchdog --dry-run
+systemctl --user list-timers 'hermes-pdone-alert-watch*'
+```
+
+Acknowledge an incident (suppresses the 45-minute dead-man Mattermost DM until
+the signature clears):
+
+```bash
+.venv/bin/python -m scripts.deploy.nemo.pdone_alert_watchdog ack 'cron:JOB_ID' --note 'investigating'
+```
+
+### OnFailure systemd hooks
+
+Nemo may still have profile-local units such as
+`pd-one-systemd-failure-alert@.service` that DM the owner directly when a
+gateway unit fails. Those units are not rendered by this repo's autodeploy
+installer; they are maintained on the host. When you control their `ExecStart`,
+prefer posting through this watchdog's webhook (or call
+`pdone_alert_watchdog` with a synthetic key) instead of opening a separate DM
+path, so PD One alerts share one schema and dedupe store. Leave rpi5-hosted
+failure notify units unchanged unless that host also installs neo-watch.
 
 ## PD One Mattermost status timer
 
