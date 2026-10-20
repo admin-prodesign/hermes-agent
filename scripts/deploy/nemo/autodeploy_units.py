@@ -25,8 +25,19 @@ WORKER = "hermes-deploy.service"
 WORKER_PATH = "hermes-deploy.path"
 DRIFT = "hermes-deploy-drift.service"
 DRIFT_TIMER = "hermes-deploy-drift.timer"
-ENABLED = (WORKER_PATH, POLL_TIMER, DRIFT_TIMER)
-ALL_UNITS = (POLL, POLL_TIMER, WORKER, WORKER_PATH, DRIFT, DRIFT_TIMER)
+ALERT_WATCH = "hermes-pdone-alert-watch.service"
+ALERT_WATCH_TIMER = "hermes-pdone-alert-watch.timer"
+ENABLED = (WORKER_PATH, POLL_TIMER, DRIFT_TIMER, ALERT_WATCH_TIMER)
+ALL_UNITS = (
+    POLL,
+    POLL_TIMER,
+    WORKER,
+    WORKER_PATH,
+    DRIFT,
+    DRIFT_TIMER,
+    ALERT_WATCH,
+    ALERT_WATCH_TIMER,
+)
 LEGACY_UNITS = ("hermes-deploy-listener.service",)
 _SAFE_ARG = re.compile(r"[A-Za-z0-9_@%+=:,./-]+")
 
@@ -66,6 +77,7 @@ class UnitOptions:
     poll_every: str = "60s"
     poll_jitter: str = "20s"
     drift_every: str = "1h"
+    alert_watch_every: str = "5min"
     canary: bool = False
     path_env: str = field(default_factory=service_path_env)
 
@@ -135,6 +147,7 @@ def render(opts: UnitOptions) -> dict[str, str]:
     worker = [python, "-m", "scripts.deploy.nemo.autodeploy", "run", *_common_args(opts),
               *(["--canary"] if opts.canary else [])]
     drift = [python, "-m", "scripts.deploy.nemo.autodeploy", "drift", *_common_args(opts)]
+    alert_watch = [python, "-m", "scripts.deploy.nemo.pdone_alert_watchdog", "--hermes-home", str(opts.home)]
     install = f"\n[Install]\nWantedBy={_wanted_by(opts.scope)}\n"
     return {
         POLL: _service(
@@ -163,6 +176,15 @@ def render(opts: UnitOptions) -> dict[str, str]:
         DRIFT_TIMER: (
             "[Unit]\nDescription=Hourly Hermes release drift check\n\n"
             f"[Timer]\nOnBootSec=10min\nOnUnitActiveSec={opts.drift_every}\nUnit={DRIFT}\n\n"
+            "[Install]\nWantedBy=timers.target\n"
+        ),
+        ALERT_WATCH: _service(
+            "PD One neo-watch alert watchdog", opts, alert_watch, user=opts.run_as,
+            extra="Type=oneshot\nTimeoutStartSec=5min\n",
+        ),
+        ALERT_WATCH_TIMER: (
+            "[Unit]\nDescription=PD One neo-watch alert watchdog (every 5 minutes)\n\n"
+            f"[Timer]\nOnBootSec=3min\nOnUnitActiveSec={opts.alert_watch_every}\nUnit={ALERT_WATCH}\n\n"
             "[Install]\nWantedBy=timers.target\n"
         ),
     }
