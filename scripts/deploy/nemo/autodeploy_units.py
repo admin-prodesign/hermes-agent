@@ -25,9 +25,11 @@ WORKER = "hermes-deploy.service"
 WORKER_PATH = "hermes-deploy.path"
 DRIFT = "hermes-deploy-drift.service"
 DRIFT_TIMER = "hermes-deploy-drift.timer"
+RUNTIME_DRIFT = "hermes-runtime-drift-check.service"
+RUNTIME_DRIFT_TIMER = "hermes-runtime-drift-check.timer"
 ALERT_WATCH = "hermes-pdone-alert-watch.service"
 ALERT_WATCH_TIMER = "hermes-pdone-alert-watch.timer"
-ENABLED = (WORKER_PATH, POLL_TIMER, DRIFT_TIMER, ALERT_WATCH_TIMER)
+ENABLED = (WORKER_PATH, POLL_TIMER, DRIFT_TIMER, RUNTIME_DRIFT_TIMER, ALERT_WATCH_TIMER)
 ALL_UNITS = (
     POLL,
     POLL_TIMER,
@@ -35,6 +37,8 @@ ALL_UNITS = (
     WORKER_PATH,
     DRIFT,
     DRIFT_TIMER,
+    RUNTIME_DRIFT,
+    RUNTIME_DRIFT_TIMER,
     ALERT_WATCH,
     ALERT_WATCH_TIMER,
 )
@@ -147,6 +151,10 @@ def render(opts: UnitOptions) -> dict[str, str]:
     worker = [python, "-m", "scripts.deploy.nemo.autodeploy", "run", *_common_args(opts),
               *(["--canary"] if opts.canary else [])]
     drift = [python, "-m", "scripts.deploy.nemo.autodeploy", "drift", *_common_args(opts)]
+    runtime_drift = [
+        python, "-m", "scripts.deploy.nemo.runtime_drift",
+        *_location_args(opts), "--mirror", str(opts.mirror),
+    ]
     alert_watch = [python, "-m", "scripts.deploy.nemo.pdone_alert_watchdog", "--hermes-home", str(opts.home)]
     install = f"\n[Install]\nWantedBy={_wanted_by(opts.scope)}\n"
     return {
@@ -177,6 +185,17 @@ def render(opts: UnitOptions) -> dict[str, str]:
             "[Unit]\nDescription=Hourly Hermes release drift check\n\n"
             f"[Timer]\nOnBootSec=10min\nOnUnitActiveSec={opts.drift_every}\nUnit={DRIFT}\n\n"
             "[Install]\nWantedBy=timers.target\n"
+        ),
+        RUNTIME_DRIFT: _service(
+            "Hermes runtime drift check (live gateways vs origin main)",
+            opts, runtime_drift, user=opts.run_as,
+            extra="Type=oneshot\nTimeoutStartSec=30min\nSuccessExitStatus=1\nNice=10\n",
+        ),
+        RUNTIME_DRIFT_TIMER: (
+            "[Unit]\nDescription=Daily 07:50 Asia/Taipei Hermes runtime drift check\n\n"
+            "[Timer]\nOnCalendar=*-*-* 07:50:00 Asia/Taipei\nPersistent=true\n"
+            "RandomizedDelaySec=60\nUnit="
+            f"{RUNTIME_DRIFT}\n\n[Install]\nWantedBy=timers.target\n"
         ),
         ALERT_WATCH: _service(
             "PD One neo-watch alert watchdog", opts, alert_watch, user=opts.run_as,
