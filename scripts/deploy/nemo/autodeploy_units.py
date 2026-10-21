@@ -151,10 +151,7 @@ def render(opts: UnitOptions) -> dict[str, str]:
     worker = [python, "-m", "scripts.deploy.nemo.autodeploy", "run", *_common_args(opts),
               *(["--canary"] if opts.canary else [])]
     drift = [python, "-m", "scripts.deploy.nemo.autodeploy", "drift", *_common_args(opts)]
-    runtime_drift = [
-        python, "-m", "scripts.deploy.nemo.runtime_drift",
-        *_location_args(opts), "--mirror", str(opts.mirror),
-    ]
+    runtime_drift = [python, "-m", "scripts.deploy.nemo.runtime_drift", *_location_args(opts)]
     alert_watch = [python, "-m", "scripts.deploy.nemo.pdone_alert_watchdog", "--hermes-home", str(opts.home)]
     install = f"\n[Install]\nWantedBy={_wanted_by(opts.scope)}\n"
     return {
@@ -304,9 +301,14 @@ def cmd_install(args: argparse.Namespace) -> int:
     if _systemctl(opts.scope, "daemon-reload") != 0:
         return 1
     if args.enable:
-        return _systemctl(opts.scope, "enable", "--now", *ENABLED)
-    _restore_unit_states(opts.scope, prior)
-    return 0
+        rc = _systemctl(opts.scope, "enable", "--now", *ENABLED)
+    else:
+        _restore_unit_states(opts.scope, prior)
+        rc = 0
+    if prior.get(ALERT_WATCH_TIMER, (None, None))[0] is None:
+        if _systemctl(opts.scope, "enable", "--now", ALERT_WATCH_TIMER) != 0:
+            return 1
+    return rc
 
 
 def cmd_uninstall(args: argparse.Namespace) -> int:

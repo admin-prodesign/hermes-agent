@@ -324,8 +324,11 @@ EOF
 chmod 600 ~/.hermes/secrets/neo-watch-webhook.env
 ```
 
-After a release containing this module is live, re-run the autodeploy installer
-with the same flags you already use, then smoke-test without posting:
+Re-run the autodeploy installer with the same flags you already use. A fresh
+install enables and starts `hermes-pdone-alert-watch.timer` even when you omit
+`--enable` (other timers keep their previous enable/active state). Supervisor
+findings and cron job state may be stored as either a list or a dict keyed by
+id. Then smoke-test without posting:
 
 ```bash
 cd ~/.hermes/releases/current

@@ -19,6 +19,28 @@ from typing import Callable
 Run = Callable[[list[str], float], subprocess.CompletedProcess]
 
 
+def resolve_bare_mirror(path: Path) -> Path:
+    """Normalize a bare-repo path (including a ``gitdir:`` pointer file)."""
+    mirror = path.expanduser()
+    if not mirror.is_absolute():
+        mirror = mirror.resolve()
+    else:
+        try:
+            mirror = mirror.resolve()
+        except OSError:
+            pass
+    if mirror.is_file():
+        for line in mirror.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if line.startswith("gitdir:"):
+                gitdir = Path(line.split(":", 1)[1].strip())
+                if not gitdir.is_absolute():
+                    gitdir = (mirror.parent / gitdir).resolve()
+                mirror = gitdir
+                break
+    return mirror
+
+
 class SourceMissing(RuntimeError):
     """The build has no tree to install. Do not create a release directory."""
 

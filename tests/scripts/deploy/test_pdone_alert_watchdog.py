@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -41,6 +42,21 @@ def _cron(home: Path, rel: str, jobs: list[dict]) -> None:
     path.write_text(json.dumps(jobs), encoding="utf-8")
 
 
+def test_secrets_path_is_a_single_file(home: Path) -> None:
+    assert watch.secrets_path(home) == home / "secrets" / "neo-watch-webhook.env"
+
+
+def test_collect_supervisor_findings_dict(home: Path) -> None:
+    path = home / "state" / "hermes_autonomous_supervisor" / "state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"findings": {"f1": {"severity": "critical", "subject": "disk"}}}),
+        encoding="utf-8",
+    )
+    live = watch.collect_live_incidents(home, systemctl_runner=lambda _a: subprocess.CompletedProcess([], 0, "", ""))
+    assert "finding:f1" in live
+
+
 def test_collect_supervisor_critical_and_input_needed(home: Path) -> None:
     _supervisor(
         home,
@@ -55,6 +71,31 @@ def test_collect_supervisor_critical_and_input_needed(home: Path) -> None:
     assert "finding:a1" in keys
     assert len(keys) == 2
     assert "finding:a2" not in keys
+
+
+def test_collect_cron_skips_paused_and_disabled_jobs(home: Path) -> None:
+    _cron(
+        home,
+        "cron/jobs.json",
+        [
+            {"id": "paused", "last_status": "error", "enabled": False},
+            {"id": "paused2", "last_status": "error", "state": "paused"},
+            {"id": "live", "last_status": "error", "name": "bad"},
+        ],
+    )
+    live = watch.collect_live_incidents(home, systemctl_runner=lambda _a: subprocess.CompletedProcess([], 0, "", ""))
+    assert list(live) == ["cron:live"]
+
+
+def test_collect_cron_jobs_dict(home: Path) -> None:
+    path = home / "cron" / "jobs.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"jobs": {"j1": {"name": "digest", "last_status": "failed"}}}),
+        encoding="utf-8",
+    )
+    live = watch.collect_live_incidents(home, systemctl_runner=lambda _a: subprocess.CompletedProcess([], 0, "", ""))
+    assert "cron:j1" in live
 
 
 def test_collect_cron_dedupes_across_paths(home: Path) -> None:
@@ -172,6 +213,64 @@ def test_webhook_failure_triggers_fallback(home: Path, monkeypatch) -> None:
     monkeypatch.setattr(watch, "send_mattermost_fallback", lambda msg, dry_run=False: fallbacks.append(msg) or True)
     watch.run_watchdog(home)
     assert len(fallbacks) == 1
+
+
+def test_ssl_context_uses_capath_not_cafile(monkeypatch) -> None:
+    class Paths:
+        cafile = "/etc/ssl/certs"
+        capath = "/etc/ssl/certs"
+
+    captured: list[dict] = []
+
+    def fake_create_default_context(*, cafile=None, capath=None):
+        captured.append({"cafile": cafile, "capath": capath})
+        return watch.ssl.SSLContext(watch.ssl.PROTOCOL_TLS_CLIENT)
+
+    monkeypatch.setattr(watch.ssl, "create_default_context", fake_create_default_context)
+    monkeypatch.setattr(watch.ssl, "get_default_verify_paths", lambda: Paths())
+    monkeypatch.setattr(watch.os.path, "isfile", lambda _p: False)
+    monkeypatch.setattr(watch.os.path, "isdir", lambda p: p == Paths.capath)
+    watch._ssl_context()
+    assert captured == [{"cafile": None, "capath": "/etc/ssl/certs"}]
+
+
+def test_install_enables_alert_watch_timer_on_first_install(tmp_path: Path, monkeypatch) -> None:
+    from scripts.deploy.nemo.autodeploy_units import ALERT_WATCH_TIMER, cmd_install
+
+    calls: list[list[str]] = []
+
+    def fake_systemctl(scope: str, *args: str) -> int:
+        calls.append([scope, *args])
+        return 0
+
+    monkeypatch.setattr("scripts.deploy.nemo.autodeploy_units._systemctl", fake_systemctl)
+    monkeypatch.setattr("scripts.deploy.nemo.autodeploy_units._capture_unit_states", lambda *_a: {ALERT_WATCH_TIMER: (None, None)})
+    monkeypatch.setattr("scripts.deploy.nemo.autodeploy_units.write_units", lambda *_a: ["hermes-pdone-alert-watch.timer"])
+    monkeypatch.setattr("scripts.deploy.nemo.autodeploy_units._remove_legacy", lambda *_a: None)
+    home = tmp_path / "hermes"
+    releases = home / "releases"
+    current = releases / "current"
+    (current / ".venv" / "bin").mkdir(parents=True)
+    (current / ".venv" / "bin" / "python").write_text("", encoding="utf-8")
+    mirror = tmp_path / "mirror.git"
+    mirror.mkdir()
+    args = argparse.Namespace(
+        hermes_home=str(home),
+        releases=str(releases),
+        mirror=str(mirror),
+        remote="origin",
+        scope="user",
+        poll_every="60s",
+        alert_script=None,
+        profiles=None,
+        run_as=None,
+        worker_user=None,
+        dry_run=False,
+        canary=False,
+        enable=False,
+    )
+    assert cmd_install(args) == 0
+    assert ["user", "enable", "--now", ALERT_WATCH_TIMER] in calls
 
 
 def test_units_render_alert_watch_timer(tmp_path: Path) -> None:
