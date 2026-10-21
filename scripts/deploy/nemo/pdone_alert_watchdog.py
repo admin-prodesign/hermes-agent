@@ -78,7 +78,7 @@ def _parse_iso(text: str | None) -> datetime | None:
 
 def secrets_path(home: Path) -> Path:
     override = os.environ.get("NEO_WATCH_SECRETS_FILE", "").strip()
-    return Path(override).expanduser() if override else home / DEFAULT_SECRETS_REL / "neo-watch-webhook.env"
+    return Path(override).expanduser() if override else home / DEFAULT_SECRETS_REL
 
 
 def state_dir(home: Path) -> Path:
@@ -175,6 +175,22 @@ def _finding_alertable(finding: dict[str, Any]) -> bool:
     return "INPUT NEEDED" in subject.upper()
 
 
+def _as_record_list(value: object) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, dict):
+        items: list[dict[str, Any]] = []
+        for key, item in value.items():
+            if not isinstance(item, dict):
+                continue
+            record = dict(item)
+            if not str(record.get("id") or "").strip():
+                record["id"] = str(key)
+            items.append(record)
+        return items
+    return []
+
+
 def collect_supervisor_findings(path: Path) -> list[LiveIncident]:
     if not path.is_file():
         return []
@@ -184,10 +200,9 @@ def collect_supervisor_findings(path: Path) -> list[LiveIncident]:
         LOG.exception("failed to read supervisor state %s", path)
         return []
     findings = payload.get("findings") if isinstance(payload, dict) else None
-    if not isinstance(findings, list):
-        return []
+    raw_findings = _as_record_list(findings)
     incidents: list[LiveIncident] = []
-    for raw in findings:
+    for raw in raw_findings:
         if not isinstance(raw, dict) or not _finding_alertable(raw):
             continue
         key = _finding_key(raw)
@@ -206,6 +221,11 @@ def collect_supervisor_findings(path: Path) -> list[LiveIncident]:
 
 
 def _cron_failed(job: dict[str, Any]) -> bool:
+    if not job.get("enabled", True):
+        return False
+    state = str(job.get("state") or "").strip().lower()
+    if state == "paused" or job.get("paused_at"):
+        return False
     status = str(job.get("last_status") or "").strip().lower()
     return status in {"error", "failed", "delivery_failed"}
 
@@ -217,14 +237,16 @@ def collect_cron_failures(paths: list[Path]) -> list[LiveIncident]:
         if not path.is_file():
             continue
         try:
-            jobs = json.loads(path.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             LOG.exception("failed to read cron jobs %s", path)
             continue
-        if not isinstance(jobs, list):
-            continue
-        for job in jobs:
-            if not isinstance(job, dict) or not _cron_failed(job):
+        if isinstance(payload, dict):
+            jobs = payload.get("jobs", payload)
+        else:
+            jobs = payload
+        for job in _as_record_list(jobs):
+            if not _cron_failed(job):
                 continue
             job_id = str(job.get("id") or "").strip()
             if not job_id or job_id in seen:
@@ -400,13 +422,13 @@ def build_payload(
     return body, body.get("truncated_items", False)
 
 
-def _cafile() -> str:
+def _ssl_context() -> ssl.SSLContext:
     paths = ssl.get_default_verify_paths()
-    if paths.cafile:
-        return paths.cafile
-    if paths.capath:
-        return paths.capath
-    return "/etc/ssl/certs/ca-certificates.crt"
+    if paths.cafile and os.path.isfile(paths.cafile):
+        return ssl.create_default_context(cafile=paths.cafile)
+    if paths.capath and os.path.isdir(paths.capath):
+        return ssl.create_default_context(capath=paths.capath)
+    return ssl.create_default_context()
 
 
 def post_webhook(payload: dict[str, Any], *, dry_run: bool) -> bool:
@@ -424,7 +446,7 @@ def post_webhook(payload: dict[str, Any], *, dry_run: bool) -> bool:
     headers = {"Content-Type": "application/json", header_name: f"{prefix}{token}" if token else prefix.rstrip()}
     request = urllib.request.Request(url, data=data, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context(cafile=_cafile())):
+        with urllib.request.urlopen(request, timeout=30, context=_ssl_context()):
             return True
     except (urllib.error.URLError, TimeoutError, ssl.SSLError) as exc:
         LOG.error("webhook post failed: %s", exc)
