@@ -14,26 +14,23 @@ Exit codes (systemd treats only 0 and 1 as success when ``SuccessExitStatus=1``)
 from __future__ import annotations
 
 import argparse
-import hashlib
-import io
 import json
 import os
 import subprocess
-import sys
-import tarfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Sequence
 
+from scripts.deploy.nemo.drift import DriftReport, compare_tree as drift_compare_tree, tree_blobs
 from scripts.deploy.nemo.layout import (
     DEFAULT_PROFILES,
     gateway_unit_name,
     releases_dir,
     resolve_hermes_home,
 )
-from scripts.deploy.nemo.source import Run, fetch_sha, run_cmd
+from scripts.deploy.nemo.source import Run, fetch_sha, resolve_bare_mirror, run_cmd
 
 EXIT_OK = 0
 EXIT_DRIFT = 1
@@ -44,8 +41,6 @@ EXCLUDE_TOP = frozenset({
     ".hermes-runtime-sha", ".web_ui_build.lock", ".mypy_cache", ".ruff_cache", "build", "dist",
 })
 EXCLUDE_ANY = frozenset({"__pycache__", "node_modules", ".pytest_cache"})
-EXCLUDE_PREFIX = ("hermes_cli/web_dist/", "hermes_agent.egg-info/", ".hermes/bin/")
-EXCLUDE_SUFFIX = (".pyc", ".pyo", ".so")
 
 GitRun = Callable[[list[str], float], subprocess.CompletedProcess]
 
@@ -58,15 +53,6 @@ class GatewayRuntime:
     root: Path | None
     env_sha: str | None
     file_sha: str | None
-
-
-def excluded(rel: str) -> bool:
-    parts = rel.split("/")
-    if parts[0] in EXCLUDE_TOP:
-        return True
-    if any(part in EXCLUDE_ANY for part in parts):
-        return True
-    return rel.startswith(EXCLUDE_PREFIX) or rel.endswith(EXCLUDE_SUFFIX)
 
 
 def release_root_from_interpreter(
@@ -104,21 +90,27 @@ def release_root_from_interpreter(
 
 
 def _release_root_at(path: Path, releases: Path | None) -> Path | None:
-    if path.name == "releases":
+    if releases is None:
         return None
-    parent = path.parent
-    if parent.name != "releases":
-        return None
-    if releases is not None:
-        try:
-            if parent.resolve() != releases.resolve():
-                return None
-        except OSError:
-            return None
     try:
-        return path.resolve()
+        releases_root = releases.resolve()
     except OSError:
-        return path
+        releases_root = releases
+    for candidate in (path, *path.parents):
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            resolved = candidate
+        if resolved == releases_root:
+            continue
+        try:
+            parent = resolved.parent.resolve()
+        except OSError:
+            parent = resolved.parent
+        if parent != releases_root:
+            continue
+        return resolved
+    return None
 
 
 def _git(mirror: Path, *args: str, check: bool = True, capture: bool = True,
@@ -134,12 +126,21 @@ def _git(mirror: Path, *args: str, check: bool = True, capture: bool = True,
 
 
 def main_sha(mirror: Path, remote: str = "origin", *, run: GitRun | None = None) -> str | None:
-    try:
-        completed = _git(mirror, "rev-parse", f"{remote}/main", check=True, run=run)
-    except RuntimeError:
-        return None
-    text = (completed.stdout or b"").decode("ascii", "replace").strip()
-    return text or None
+    mirror = resolve_bare_mirror(mirror)
+    for attempt in range(2):
+        try:
+            completed = _git(mirror, "rev-parse", f"{remote}/main", check=True, run=run)
+        except RuntimeError:
+            if attempt:
+                return None
+            try:
+                _git(mirror, "fetch", "--no-tags", remote, "main", check=True, run=run)
+            except RuntimeError:
+                return None
+            continue
+        text = (completed.stdout or b"").decode("ascii", "replace").strip()
+        return text or None
+    return None
 
 
 def fetch_main(mirror: Path, sha: str, *, remote: str = "origin", run: GitRun | None = None) -> None:
@@ -184,41 +185,19 @@ def unit_runtime(unit: str, releases: Path) -> GatewayRuntime | None:
 
 
 def compare_tree(root: Path, mirror: Path, sha: str, *, run: GitRun | None = None) -> dict:
-    data = _git(mirror, "archive", "--format=tar", sha, run=run).stdout
-    expected: dict[str, str] = {}
-    with tarfile.open(fileobj=io.BytesIO(data)) as archive:
-        for member in archive.getmembers():
-            if member.isfile():
-                payload = archive.extractfile(member)
-                expected[member.name] = hashlib.sha256(payload.read()).hexdigest() if payload else ""
-            elif member.issym():
-                expected[member.name] = "symlink:" + member.linkname
-    changed, missing = [], []
-    for rel, digest in expected.items():
-        path = root / rel
-        if digest.startswith("symlink:"):
-            if not path.is_symlink() or os.readlink(path) != digest[8:]:
-                changed.append(rel)
-            continue
-        if not path.is_file():
-            missing.append(rel)
-            continue
-        if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
-            changed.append(rel)
-    extra = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        rel_root = os.path.relpath(dirpath, root)
-        rel_root = "" if rel_root == "." else rel_root + "/"
-        dirnames[:] = [name for name in dirnames if not excluded(rel_root + name)]
-        for name in filenames:
-            rel = rel_root + name
-            if not excluded(rel) and rel not in expected:
-                extra.append(rel)
+    """Compare tracked files only (same rules as ``scripts.deploy.nemo.drift``)."""
+    mirror = resolve_bare_mirror(mirror)
+    runner = run or run_cmd
+    blobs = tree_blobs(mirror, sha, run=runner)
+    report = DriftReport(sha=sha)
+    drift_compare_tree(root, blobs, report, mirror=mirror, sha=sha, run=runner)
+    if report.error:
+        raise RuntimeError(report.error)
     return {
-        "files_expected": len(expected),
-        "changed": sorted(changed),
-        "missing": sorted(missing),
-        "extra": sorted(extra),
+        "files_expected": len(blobs),
+        "changed": sorted(report.modified),
+        "missing": sorted(report.missing),
+        "extra": sorted(report.extra),
     }
 
 
@@ -267,6 +246,7 @@ def run_check(
     no_notify: bool,
     run: GitRun | None = None,
 ) -> int:
+    mirror = resolve_bare_mirror(mirror)
     notify_dir = home / "state" / "runtime_drift_notify"
     drift_problems: list[str] = []
     fatal_problems: list[str] = []
@@ -388,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     home = resolve_hermes_home(Path(args.hermes_home) if args.hermes_home else None)
     releases = releases_dir(home, Path(args.releases) if args.releases else None)
-    mirror = Path(args.mirror).expanduser().resolve()
+    mirror = resolve_bare_mirror(Path(args.mirror))
     profiles = tuple(args.profiles or ()) or DEFAULT_PROFILES
     overrides = {}
     for item in args.gateway_units:

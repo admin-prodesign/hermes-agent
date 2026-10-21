@@ -89,6 +89,17 @@ def classify_script(script: Path, source: str) -> str:
     return kind if kind is not None else "unknown"
 
 
+def exec_argv_for_script(script: Path, source: str, python: str) -> tuple[str, ...]:
+    """Argv to run a read-only cron script (shell via bash, Python via ``python``)."""
+    kind = classify_script(script, source)
+    if kind == "shell":
+        bash = shutil.which("bash")
+        if bash is None:
+            return (str(script),)
+        return (bash, str(script))
+    return (python, str(script))
+
+
 def syntax_check_plan(script: Path, source: str, python: str) -> SyntaxCheckPlan:
     """Pick ``py_compile`` or ``bash -n`` (or a benign skip) from the script type."""
     reason = "no --dry-run in argparse; not executing"
@@ -178,7 +189,10 @@ def plan_policy(policy: Policy, script: Path | None, source: str, python: str) -
     if policy.kind == "exec_readonly":
         if script is None:
             return Invocation(policy.job_id, policy.name, "skip", (), "job script not found")
-        return Invocation(policy.job_id, policy.name, "exec", (python, str(script)), "read-only script run")
+        return Invocation(
+            policy.job_id, policy.name, "exec", exec_argv_for_script(script, source, python),
+            "read-only script run",
+        )
     if script is not None and accepts:
         return Invocation(
             policy.job_id, policy.name, "exec", (python, str(script), "--dry-run"),

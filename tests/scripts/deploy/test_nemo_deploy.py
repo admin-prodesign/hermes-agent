@@ -31,8 +31,8 @@ from scripts.deploy.nemo.manifest import record_build_manifest
 from scripts.deploy.nemo.layout import FRONTEND_MARKER_RELATIVE, pin_uv_cache
 from scripts.deploy.nemo.postcheck import (
     HR_SYNC, REAPER, TYPHOON, Invocation, POLICIES, classify_script, command_list, guard,
-    plan_policy, postcheck_ok, resolve_script, run_postcheck, script_accepts_dry_run,
-    syntax_check_plan,
+    exec_argv_for_script, plan_policy, postcheck_ok, resolve_script, run_postcheck,
+    script_accepts_dry_run, syntax_check_plan,
 )
 from scripts.deploy.nemo.preflight import changed_files, is_environment_failure, plan_for
 from scripts.deploy.nemo.release_swap import swap_current
@@ -552,13 +552,25 @@ def test_hr_sync_and_reaper_are_not_executed_live(tmp_path: Path) -> None:
     command_list(safe, hr, sys.executable)
 
 
+def test_postcheck_exec_readonly_runs_shell_wrappers_with_bash(tmp_path: Path) -> None:
+    script = tmp_path / "typhoon_check.sh"
+    script.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    source = script.read_text(encoding="utf-8")
+    typhoon = next(policy for policy in POLICIES if policy.job_id == TYPHOON)
+    planned = plan_policy(typhoon, script, source, sys.executable)
+    assert planned.action == "exec"
+    assert planned.argv[0].endswith("bash") or "bash" in planned.argv[0]
+    assert planned.argv[-1] == str(script)
+    assert exec_argv_for_script(script, source, sys.executable) == planned.argv
+
+
 def test_postcheck_runs_typhoon_with_the_cron_tls_mount(tmp_path: Path) -> None:
     home = tmp_path / "hermes"
     profile = home / "profiles" / "pdone"
     scripts = profile / "scripts"
     scripts.mkdir(parents=True)
     jobs = {
-        TYPHOON: ("typhoon_check.py", "url = 'https://www.cwa.gov.tw/'\n"),
+        TYPHOON: ("typhoon_check.sh", "#!/usr/bin/env bash\n# url = 'https://www.cwa.gov.tw/'\n"),
         "870dd7349151": ("digest.py", "import yaml\n"),
         REAPER: ("reaper.py", "print('reap')\n"),
         HR_SYNC: ("hr_sync.py", "import requests\n"),
@@ -581,7 +593,7 @@ def test_postcheck_runs_typhoon_with_the_cron_tls_mount(tmp_path: Path) -> None:
     hr = next(item for item in results if item["job_id"] == HR_SYNC)
     assert hr["action"] == "compile"
     assert any("py_compile" in argv for argv in hr["argv"])
-    typhoon = [item for item in seen if any("typhoon_check.py" in part for part in item[0])]
+    typhoon = [item for item in seen if any("typhoon_check.sh" in part for part in item[0])]
     assert typhoon
     assert typhoon[0][1]["_HERMES_CRON_CWA_TLS"] == "1"
     assert "cwa_site" in typhoon[0][1]["PYTHONPATH"]

@@ -13,10 +13,11 @@ from scripts.deploy.nemo.runtime_drift import (
     EXIT_DRIFT,
     EXIT_OK,
     GatewayRuntime,
+    compare_tree,
+    main_sha,
     release_root_from_interpreter,
     run_check,
 )
-
 
 def _releases() -> Path:
     return Path("/home/USER/.hermes/releases")
@@ -41,6 +42,13 @@ def test_release_root_from_interpreter_layouts(exe: Path, pythonpath: str | None
     parts = exe.parts
     name = parts[parts.index("releases") + 1]
     assert root == _releases() / name
+
+
+def test_release_root_from_pythonpath_when_interpreter_is_not_under_releases() -> None:
+    releases = Path("/home/USER/hermes-releases")
+    root = releases / "hermes-agent-abc1234567-auto"
+    exe = Path("/usr/bin/python3.14")
+    assert release_root_from_interpreter(exe, pythonpath=str(root), releases=releases) == root
 
 
 def test_release_root_rejects_paths_outside_releases_tree() -> None:
@@ -191,6 +199,53 @@ def test_run_check_clean_returns_ok(tmp_path: Path) -> None:
     assert code == EXIT_OK
 
 
+def test_main_sha_fetches_main_when_ref_missing(tmp_path: Path) -> None:
+    mirror = tmp_path / "mirror.git"
+    mirror.mkdir()
+    calls: list[str] = []
+
+    def fake_run(argv: list[str], _timeout: float):
+        import subprocess
+
+        cmd = " ".join(argv)
+        calls.append(cmd)
+        if "rev-parse" in argv and calls.count(cmd) == 1:
+            return subprocess.CompletedProcess(argv, 1, b"", b"missing")
+        if "fetch" in argv:
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+        if "rev-parse" in argv:
+            return subprocess.CompletedProcess(argv, 0, b"a" * 40, b"")
+        return subprocess.CompletedProcess(argv, 1, b"", b"")
+
+    sha = main_sha(mirror, run=fake_run)
+    assert sha == "a" * 40
+    assert any("fetch" in call for call in calls)
+
+
+def test_compare_tree_ignores_build_output_extras(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "release"
+    root.mkdir()
+    (root / "README.md").write_text("ok\n", encoding="utf-8")
+    (root / ".venv" / "lib").mkdir(parents=True)
+    (root / ".venv" / "lib" / "noise.py").write_text("x", encoding="utf-8")
+    mirror = tmp_path / "mirror.git"
+    mirror.mkdir()
+    sha = "b" * 40
+
+    def fake_tree_blobs(_mirror, _sha, *, run=None, timeout=60.0):
+        return {"README.md": ("100644", "abc")}
+
+    def fake_compare(_release, _blobs, report, **kwargs):
+        report.modified.clear()
+        report.missing.clear()
+        report.extra.clear()
+
+    monkeypatch.setattr("scripts.deploy.nemo.runtime_drift.tree_blobs", fake_tree_blobs)
+    monkeypatch.setattr("scripts.deploy.nemo.runtime_drift.drift_compare_tree", fake_compare)
+    result = compare_tree(root, mirror, sha)
+    assert result["extra"] == []
+
+
 def test_autodeploy_render_includes_runtime_drift_units(tmp_path: Path) -> None:
     home = tmp_path / "hermes"
     mirror = tmp_path / "mirror.git"
@@ -199,6 +254,7 @@ def test_autodeploy_render_includes_runtime_drift_units(tmp_path: Path) -> None:
     timer = units[RUNTIME_DRIFT_TIMER]
     current = str(home / "releases" / "current")
     assert f"{current}/.venv/bin/python -m scripts.deploy.nemo.runtime_drift" in service
+    assert service.count("--mirror") == 1
     assert f"--mirror {mirror}" in service
     assert "SuccessExitStatus=1" in service
     assert "Nice=10" in service
