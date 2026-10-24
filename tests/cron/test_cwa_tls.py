@@ -269,6 +269,73 @@ def test_urllib_mount_leaves_other_hosts_on_the_strict_default(monkeypatch):
         assert not (dgpa["context"].verify_flags & _STRICT)
 
 
+def _install_over_py313_urlopen(monkeypatch) -> list[dict]:
+    """Mount over a urlopen with the 3.13 signature: no cafile/capath/cadefault."""
+    import urllib.request
+
+    captured: list[dict] = []
+
+    def record(url, data=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, *, context=None):
+        captured.append({"url": url, "context": context})
+        return "ok"
+
+    monkeypatch.setattr(urllib.request, "urlopen", record)
+    install_cwa_tls()
+    return captured
+
+
+@pytest.mark.parametrize("kwargs", [
+    {},
+    {"cadefault": True},
+    {"cafile": None, "capath": None, "cadefault": False},
+])
+@pytest.mark.parametrize("url", ["https://www.cwa.gov.tw/V8/", "https://example.com/"])
+def test_urllib_mount_never_forwards_removed_ca_kwargs(monkeypatch, url, kwargs):
+    import urllib.request
+
+    captured = _install_over_py313_urlopen(monkeypatch)
+    assert urllib.request.urlopen(url, **kwargs) == "ok"
+    assert len(captured) == 1
+
+
+@pytest.mark.parametrize("url", ["https://www.cwa.gov.tw/V8/", "https://example.com/"])
+def test_urllib_mount_turns_cafile_into_a_verifying_context(monkeypatch, tmp_path, url):
+    import urllib.request
+
+    ca_pem, _cert, _key, _cryptography = _ca_without_subject_key_identifier(tmp_path)
+    captured = _install_over_py313_urlopen(monkeypatch)
+    urllib.request.urlopen(url, cafile=str(ca_pem))
+    context = captured[0]["context"]
+    assert isinstance(context, ssl.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+    assert any(cert["subject"] == ((("commonName", "cwa-test-ca"),),)
+               for cert in context.get_ca_certs())
+
+
+def test_urllib_mount_turns_capath_into_a_verifying_context(monkeypatch, tmp_path):
+    import urllib.request
+
+    captured = _install_over_py313_urlopen(monkeypatch)
+    urllib.request.urlopen("https://example.com/", capath=str(tmp_path))
+    context = captured[0]["context"]
+    assert isinstance(context, ssl.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+
+
+def test_urllib_mount_keeps_an_explicit_context_over_cafile(monkeypatch, tmp_path):
+    import urllib.request
+
+    ca_pem, _cert, _key, _cryptography = _ca_without_subject_key_identifier(tmp_path)
+    captured = _install_over_py313_urlopen(monkeypatch)
+    supplied_ctx = ssl.create_default_context()
+    urllib.request.urlopen("https://www.cwa.gov.tw/V8/", cafile=str(ca_pem), context=supplied_ctx)
+    urllib.request.urlopen("https://www.cwa.gov.tw/V8/", context=supplied_ctx)
+    assert captured[0]["context"] is supplied_ctx
+    assert captured[1]["context"] is supplied_ctx
+
+
 def test_requests_session_routes_cwa_and_leaves_other_hosts():
     requests = pytest.importorskip("requests")
     from requests.sessions import Session

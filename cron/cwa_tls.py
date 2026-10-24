@@ -108,15 +108,16 @@ def _install_urllib() -> None:
 
     def urlopen(url, data=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, *,
                 cafile=None, capath=None, cadefault=False, context=None):
-        # A caller-supplied context is left alone. The default path for an
-        # allowlisted URL gets the strict-flag exception and nothing else.
-        allowlisted = _is_relaxed_host(_request_host(url))
-        if context is None and cafile is None and capath is None and allowlisted:
+        # Python 3.13 removed cafile/capath/cadefault from urlopen, so they
+        # are never forwarded: a caller CA becomes a verifying context, as
+        # 3.12's urlopen did itself. A caller-supplied context is left alone.
+        # The default path for an allowlisted URL gets the strict-flag
+        # exception and nothing else.
+        if context is None and (cafile or capath):
+            context = ssl.create_default_context(cafile=cafile, capath=capath)
+        elif context is None and _is_relaxed_host(_request_host(url)):
             context = cwa_ssl_context()
-        return current(
-            url, data, timeout, cafile=cafile, capath=capath,
-            cadefault=cadefault, context=context,
-        )
+        return current(url, data, timeout, context=context)
 
     urlopen._hermes_cwa_tls = True  # type: ignore[attr-defined]
     urllib.request.urlopen = urlopen
