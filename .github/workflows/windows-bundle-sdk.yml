@@ -22,14 +22,14 @@ concurrency:
   cancel-in-progress: true
 jobs:
   windows-bundle-tools:
-    name: Cold Windows SDK (${{ matrix.runner }})
-    runs-on: ${{ matrix.runner }}
+    name: Cold Windows SDK (${{ matrix.shard }}/2)
+    runs-on: ${{ vars.WINDOWS_ARM_LARGE_RUNNER || 'windows-11-arm' }}
     # Cold ARM64 npm extraction alone can exceed 15 minutes on the hosted runner.
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        runner: [windows-latest-32-arm-core, windows-latest-32-arm-core]
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
         with:
