@@ -74,6 +74,34 @@ class BinaryPackage(Package):
     # Run the probe with cwd=binary.parent: dlopen'd backends (llama.cpp's
     # cudart) resolve their shared libraries from the working directory.
     probe_cwd = False
+    # A working copy on PATH satisfies the startup check when the pinned build
+    # is missing from the store. Repair and `hermes update` still provision the pin.
+    system_fallback = False
+
+    def system_version(self, target: str) -> Optional[str]:
+        """First line of a PATH copy's probe output, or None when none runs."""
+        rel = self._rel(target)
+        if not rel:
+            return None
+        try:
+            from hermes_platform.resolver.core import locate_command
+        except ModuleNotFoundError as exc:
+            # Bootstrap's independent PM runtime carries only pm/, not the app.
+            if exc.name not in ("hermes_platform", "hermes_platform.resolver", "hermes_platform.resolver.core"):
+                raise
+            return None
+        found = locate_command(Path(rel).stem).command
+        if not found:
+            return None
+        try:
+            proc = subprocess.run([found[0], *self.probe_args], capture_output=True,
+                                  text=True, errors="replace", timeout=10, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if proc.returncode != 0:
+            return None
+        lines = (proc.stdout or proc.stderr).strip().splitlines()
+        return lines[0].strip() if lines else found[0]
 
     def _rel(self, target: str) -> Optional[str]:
         win = target.startswith("win32")
@@ -803,6 +831,7 @@ class Ffmpeg(_BionicDebArm, BinaryPackage, DebPackage):
     name = "ffmpeg"
     deb_package = "ffmpeg"
     optional = False
+    system_fallback = True
     gaps = {target: "BtbN Linux builds link glibc dynamically" for target in MUSL_TARGETS}
 
     def main_rel(self, target: str) -> str:
@@ -861,6 +890,7 @@ class Ffmpeg(_BionicDebArm, BinaryPackage, DebPackage):
 class Ripgrep(BinaryPackage):
     name = "ripgrep"
     binary_rel = {"win32": "rg.exe", "posix": "rg"}
+    system_fallback = True
     # The ARM64 Windows release links the VC++ runtime dynamically (the x64
     # one embeds it), and a fresh Windows has no vcruntime140.dll: rg.exe
     # dies with STATUS_DLL_NOT_FOUND. Our pinned Python ships the ARM64 DLL.
