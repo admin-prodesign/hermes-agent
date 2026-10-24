@@ -898,8 +898,27 @@ def drift(*, include_venv: bool = True) -> dict[str, str]:
 
 
 def check(*, include_venv: bool = True) -> list[str]:
-    """Human-readable startup diagnostics. Use drift() for package identities."""
-    return [f"{name}: {reason}" for name, reason in drift(include_venv=include_venv).items()]
+    """Human-readable startup diagnostics. Use drift() for package identities.
+
+    A ``system_fallback`` tool missing from the store is not reported while a
+    working PATH copy exists: nothing is broken. drift() still names it, so
+    `hermes update` and `hermes pm repair` keep provisioning the pinned build."""
+    return [f"{name}: {reason}" for name, reason in drift(include_venv=include_venv).items()
+            if not _system_copy_in_use(name)]
+
+
+def _system_copy_in_use(name: str) -> bool:
+    try:
+        package = get_package(name)
+    except KeyError:
+        return False
+    if not getattr(package, "system_fallback", False):
+        return False
+    version = package.system_version(current_target())
+    if version is None:
+        return False
+    LOG.debug("%s: pinned build not installed; using system binary (%s)", name, version)
+    return True
 
 
 def _store_path_dirs() -> list[str]:
