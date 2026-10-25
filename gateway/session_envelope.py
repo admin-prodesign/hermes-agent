@@ -25,7 +25,7 @@ _EVENT_FIELDS = (
 )
 # ``reply_anchor_override`` = '' is Telegram topic transfer's "do not quote the root DM" (#139136).
 _CONTEXT_FIELDS = ('auto_skill', 'channel_prompt', 'channel_context', 'reply_expected', 'reply_anchor_override',
-                   'edit_revision')
+                   'edit_revision', 'recall_posts')
 # Closed metadata contract: only the keys the Baileys adapter stamps on ordinary inbound
 # (``WhatsAppAdapter._build_message_event``) cross native admission; any other key refuses.
 _WHATSAPP_METADATA = frozenset({'whatsapp_native_type', 'whatsapp_native', 'whatsapp_from_owner'})
@@ -145,6 +145,9 @@ def _validate_native(runner, event, provenance=None, fresh_roles=False):
             _refuse(event, 'invalid_params', name)
     if event.reply_expected is not None and type(event.reply_expected) is not bool:
         _refuse(event, 'invalid_params', 'reply_expected')
+    posts = event.recall_posts
+    if not (posts is None or isinstance(posts, list) and all(isinstance(item, str) for item in posts)):
+        _refuse(event, 'invalid_params', 'recall_posts')
     skill = event.auto_skill
     if not (skill is None or isinstance(skill, str)
             or isinstance(skill, list) and all(isinstance(item, str) for item in skill)):
