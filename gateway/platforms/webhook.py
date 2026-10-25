@@ -229,6 +229,9 @@ class WebhookAdapter(BasePlatformAdapter):
         self._delivery_info: dict[str, dict] = {}
         self._delivery_info_created: dict[str, float] = {}
         self._delivery_info_order: deque[tuple[float, str]] = deque()
+        # Route ``post_script`` + inbound payload per delivery. Kept out of ``_delivery_info``: that
+        # dict feeds the durable destination record, whose validator rejects unknown keys.
+        self._post_script_info: dict[str, dict] = {}
         self.gateway_runner = None  # set externally; needed for cross-platform delivery
         # Idempotency is scoped to the authenticated route and routed profile: provider delivery
         # IDs are not globally unique across unrelated webhook endpoints.
@@ -323,6 +326,7 @@ class WebhookAdapter(BasePlatformAdapter):
         # interactive exact-match rule would deliver.
         if is_autonomous_silence_response(content):
             logger.info("[webhook] Response for %s is a silence marker — not delivering", chat_id)
+            self._maybe_run_webhook_post_script(chat_id, content)
             return SendResult(success=True)
         from gateway.platforms.webhook_delivery import retained_destination
         try:
@@ -336,6 +340,7 @@ class WebhookAdapter(BasePlatformAdapter):
         deliver_type = delivery["deliver"]
         if deliver_type == "log":
             logger.info("[webhook] Response for %s: %s", chat_id, content[:200])
+            self._maybe_run_webhook_post_script(chat_id, content)
             return SendResult(success=True)
         if deliver_type == "github_comment":
             return await self._deliver_github_comment(content, delivery)
@@ -343,6 +348,17 @@ class WebhookAdapter(BasePlatformAdapter):
             return await self._deliver_cross_platform(deliver_type, content, delivery)
         logger.warning("[webhook] Unknown deliver type: %s", deliver_type)
         return SendResult(success=False, error=f"Unknown deliver type: {deliver_type}")
+
+    def _maybe_run_webhook_post_script(self, chat_id: str, content: str) -> None:
+        """Run optional route ``post_script`` after the agent response is available (stable scripts only)."""
+        info = self._post_script_info.get(chat_id)
+        if not info:
+            return
+        envelope = {"payload": info["payload"], "response": content or "", "route": info["route"], "chat_id": chat_id}
+        try:
+            self._route_processor.run_post_script(info["post_script"], envelope)
+        except Exception:
+            logger.exception("[webhook] post_script crashed route=%s chat=%s", info["route"], chat_id)
 
     def _prune_delivery_info(self, now: float) -> None:
         """Drop delivery_info entries older than the idempotency TTL (bounds the dict by ``rate_limit * TTL``
@@ -356,6 +372,7 @@ class WebhookAdapter(BasePlatformAdapter):
             created_at, key = order.popleft()
             if created.get(key) == created_at:
                 self._delivery_info.pop(key, None)
+                self._post_script_info.pop(key, None)
                 created.pop(key, None)
 
     def _prune_seen_deliveries(self, now: float) -> None:
@@ -801,6 +818,10 @@ class WebhookAdapter(BasePlatformAdapter):
             "deliver_extra": self._render_delivery_extra(route_config.get("deliver_extra", {}), payload),
             "route": route_name,
             "mirror": route_config.get("mirror_to_session") is True}
+        if route_config.get("post_script"):
+            self._post_script_info[session_chat_id] = {
+                "post_script": route_config["post_script"], "route": route_name,
+                "payload": payload if isinstance(payload, dict) else {}}
         self._delivery_info_created[session_chat_id] = now
         self._delivery_info_order.append((now, session_chat_id))
         self._prune_delivery_info(now)

@@ -210,6 +210,22 @@ def _tui_node_bin(bin: str) -> str:
     return path
 
 
+def _use_preinstalled_tui(tui_dir: Path) -> tuple[list[str], Path]:
+    """Run the bundle shipped in a sealed release. Never npm-install."""
+    from hermes_cli.source_build import note_runtime_npm_skipped
+
+    entry = tui_dir / "dist" / "entry.js"
+    if not entry.is_file():
+        print(
+            "The sealed release has no ui-tui/dist/entry.js. Rebuild it with "
+            "scripts/deploy/nemo/build.sh; npm install is disabled at runtime.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    note_runtime_npm_skipped()
+    return [_tui_node_bin("node"), "--expose-gc", str(entry)], tui_dir
+
+
 def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
     """TUI: --dev → tsx src; else node dist (HERMES_TUI_DIR prebuilt or esbuild)."""
 
@@ -241,6 +257,11 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
         if bundled is not None:
             return [_tui_node_bin("node"), "--expose-gc", str(bundled)], bundled.parent
 
+        from hermes_cli.source_build import runtime_npm_install_allowed
+
+        if not runtime_npm_install_allowed(tui_dir.parent):
+            return _use_preinstalled_tui(tui_dir)
+
     # About to npm install/build from source, so the workspace must exist.
     if not ext_dir:
         _ensure_tui_workspace(tui_dir)
@@ -249,10 +270,28 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
         return [_tui_node_bin("node"), "--expose-gc", str(tui_dir / "dist/entry.js")], tui_dir
 
     from hermes_cli.source_build import build_source_tui, prepare_launch_dependencies, source_build_env
+    from hermes_cli.terminal_node_deps import (
+        TerminalDepsUnavailable, ensure_dashboard_terminal_deps, sealed_tui_entry,
+    )
 
     project_root = tui_dir.parent
-    env = source_build_env()
-    prepare_launch_dependencies(project_root, env=env)
+    prepared_env: dict | None = None
+
+    def _install() -> None:
+        nonlocal prepared_env
+        prepared_env = source_build_env()
+        prepare_launch_dependencies(project_root, env=prepared_env)
+
+    # Deps already in the release: do not npm ci. Missing deps in a read-only
+    # release: one warning, then stop — never a traceback on every reconnect.
+    if not ensure_dashboard_terminal_deps(project_root, install=_install):
+        raise TerminalDepsUnavailable(project_root)
+
+    entry = tui_dir / "dist" / "entry.js"
+    if not tui_dev and sealed_tui_entry(project_root, entry):
+        return [_tui_node_bin("node"), "--expose-gc", str(entry)], tui_dir
+
+    env = prepared_env or source_build_env()
     if tui_dev:
         # tsx imports @hermes/ink's built exports; the production bundle instead
         # compiles its source directly through scripts/build/tui.mjs.
@@ -563,11 +602,17 @@ def _launch_tui(
     if resume_session_id:
         env["HERMES_TUI_RESUME"] = resume_session_id
 
-    argv, cwd = _make_tui_argv(tui_dir, tui_dev)
+    from hermes_cli.terminal_node_deps import TerminalDepsUnavailable
+
     code: Optional[int] = None
     try:
         try:
+            argv, cwd = _make_tui_argv(tui_dir, tui_dev)
             code = subprocess.call(argv, cwd=str(cwd), env=env)
+        except TerminalDepsUnavailable as exc:
+            # The active-session file and any --worktree live until the finally.
+            print(exc.user_message, file=sys.stderr)
+            code = 1
         except KeyboardInterrupt:
             code = 130
 

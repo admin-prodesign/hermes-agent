@@ -111,6 +111,11 @@ class MessageEvent:
     # ``message_id`` with new text, so native admission keys it apart from the original send.
     # Appended for positional compat (see the field-order rule above).
     edit_revision: Optional[str] = None
+    # Chronological thread/channel posts for memory recall. Authorization evidence stays in
+    # ``channel_context`` (the model prompt) and is not copied here. None: the gateway may fall
+    # back to ``channel_context``. An empty list: the adapter split that evidence out and there
+    # are no recall posts. Keyword-only in practice; appended so positional callers are stable.
+    recall_posts: Optional[List[str]] = None
 
     # Process-local admission receipt, never routing metadata or execution acknowledgement.
     _gateway_accepted: bool = field(default=False, init=False, repr=False, compare=False)

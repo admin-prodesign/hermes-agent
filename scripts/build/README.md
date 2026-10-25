@@ -96,6 +96,11 @@ The receipt does not validate arbitrary edits inside installed packages and
 never skips product compilation. CI saves the prepared tree before packaging
 can mutate it, and before unrelated build/signing failures can discard it.
 
+`python -m scripts.bundles.stage` runs this install for the `ui-tui` and `web`
+workspaces and keeps the tree in the staged agent (`<out>/hermes-agent/node_modules`).
+The dashboard terminal then skips `npm ci`. A read-only release that is missing
+the tree logs one warning and disables the terminal.
+
 ## Frontend products
 
 ```sh

@@ -275,6 +275,7 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
                 persist_user_timestamp=prepared.persist_user_timestamp,
                 persist_user_display_kind=prepared.persist_user_display_kind,
                 reply_expected=event.reply_expected,
+                memory_recall=prepared.memory_recall,
                 persist_user_display_metadata={
                     "gateway_input_owner": prepared.persistence_owner, **display_metadata_for_event(event),
                     **reply_expected_metadata(event.reply_expected), **diagnostic_metadata(event)},
@@ -1202,7 +1203,11 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
         for status / approval / stream sends (Feishu topics need the triggering message id via the
         reply API, so carry it as a fallback). Slack and Buzz honour the user's reply_in_thread
         opt-out: never synthesise a thread for progress, or every later reply inherits it."""
-        from gateway.run import _non_conversational_metadata, _resolve_progress_thread_id
+        from gateway.run import (
+            _mattermost_progress_thread_route,
+            _non_conversational_metadata,
+            _resolve_progress_thread_id,
+        )
         is_buzz = str(getattr(source.platform, "value", source.platform) or "").lower() == "buzz"
         _progress_reply_in_thread = True
         _adapter = self._delivery_adapter_for(source) if source.platform == Platform.SLACK or is_buzz else None
@@ -1218,9 +1223,16 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
                     )
             except Exception:
                 _progress_reply_in_thread = True
-        _progress_thread_id = _resolve_progress_thread_id(
-            source.platform, source.thread_id, event_message_id, reply_in_thread=_progress_reply_in_thread,
-        )
+        _mm_reply_to = None
+        if source.platform == Platform.MATTERMOST:
+            _progress_thread_id, _mm_reply_to = _mattermost_progress_thread_route(
+                source_thread_id=source.thread_id,
+                event_message_id=event_message_id,
+            )
+        else:
+            _progress_thread_id = _resolve_progress_thread_id(
+                source.platform, source.thread_id, event_message_id, reply_in_thread=_progress_reply_in_thread,
+            )
         # Relay Discord auto-thread lane: the connector stamps prospective_thread_id at ingest.
         _relay_prospective_thread_id = (
             str(getattr(source, "prospective_thread_id", None))
@@ -1252,6 +1264,8 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
             or _relay_prospective_thread_id
             else None
         )
+        if source.platform == Platform.MATTERMOST and _mm_reply_to:
+            _progress_reply_to = _mm_reply_to
         if source.platform == Platform.FEISHU and source.thread_id and event_message_id:
             _status_thread_metadata = {"thread_id": _progress_thread_id, "reply_to_message_id": event_message_id}
         else:
@@ -1919,10 +1933,13 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
                 # A drained human turn re-pins its channel inputs; make them durable like a first turn.
                 await self._persist_prompt_pins(next_session_key, session_id)
             next_message_type = getattr(pending_event, "message_type", None)
+            from agent.memory_recall_query import recall_input_for_event
+            next_memory_recall = recall_input_for_event(pending_event)
         else:
             # Event-less interrupt/steer follow-ups continue the effective prompt
             # of the turn they are recursively following.
             next_channel_prompt = turn_ctx.channel_prompt
+            next_memory_recall = None
 
         # Clear the prior turn's streaming-TTS completion marker so the recursive turn isn't suppressed.
         # See #60671.
@@ -1974,6 +1991,7 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
                 persist_user_display_metadata={
                     **display_metadata_for_event(pending_event),
                     **reply_expected_metadata(next_reply_expected), **diagnostic_metadata(pending_event)} or None,
+                memory_recall=next_memory_recall,
             )
         except asyncio.CancelledError:
             await _run_followup_processing_hook(
@@ -2302,6 +2320,7 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
         reply_expected: Optional[bool] = None,
         scheduled_heartbeat: bool = False,
         title_user_message: Optional[str] = None,
+        memory_recall: Optional[Any] = None,
     ) -> dict[str, Any]:
         """Run the agent; returns the full run_conversation result dict.
 
@@ -2348,6 +2367,7 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
             reply_expected=reply_expected,
             persist_user_display_metadata=persist_user_display_metadata, scheduled_heartbeat=scheduled_heartbeat,
             voice_turn=str(getattr(message_type, "value", message_type) or "").lower() == "voice",
+            memory_recall=memory_recall,
         )
         _status_thread_metadata = self._run_agent_bind_turn_wiring(
             turn_ctx, turn_runner, source, event_message_id, disp._native_slack_task_cards,

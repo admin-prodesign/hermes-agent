@@ -453,6 +453,120 @@ class TestMattermostFileUpload:
         assert result.success is True
         assert result.message_id == "post_with_file"
 
+    def test_unicode_filename_is_not_percent_encoded(self):
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        name = "01-良器-工作規則 Pro-Design Work Rules.docx"
+        form = _build_file_upload_form("chan", b"docx", name)
+        header = form()._parts[1][0].headers["Content-Disposition"]
+        assert name in header
+        assert "%E8%89%AF" not in header
+        assert "%20" not in header
+
+    def test_ascii_filename_is_unchanged(self):
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        form = _build_file_upload_form("chan", b"pdf", "preview.pdf", "application/pdf")
+        header = form()._parts[1][0].headers["Content-Disposition"]
+        assert 'filename="preview.pdf"' in header
+
+    def test_header_controls_are_replaced_before_unquoted_filename(self):
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        form = _build_file_upload_form("chan", b"x", "bad\r\nname\x00.docx")
+        header = form()._parts[1][0].headers["Content-Disposition"]
+        assert "\r" not in header
+        assert "\n" not in header
+        assert "\x00" not in header
+        assert "bad__name_.docx" in header
+
+    @pytest.mark.asyncio
+    async def test_upload_file_posts_shared_form(self):
+        from plugins.platforms.mattermost.adapter import _build_file_upload_form
+
+        mock_upload_resp = AsyncMock()
+        mock_upload_resp.status = 200
+        mock_upload_resp.json = AsyncMock(return_value={"file_infos": [{"id": "file_zh"}]})
+        mock_upload_resp.text = AsyncMock(return_value="")
+        mock_upload_resp.__aenter__ = AsyncMock(return_value=mock_upload_resp)
+        mock_upload_resp.__aexit__ = AsyncMock(return_value=False)
+        self.adapter._session.post = MagicMock(return_value=mock_upload_resp)
+        self.adapter._base_url = "https://mm.example.com"
+
+        file_id = await self.adapter._upload_file("chan", b"docx", "良器.docx")
+
+        assert file_id == "file_zh"
+        posted = self.adapter._session.post.call_args.kwargs["data"]
+        assert posted is not None
+        header = posted()._parts[1][0].headers["Content-Disposition"]
+        assert "良器.docx" in header
+        assert "%E8%89%AF" not in header
+        assert posted()._parts[0][0].headers["Content-Disposition"]
+        built = _build_file_upload_form("chan", b"docx", "良器.docx")
+        assert "良器.docx" in built()._parts[1][0].headers["Content-Disposition"]
+
+    @pytest.mark.asyncio
+    async def test_standalone_send_uses_shared_form_builder(self, tmp_path, monkeypatch):
+        from plugins.platforms.mattermost import adapter as mm
+
+        path = tmp_path / "良器.docx"
+        path.write_bytes(b"docx")
+        seen = {}
+
+        def fake_builder(channel_id, file_data, filename, content_type=None):
+            seen["call"] = (channel_id, file_data, filename, content_type)
+            return _sentinel
+
+        _sentinel = object()
+        monkeypatch.setattr(mm, "_build_file_upload_form", fake_builder)
+
+        class _Resp:
+            def __init__(self, payload):
+                self.status = 201
+                self._payload = payload
+
+            async def text(self):
+                return ""
+
+            async def json(self):
+                return self._payload
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+        class _Session:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            def post(self, url, **kwargs):
+                seen.setdefault("posts", []).append((url, kwargs.get("data")))
+                if url.endswith("/files"):
+                    return _Resp({"file_infos": [{"id": "fid"}]})
+                return _Resp({"id": "postid"})
+
+        monkeypatch.setattr("aiohttp.ClientSession", _Session)
+        result = await mm._standalone_send(
+            PlatformConfig(enabled=True, token="tok", extra={"url": "https://mm.example.com"}),
+            "chan",
+            "msg",
+            media_files=[str(path)],
+        )
+
+        assert result["success"] is True
+        assert seen["call"][0] == "chan"
+        assert seen["call"][1] == b"docx"
+        assert seen["call"][2] == "良器.docx"
+        assert seen["posts"][0][1] is _sentinel
+
 
 # ---------------------------------------------------------------------------
 # Dedup cache
@@ -709,3 +823,352 @@ class TestMultiplexProfileScope:
             # os.environ.
             assert "MATTERMOST_REQUIRE_MENTION" not in os.environ
 
+
+
+class TestMattermostProgressRouting:
+    def test_root_post_progress_uses_triggering_post_as_thread_root(self):
+        """Root-channel mentions have no source.thread_id, but progress must thread."""
+        from gateway.run import _mattermost_progress_thread_route
+
+        thread_id, reply_to = _mattermost_progress_thread_route(
+            source_thread_id=None,
+            event_message_id="root_post",
+        )
+
+        assert thread_id == "root_post"
+        assert reply_to == "root_post"
+
+    def test_reply_progress_preserves_existing_root_and_reply_anchor(self):
+        from gateway.run import _mattermost_progress_thread_route
+
+        thread_id, reply_to = _mattermost_progress_thread_route(
+            source_thread_id="thread_root",
+            event_message_id="reply_post",
+        )
+
+        assert thread_id == "thread_root"
+        assert reply_to == "reply_post"
+
+
+class TestMattermostAutoThreadRootHeading:
+    def setup_method(self):
+        self.adapter = _make_adapter()
+        self.adapter._bot_user_id = "bot_user_id"
+        self.adapter.config.extra["auto_thread_root_heading"] = True
+        self.adapter.handle_message = AsyncMock()
+
+    def _reply_event(self, message="Follow-up reply"):
+        post_data = {
+            "id": "reply_post",
+            "root_id": "root_post",
+            "user_id": "user_123",
+            "channel_id": "chan_456",
+            "message": message,
+        }
+        return {
+            "event": "posted",
+            "data": {
+                "post": json.dumps(post_data),
+                "channel_type": "O",
+                "sender_name": "@alice",
+            },
+        }
+
+    def test_detects_existing_markdown_heading(self):
+        assert self.adapter._has_markdown_heading("### Proper title\n\nBody") is True
+        assert self.adapter._has_markdown_heading("body without heading") is False
+        assert self.adapter._has_markdown_heading("\n\n# Title") is True
+
+    def test_detects_bilingual_heading_title(self):
+        assert self.adapter._heading_title_is_bilingual("出貨延遲檢討 / Shipping Delay Review") is True
+        assert self.adapter._heading_title_is_bilingual("Shipping Delay Review / 出貨延遲檢討") is True
+        assert self.adapter._heading_title_is_bilingual("PD One 測試") is False
+        assert self.adapter._heading_title_is_bilingual("Shipping Delay Review") is False
+
+    @pytest.mark.asyncio
+    async def test_existing_heading_utility_output_must_preserve_source_text(self):
+        class _Message:
+            content = "Rewritten Thread Title / 改寫後標題"
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        with patch("plugins.platforms.mattermost.adapter.async_call_llm", new=AsyncMock(return_value=_Response())) as llm:
+            title = await self.adapter._generate_thread_root_heading_title(
+                "## Existing Thread Title\n\nBody",
+                "reply",
+                existing_heading_title="Existing Thread Title",
+            )
+
+        assert title is None
+        llm.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_title_generation_failure_skips_heading(self):
+        with patch(
+            "plugins.platforms.mattermost.adapter.async_call_llm",
+            new=AsyncMock(side_effect=RuntimeError("title api down")),
+        ):
+            title = await self.adapter._generate_thread_root_heading_title(
+                "Can someone look at this?",
+                "I can help",
+            )
+
+        assert title is None
+
+    @pytest.mark.asyncio
+    async def test_empty_utility_response_skips_heading(self):
+        class _Message:
+            content = ""
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        with patch(
+            "plugins.platforms.mattermost.adapter.async_call_llm",
+            new=AsyncMock(return_value=_Response()),
+        ):
+            title = await self.adapter._generate_thread_root_heading_title(
+                "Can someone look at this?",
+                "I can help",
+            )
+
+        assert title is None
+
+    @pytest.mark.asyncio
+    async def test_existing_heading_accepts_utility_translation_that_preserves_source_text(self):
+        class _Message:
+            content = "Existing Thread Title / 既有討論標題"
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        with patch("plugins.platforms.mattermost.adapter.async_call_llm", new=AsyncMock(return_value=_Response())):
+            title = await self.adapter._generate_thread_root_heading_title(
+                "## Existing Thread Title\n\nBody",
+                "reply",
+                existing_heading_title="Existing Thread Title",
+            )
+
+        assert title == "Existing Thread Title / 既有討論標題"
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_adds_heading_before_mention_gate(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "Can someone look at this?",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="出貨延遲檢討 / Shipping Delay Review")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("I can help"))
+
+        self.adapter._api_put.assert_awaited_once_with(
+            "posts/root_post/patch",
+            {"message": "##### 出貨延遲檢討 / Shipping Delay Review\n\nCan someone look at this?"},
+        )
+        # No @mention in the reply, so the normal agent path should still be skipped.
+        assert getattr(self.adapter.handle_message, "call_count") == 0
+
+    @pytest.mark.asyncio
+    async def test_own_thread_reply_adds_heading_but_does_not_reenter_agent(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "Untitled user question",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="使用者問題 / User Question")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+        event = self._reply_event("PD One answer")
+        post = json.loads(event["data"]["post"])
+        post["id"] = "bot_reply_post"
+        post["user_id"] = "bot_user_id"
+        event["data"]["post"] = json.dumps(post)
+        event["data"]["sender_name"] = "@pd_one_bot"
+
+        await self.adapter._handle_ws_event(event)
+
+        self.adapter._api_put.assert_awaited_once_with(
+            "posts/root_post/patch",
+            {"message": "##### 使用者問題 / User Question\n\nUntitled user question"},
+        )
+        assert getattr(self.adapter.handle_message, "call_count") == 0
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_updates_existing_non_bilingual_heading(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "## Existing Thread Title\n\nBody",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="Existing Thread Title / 既有討論標題")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._generate_thread_root_heading_title.assert_awaited_once_with(
+            "## Existing Thread Title\n\nBody",
+            "another reply",
+            existing_heading_title="Existing Thread Title",
+        )
+        self.adapter._api_put.assert_awaited_once_with(
+            "posts/root_post/patch",
+            {"message": "## Existing Thread Title / 既有討論標題\n\nBody"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_root_that_already_has_bilingual_heading(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "## 既有討論標題 / Existing Thread Title\n\nBody",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value="Ignored Title")
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._generate_thread_root_heading_title.assert_not_awaited()
+        self.adapter._api_put.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_when_disabled(self):
+        self.adapter.config.extra["auto_thread_root_heading"] = False
+        self.adapter._api_get = AsyncMock(return_value={"message": "Root"})
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._api_get.assert_not_awaited()
+        self.adapter._api_put.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_configured_disabled_channel(self):
+        self.adapter.config.extra["auto_thread_root_heading_disabled_channels"] = ["chan_456"]
+        self.adapter._api_get = AsyncMock(return_value={"message": "Root"})
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("another reply"))
+
+        self.adapter._api_get.assert_not_awaited()
+        self.adapter._api_put.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_thread_reply_skips_patch_when_title_generation_fails(self):
+        self.adapter._api_get = AsyncMock(return_value={
+            "id": "root_post",
+            "message": "Can someone look at this?",
+            "delete_at": 0,
+        })
+        self.adapter._generate_thread_root_heading_title = AsyncMock(return_value=None)
+        self.adapter._api_put = AsyncMock(return_value={"id": "root_post"})
+
+        await self.adapter._handle_ws_event(self._reply_event("I can help"))
+
+        self.adapter._generate_thread_root_heading_title.assert_awaited_once()
+        self.adapter._api_put.assert_not_awaited()
+
+
+class TestMattermostMentionTranslation:
+    @pytest.mark.asyncio
+    async def test_appends_utility_translation_when_enabled(self):
+        adapter = _make_adapter()
+        adapter.config.extra["auto_translate_mentioned_channel_messages"] = True
+        adapter._generate_mention_translation = AsyncMock(return_value="請檢查今天的排程。")
+        adapter._api_put = AsyncMock(return_value={"id": "post123"})
+        post = {"id": "post123", "message": "@pd-one please check today's schedule."}
+
+        await adapter._maybe_append_mention_translation(
+            post,
+            has_mention=True,
+            channel_type_raw="O",
+        )
+
+        adapter._api_put.assert_awaited_once()
+        path, payload = adapter._api_put.await_args.args
+        assert path == "posts/post123/patch"
+        assert "**Translation / 翻譯 (utility-agent):**" in payload["message"]
+        assert "請檢查今天的排程。" in payload["message"]
+        assert post["message"] == payload["message"]
+
+    @pytest.mark.asyncio
+    async def test_skips_dm_and_existing_translation_marker(self):
+        adapter = _make_adapter()
+        adapter.config.extra["auto_translate_mentioned_channel_messages"] = True
+        adapter._generate_mention_translation = AsyncMock(return_value="translation")
+        adapter._api_put = AsyncMock(return_value={"id": "post123"})
+
+        await adapter._maybe_append_mention_translation(
+            {"id": "post123", "message": "@pd-one hello"},
+            has_mention=True,
+            channel_type_raw="D",
+        )
+        await adapter._maybe_append_mention_translation(
+            {"id": "post124", "message": "@pd-one hello\n\n**Translation / 翻譯 (utility-agent):**\n你好"},
+            has_mention=True,
+            channel_type_raw="O",
+        )
+
+        adapter._generate_mention_translation.assert_not_awaited()
+        adapter._api_put.assert_not_awaited()
+
+    def test_mixed_chinese_heading_with_english_instructions_targets_chinese(self):
+        adapter = _make_adapter()
+        message = (
+            "#### 2026/06/15 邱老師面談（商周） / 2026/06/15 Interview with Teacher Chiu (Business Weekly)\n\n"
+            "@pd_one_bot Transcribe this meeting consisting of two recordings, and provide a bilingual meeting report."
+        )
+
+        assert adapter._mention_translation_target_language(message) == "Traditional Chinese"
+
+    @pytest.mark.asyncio
+    async def test_mention_translation_prompt_warns_not_to_keep_english_instructions(self):
+        adapter = _make_adapter()
+
+        class _Message:
+            content = "#### 2026/06/15 邱老師面談（商周）\n\n@pd_one_bot 請轉錄這場由兩段錄音組成的會議。"
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        message = (
+            "#### 2026/06/15 邱老師面談（商周） / 2026/06/15 Interview with Teacher Chiu (Business Weekly)\n\n"
+            "@pd_one_bot Transcribe this meeting consisting of two recordings, and provide a bilingual meeting report."
+        )
+        with patch("plugins.platforms.mattermost.adapter.async_call_llm", new=AsyncMock(return_value=_Response())) as llm:
+            translated = await adapter._generate_mention_translation(message)
+
+        assert "請轉錄" in translated
+        call = llm.await_args.kwargs
+        prompt_text = "\n".join(m["content"] for m in call["messages"])
+        assert "into Traditional Chinese" in prompt_text
+        assert "do not leave English instructions in English just because the heading contains Chinese" in prompt_text
+
+    def test_yaml_bridge_exports_mention_translation_env(self, monkeypatch):
+        from plugins.platforms.mattermost.adapter import _apply_yaml_config
+
+        monkeypatch.delenv("MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES", raising=False)
+        _apply_yaml_config({}, {"auto_translate_mentioned_channel_messages": True})
+
+        assert os.environ["MATTERMOST_AUTO_TRANSLATE_MENTIONED_CHANNEL_MESSAGES"] == "true"
+
+    def test_yaml_bridge_exports_ignored_channels_env(self, monkeypatch):
+        from plugins.platforms.mattermost.adapter import _apply_yaml_config
+
+        monkeypatch.delenv("MATTERMOST_IGNORED_CHANNELS", raising=False)
+        _apply_yaml_config({}, {"ignored_channels": ["chanA", "chanB"]})
+
+        assert os.environ["MATTERMOST_IGNORED_CHANNELS"] == "chanA,chanB"

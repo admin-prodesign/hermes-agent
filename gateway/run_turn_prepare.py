@@ -628,6 +628,7 @@ class GatewayTurnPrepareMixin:
         persistence_session_id: Optional[str] = None
         persistence_owner: Optional[str] = None
         title_user_message: Optional[str] = None
+        memory_recall: Optional[Any] = None
 
     async def _hmwa_prepare_turn(self, event, source, session_entry, session_key, _quick_key, run_generation):
         """Everything between session resolution and the agent run: session open, task-local env,
@@ -732,8 +733,11 @@ class GatewayTurnPrepareMixin:
                      source.chat_id, source.thread_id, str(event.message_id)]
         owner = (str(uuid.uuid5(uuid.NAMESPACE_URL, json.dumps(namespace)))
                  if event.message_id else str(uuid.uuid4()))
+        from agent.memory_recall_query import recall_input_for_event
+
         return self._PreparedTurn(
             history, context_prompt, message_text, persist_user_message, persist_user_timestamp,
             persist_user_display_kind, session_entry.session_id, owner,
             title_user_message=title_user_message,
+            memory_recall=recall_input_for_event(event),
         ), _session_env_tokens

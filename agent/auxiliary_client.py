@@ -7786,6 +7786,11 @@ def _ladder_credential_rungs(
             if recovery_err is None:
                 return resp, None
         if _recover_provider_pool(pool_provider, recovery_err, failed_api_key=_client_api_key):
+            if _normalize_aux_provider(pool_provider) != _normalize_aux_provider(resolved_provider):
+                # Pool recovery evicts the backend key (e.g. xai-oauth). Auto-routed
+                # calls cache the stale client under "auto"; drop that too or the
+                # retry rebuilds from the dead bearer.
+                _evict_cached_clients(resolved_provider)
             logger.info("Auxiliary %s%s: recovered %s via credential-pool rotation after %s",
                         task or "call", tag, pool_provider, type(recovery_err).__name__)
             try:
@@ -8130,7 +8135,15 @@ def _ladder_step_call(
         return "call", step.args, dict(provider=req.resolved_provider, api_mode=req.resolved_api_mode)
     if step.kind == "retry_same_provider":
         retry_provider, retry_model = step.args
-        return "retry", (), dict(retry_kwargs, resolved_provider=retry_provider, resolved_model=retry_model)
+        # Auth recovery refreshes the store/pool, then this retry rebuilds a client.
+        # Drop the failed request's explicit bearer; otherwise `_get_cached_client`
+        # rebuilds with the dead token and 403s immediately (xAI mention translation /
+        # thread titles: refresh logged success, retry reused `resolved_api_key`).
+        retry_kw = dict(
+            retry_kwargs, resolved_provider=retry_provider, resolved_model=retry_model,
+        )
+        retry_kw["resolved_api_key"] = None
+        return "retry", (), retry_kw
     return "fallback", step.args, candidate_kwargs
 
 

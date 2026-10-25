@@ -1636,6 +1636,7 @@ def _run_conversation_turn(
     moa_config: Optional[dict[str, Any]] = None,
     title_user_message: Optional[str] = None,
     prelude: Optional[Prelude] = None,
+    memory_recall: Any = None,
 ) -> dict[str, Any]:
     """Run a complete conversation with tool calling until completion; returns the result dict.
 
@@ -1674,6 +1675,7 @@ def _run_conversation_turn(
             persist_user_display_metadata=persist_user_display_metadata,
             persist_user_platform_id=persist_user_platform_id,
             turn_author=turn_author,
+            memory_recall=memory_recall,
             restore_or_build_system_prompt=_restore_or_build_system_prompt,
             install_safe_stdio=_install_safe_stdio,
             sanitize_surrogates=_sanitize_surrogates,
@@ -1798,6 +1800,7 @@ def run_conversation(
     turn_author: Optional[dict[str, Any]] = None,
     title_user_message: Optional[str] = None,
     prelude: Optional[Prelude] = None,
+    memory_recall: Any = None,
 ) -> dict[str, Any]:
     """Run one turn (see ``_run_conversation_turn``) and export the current-turn boundary.
 
@@ -1832,6 +1835,7 @@ def run_conversation(
                 turn_author=turn_author,
                 title_user_message=title_user_message,
                 prelude=prelude,
+                memory_recall=memory_recall,
             )
         finally:
             end_voice_turn_route(agent)

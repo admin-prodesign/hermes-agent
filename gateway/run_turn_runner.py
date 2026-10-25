@@ -985,6 +985,8 @@ class TurnRunner(GatewayTurnProgressMixin, GatewaySessionAgentMixin):
                 kwargs["prelude"] = prelude
             if persist_user_timestamp_override is not None:
                 kwargs["persist_user_timestamp"] = persist_user_timestamp_override
+            if getattr(ctx, "memory_recall", None) is not None and _accepts_keyword(agent.run_conversation, "memory_recall"):
+                kwargs["memory_recall"] = ctx.memory_recall
             # The RAW inbound id (not event_message_id, the reply anchor) rides the persisted user
             # turn so a restart-interrupted turn is recorded WITH its id for drain-window dedup.
             if ctx.inbound_message_id is not None:
