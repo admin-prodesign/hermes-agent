@@ -1,6 +1,9 @@
 # actionlint knows only GitHub-hosted runner labels. An org admin names the
 # larger runners. Each one therefore reads as "unknown runner label" and hides
-# the real findings, unless this file declares it.
+# the real findings, unless this file declares it. Workflows default to standard
+# hosted runners via vars.LARGE_RUNNER / vars.ARM_LARGE_RUNNER /
+# vars.WINDOWS_LARGE_RUNNER / vars.WINDOWS_ARM_LARGE_RUNNER; set those repo
+# variables to the labels below to restore paid runners without editing YAML.
 self-hosted-runner:
   labels:
     - ubuntu-latest-96-core

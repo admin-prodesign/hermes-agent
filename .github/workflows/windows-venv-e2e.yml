@@ -38,8 +38,8 @@ concurrency:
 jobs:
   venv-holder-e2e:
     name: venv-holder live E2E (windows-latest)
-    runs-on: windows-latest-32-core
-    timeout-minutes: 25
+    runs-on: ${{ vars.WINDOWS_LARGE_RUNNER || 'windows-latest' }}
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
