@@ -252,7 +252,7 @@ def _tail_file(path: Path, limit: int=4000) -> str:
 def _run_worker_scheduling_command(cmd: list[str], out_dir: Path, timeout_seconds: int) -> str:
     if not SCHEDULER_PYTHON().exists() or not SCHEDULER_SCRIPT().exists():
         return _json_result({'status': 'error', 'error': 'scheduler_runtime_missing', 'scheduler_python_exists': SCHEDULER_PYTHON().exists(), 'scheduler_script_exists': SCHEDULER_SCRIPT().exists()})
-    min_timeout_seconds = int(site_text('WORKER_SCHEDULING_MIN_TIMEOUT_SECONDS'))
+    min_timeout_seconds = int(site_text('WORKER_SCHEDULING_MIN_TIMEOUT_SECONDS') or 30)
     timeout_seconds = max(min_timeout_seconds, min(int(timeout_seconds), 2400))
     env = {**os.environ, 'HOME': resolve_configured_path('~')}
     out_dir.mkdir(parents=True, exist_ok=True)
