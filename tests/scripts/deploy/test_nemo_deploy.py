@@ -538,6 +538,18 @@ def test_syntax_check_shell_wrapper_uses_bash_n(tmp_path: Path) -> None:
     assert subprocess.run(plan.argv, check=False).returncode == 0
 
 
+def test_exec_readonly_shell_uses_bash_syntax_check_not_python(tmp_path: Path) -> None:
+    bash = _bash()
+    script = tmp_path / "run_pd_one_typhoon_automation.sh"
+    script.write_text("#!/usr/bin/env bash\nset -uo pipefail\ntrue\n", encoding="utf-8")
+    source = script.read_text(encoding="utf-8")
+    typhoon = next(policy for policy in POLICIES if policy.job_id == TYPHOON)
+    planned = plan_policy(typhoon, script, source, sys.executable)
+    assert planned.action == "compile"
+    assert planned.argv == (bash, "-n", str(script))
+    assert sys.executable not in planned.argv
+
+
 def test_syntax_check_shebang_shell_without_extension(tmp_path: Path) -> None:
     bash = _bash()
     script = tmp_path / "cron-runner"
@@ -590,7 +602,10 @@ def test_postcheck_runs_typhoon_with_the_cron_tls_mount(tmp_path: Path) -> None:
     scripts = profile / "scripts"
     scripts.mkdir(parents=True)
     jobs = {
-        TYPHOON: ("typhoon_check.py", "url = 'https://www.cwa.gov.tw/'\n"),
+        TYPHOON: (
+            "run_pd_one_typhoon_automation.sh",
+            "#!/usr/bin/env bash\nset -uo pipefail\ntrue\n",
+        ),
         "870dd7349151": ("digest.py", "import yaml\n"),
         REAPER: ("reaper.py", "print('reap')\n"),
         HR_SYNC: ("hr_sync.py", "import requests\n"),
@@ -613,7 +628,7 @@ def test_postcheck_runs_typhoon_with_the_cron_tls_mount(tmp_path: Path) -> None:
     hr = next(item for item in results if item["job_id"] == HR_SYNC)
     assert hr["action"] == "compile"
     assert any("py_compile" in argv for argv in hr["argv"])
-    typhoon = [item for item in seen if any("typhoon_check.py" in part for part in item[0])]
+    typhoon = [item for item in seen if any("run_pd_one_typhoon_automation.sh" in part for part in item[0])]
     assert typhoon
     assert typhoon[0][1]["_HERMES_CRON_CWA_TLS"] == "1"
     assert "cwa_site" in typhoon[0][1]["PYTHONPATH"]
