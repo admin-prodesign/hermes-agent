@@ -97,13 +97,18 @@ def log_missing_webhook_once() -> None:
     _logged_missing_url = True
 
 
-def _cafile() -> str:
+def _ssl_verify_context() -> ssl.SSLContext:
+    """Build TLS verify context without treating a cert directory as a CA file."""
     paths = ssl.get_default_verify_paths()
-    if paths.cafile:
-        return paths.cafile
-    if paths.capath:
-        return paths.capath
-    return "/etc/ssl/certs/ca-certificates.crt"
+    if paths.cafile and os.path.isfile(paths.cafile):
+        return ssl.create_default_context(cafile=paths.cafile)
+    env_ca = os.environ.get("SSL_CERT_FILE", "").strip()
+    if env_ca and os.path.isfile(env_ca):
+        return ssl.create_default_context(cafile=env_ca)
+    ctx = ssl.create_default_context()
+    if paths.capath and os.path.isdir(paths.capath):
+        ctx.load_verify_locations(capath=paths.capath)
+    return ctx
 
 
 def build_auth_headers(body_bytes: bytes) -> dict[str, str]:
@@ -155,7 +160,7 @@ def post_json_webhook(payload: dict[str, Any], *, dry_run: bool = False, url: st
     headers = build_auth_headers(body)
     request = urllib.request.Request(target, data=body, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=30, context=ssl.create_default_context(cafile=_cafile())):
+        with urllib.request.urlopen(request, timeout=30, context=_ssl_verify_context()):
             return True
     except (urllib.error.URLError, TimeoutError, ssl.SSLError) as exc:
         LOG.error("Neo webhook POST failed: %s", exc)
