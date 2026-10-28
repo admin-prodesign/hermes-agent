@@ -1562,6 +1562,20 @@ def worker_scheduling_review_im_scheduling(gate: str, target_month: str, receipt
     receipt_payload['output_dir'] = str(out_dir)
     return _json_result(receipt_payload)
 
+def _payload_int(payload: dict[str, Any], key: str, default: int) -> int:
+    """Parse an optional numeric MCP payload field; blank values use default."""
+    if key not in payload:
+        return int(default)
+    value = payload[key]
+    if value is None:
+        return int(default)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return int(default)
+        return int(stripped)
+    return int(value)
+
 def worker_scheduling(action: str, payload: Optional[dict[str, Any]]=None, dry_run: bool=True, timeout_seconds: int=420, output_dir: Optional[str]=None, confirm_live_write: Optional[Union[str, bool]]=None) -> str:
     """Run the monthly worker-scheduling playbook through one stable action dispatcher.
 
@@ -1588,7 +1602,7 @@ def worker_scheduling(action: str, payload: Optional[dict[str, Any]]=None, dry_r
     action_key = str(action or '').strip().lower().replace('-', '_')
     try:
         if action_key == 'poll_solve_preview':
-            return _poll_worker_scheduling_job(output_dir=str(payload.get('output_dir') or output_dir or ''), wait_seconds=int(payload.get('wait_seconds', 0)))
+            return _poll_worker_scheduling_job(output_dir=str(payload.get('output_dir') or output_dir or ''), wait_seconds=_payload_int(payload, 'wait_seconds', 0))
         if action_key in {'preflight', 'solve_preview'}:
             solver_max = payload.get('solver_max_time_seconds')
             solver_no_improvement = payload.get('solver_no_improvement_seconds')
@@ -1597,7 +1611,7 @@ def worker_scheduling(action: str, payload: Optional[dict[str, Any]]=None, dry_r
                 if solver_no_improvement is None:
                     solver_no_improvement = 45
             cmd, out_dir, _live_write = _worker_scheduling_command(action=action_key, solve_groups=payload.get('solve_groups'), solver_max_time_seconds=solver_max, solver_no_improvement_seconds=solver_no_improvement, following_month_required_rest_days_count=payload.get('following_month_required_rest_days_count'), stdout_summary_only=bool(payload.get('stdout_summary_only', True)), output_dir=payload.get('output_dir', output_dir), confirm_live_write=confirm_live_write or payload.get('confirm_live_write'))
-            wrapper_timeout = max(60, min(int(payload.get('timeout_seconds', 300)), 300)) if action_key == 'solve_preview' else max(30, min(int(payload.get('timeout_seconds', timeout_seconds)), 180))
+            wrapper_timeout = max(60, min(_payload_int(payload, 'timeout_seconds', 300), 300)) if action_key == 'solve_preview' else max(30, min(_payload_int(payload, 'timeout_seconds', timeout_seconds), 180))
             if action_key == 'solve_preview' and (not bool(payload.get('wait_for_completion', False))):
                 return _start_worker_scheduling_job(cmd, out_dir, wrapper_timeout)
             return _run_worker_scheduling_command(cmd, out_dir, wrapper_timeout)
@@ -1607,7 +1621,7 @@ def worker_scheduling(action: str, payload: Optional[dict[str, Any]]=None, dry_r
             report = _resolve_generated_schedule_report(payload, output_dir)
             return worker_scheduling_write_generated_schedule_from_report(report_path=str(report), run_groups=payload.get('solve_groups') or payload.get('run_groups'), dry_run=bool(payload.get('dry_run', dry_run)), output_dir=payload.get('output_dir') or payload.get('write_output_dir') or payload.get('receipt_output_dir'), confirm_live_write=confirm_live_write or payload.get('confirm_live_write'), max_format_batches_per_call=int(payload.get('max_format_batches_per_call', 25)), max_value_batches_per_call=int(payload.get('max_value_batches_per_call', 5)))
         if action_key == 'audit_rest_requests':
-            return worker_scheduling_audit_rest_requests(output_dir=payload.get('output_dir', output_dir), timeout_seconds=int(payload.get('timeout_seconds', timeout_seconds if timeout_seconds != 420 else 180)))
+            return worker_scheduling_audit_rest_requests(output_dir=payload.get('output_dir', output_dir), timeout_seconds=_payload_int(payload, 'timeout_seconds', timeout_seconds if timeout_seconds != 420 else 180))
         if action_key == 'correct_raw_request_dates':
             return worker_scheduling_correct_raw_request_dates(row_number=int(payload['row_number']), old_dates=list(payload['old_dates']), new_dates=list(payload['new_dates']), worker_name=payload.get('worker_name'), dry_run=bool(payload.get('dry_run', dry_run)), note_text=payload.get('note_text'), output_dir=payload.get('output_dir', output_dir), confirm_live_write=confirm_live_write or payload.get('confirm_live_write'))
         if action_key == 'source_setup':
@@ -1617,11 +1631,11 @@ def worker_scheduling(action: str, payload: Optional[dict[str, Any]]=None, dry_r
                 return _json_result({'status': 'error', 'error': 'setup_scheduling_rules_payload_not_allowed', 'detail': 'This action uses one fixed, reviewed spreadsheet/tab/schema/seed row and accepts no payload overrides.', 'safety': {'shell_used': False, 'payload_is_fixed': True}})
             return worker_scheduling_setup_rules(dry_run=dry_run, confirm_live_write=confirm_live_write, output_dir=output_dir)
         if action_key == 'sync_source_rollover':
-            return worker_scheduling_sync_source_rollover(dry_run=bool(payload.get('dry_run', dry_run)), output_dir=payload.get('output_dir', output_dir), timeout_seconds=int(payload.get('timeout_seconds', timeout_seconds)), confirm_live_write=confirm_live_write or payload.get('confirm_live_write'))
+            return worker_scheduling_sync_source_rollover(dry_run=bool(payload.get('dry_run', dry_run)), output_dir=payload.get('output_dir', output_dir), timeout_seconds=_payload_int(payload, 'timeout_seconds', timeout_seconds), confirm_live_write=confirm_live_write or payload.get('confirm_live_write'))
         if action_key == 'closeout_processed_requests':
-            return worker_scheduling_closeout_processed_requests(scheduled_month=str(payload['scheduled_month']), dry_run=bool(payload.get('dry_run', dry_run)), output_dir=payload.get('output_dir', output_dir), timeout_seconds=int(payload.get('timeout_seconds', timeout_seconds if timeout_seconds != 420 else 180)), confirm_live_write=confirm_live_write or payload.get('confirm_live_write'))
+            return worker_scheduling_closeout_processed_requests(scheduled_month=str(payload['scheduled_month']), dry_run=bool(payload.get('dry_run', dry_run)), output_dir=payload.get('output_dir', output_dir), timeout_seconds=_payload_int(payload, 'timeout_seconds', timeout_seconds if timeout_seconds != 420 else 180), confirm_live_write=confirm_live_write or payload.get('confirm_live_write'))
         if action_key == 'review_im_scheduling':
-            return worker_scheduling_review_im_scheduling(gate=str(payload.get('gate') or ''), target_month=str(payload.get('target_month') or ''), receipt_path=payload.get('receipt_path'), output_dir=payload.get('output_dir', output_dir), solve_group=payload.get('solve_group'), notes=payload.get('notes'), timeout_seconds=int(payload.get('timeout_seconds', 180)))
+            return worker_scheduling_review_im_scheduling(gate=str(payload.get('gate') or ''), target_month=str(payload.get('target_month') or ''), receipt_path=payload.get('receipt_path'), output_dir=payload.get('output_dir', output_dir), solve_group=payload.get('solve_group'), notes=payload.get('notes'), timeout_seconds=_payload_int(payload, 'timeout_seconds', 180))
     except KeyError as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return _json_result({'status': 'error', 'error': 'missing_payload_field', 'field': str(exc), 'action': action_key})
