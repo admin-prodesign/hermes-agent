@@ -229,13 +229,12 @@ else
   uv venv "${staging}/.venv"
 fi
 
-# Live freeze.txt still pins pillow==12.3.0. Passed as -c, that is a second
-# hard pin next to Pillow==13.0.0, and uv reports the journal error
-# ("hermes-agent depends on pillow==13.0.0 and pillow==12.3.0"). --overrides
-# does not beat -c; drop those names from the constraint file. --overrides
-# still reapplies the lock's [tool.uv] override-dependencies so
-# browser-harness's remaining pillow==12.3.0 metadata cannot win (same
-# seam as pm/environment.py).
+# The previous freeze is a hold-steady -c for packages this SHA does not
+# re-pin. uv treats each constraint as a hard pin, so it cannot stay next
+# to (1) [tool.uv] override-dependencies, (2) exact == pins in this SHA's
+# pyproject, or (3) a different version in this SHA's uv.lock. --overrides
+# still reapplies the lock overrides so browser-harness's remaining
+# pillow==12.3.0 metadata cannot win (same seam as pm/environment.py).
 [[ -f "${staging}/uv.lock" ]] || die "source tree has no uv.lock"
 nemo_python -m scripts.deploy.nemo.cli uv-overrides \
   --lock "${staging}/uv.lock" --output "${audit}/overrides.txt"
@@ -247,7 +246,10 @@ if [[ -n "${previous_path}" && -f "${previous_path}/freeze.txt" ]]; then
   cp "${previous_path}/freeze.txt" "${audit}/old-freeze.txt"
   nemo_python -m scripts.deploy.nemo.cli freeze-constraint \
     --input "${audit}/old-freeze.txt" --output "${audit}/constraints.txt" \
-    --drop-overrides "${audit}/overrides.txt"
+    --drop-overrides "${audit}/overrides.txt" \
+    --pyproject "${staging}/pyproject.toml" \
+    --lock "${staging}/uv.lock" \
+    --extra "${extra}"
   install_args+=(-c "${audit}/constraints.txt")
 fi
 install_args+=(-e ".[${extra}]")

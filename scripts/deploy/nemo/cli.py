@@ -17,7 +17,7 @@ from pathlib import Path
 
 from scripts.deploy.nemo.adapter_gate import ADAPTERS_FILE, PROBE_TIMEOUT_S, plan_probes, run_gate, summary
 from scripts.deploy.nemo.cutover_steps import UnitProblems, apply_cutover, config_candidates, default_unit_dirs
-from scripts.deploy.nemo.freeze_diff import compare, constraint_text, override_names, override_text
+from scripts.deploy.nemo.freeze_diff import compare, constraint_drops, constraint_text, override_text
 from scripts.deploy.nemo.frontend import mark_preinstalled
 from scripts.deploy.nemo.gate import MissingProfileDatabase, poll_until_quiet
 from scripts.deploy.nemo.health import http_healthy, poll_until_healthy
@@ -93,11 +93,24 @@ def cmd_pin_cache(args: argparse.Namespace) -> int:
 
 
 def cmd_freeze_constraint(args: argparse.Namespace) -> int:
-    drop = None
-    if args.drop_overrides is not None:
-        drop = override_names(args.drop_overrides.read_text(encoding="utf-8-sig"))
     text = args.input.read_text(encoding="utf-8-sig")
-    args.output.write_text(constraint_text(text, drop=drop), encoding="utf-8")
+    drop = constraint_drops(
+        text,
+        overrides_text=(
+            args.drop_overrides.read_text(encoding="utf-8-sig")
+            if args.drop_overrides is not None else None
+        ),
+        pyproject_text=(
+            args.pyproject.read_text(encoding="utf-8-sig")
+            if args.pyproject is not None else None
+        ),
+        extra=args.extra,
+        lock_text=(
+            args.lock.read_text(encoding="utf-8-sig")
+            if args.lock is not None else None
+        ),
+    )
+    args.output.write_text(constraint_text(text, drop=drop or None), encoding="utf-8")
     return 0
 
 
@@ -361,12 +374,27 @@ def register(sub) -> None:
     pin.add_argument("--path", type=Path, default=None)
     pin.set_defaults(func=cmd_pin_cache)
 
-    constraint = sub.add_parser("freeze-constraint", help="drop editable lines from a freeze")
+    constraint = sub.add_parser(
+        "freeze-constraint",
+        help="write a -c file: drop editables, overrides, exact pyproject pins, lock diffs",
+    )
     constraint.add_argument("--input", required=True, type=Path)
     constraint.add_argument("--output", required=True, type=Path)
     constraint.add_argument(
         "--drop-overrides", type=Path, default=None,
         help="uv pip --overrides file; those packages are omitted from -c",
+    )
+    constraint.add_argument(
+        "--pyproject", type=Path, default=None,
+        help="drop exact == pins from this tree's project dependencies and --extra",
+    )
+    constraint.add_argument(
+        "--lock", type=Path, default=None,
+        help="drop freeze pins whose version differs in this uv.lock",
+    )
+    constraint.add_argument(
+        "--extra", default=DEFAULT_EXTRA,
+        help="optional-dependency extra to include with --pyproject",
     )
     constraint.set_defaults(func=cmd_freeze_constraint)
 
