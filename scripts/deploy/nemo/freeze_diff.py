@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from pm.pip_check import override_requirements
 from scripts.deploy.nemo.layout import NEMO_PACKAGES
+
+_SPEC_SEPS = ("===", "==", "~=", "!=", "<=", ">=", "[", "<", ">")
 
 
 def parse_freeze(text: str) -> dict[str, str]:
@@ -22,12 +27,50 @@ def _normalize(name: str) -> str:
     return name.strip().lower().replace("_", "-")
 
 
-def constraint_text(text: str) -> str:
-    """Drop editable installs. ``uv pip install -c`` cannot use ``-e`` lines."""
+def _requirement_name(line: str) -> str:
+    req = line.split(";", 1)[0].strip()
+    for sep in _SPEC_SEPS:
+        if sep in req:
+            req = req.split(sep, 1)[0]
+            break
+    return _normalize(req)
+
+
+def override_text(lock: Path) -> str:
+    """``uv.lock`` [manifest] overrides as a ``uv pip install --overrides`` file.
+
+    ``uv pip install`` re-resolves and ignores ``[tool.uv] override-dependencies``.
+    PM already feeds the lock's overrides back through this seam.
+    """
+    lines = override_requirements(lock)
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def override_names(text: str) -> set[str]:
+    """Normalized package names from a ``uv pip --overrides`` file."""
+    names: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        name = _requirement_name(line)
+        if name:
+            names.add(name)
+    return names
+
+
+def constraint_text(text: str, drop: set[str] | None = None) -> str:
+    """Drop editable installs. ``uv pip install -c`` cannot use ``-e`` lines.
+
+    ``drop`` removes packages the new SHA overrides (an old freeze can still
+    pin ``pillow==12.3.0`` after the lock moved to 13.0.0).
+    """
     kept = []
     for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or line.startswith("-e"):
+            continue
+        if drop and _requirement_name(line) in drop:
             continue
         kept.append(line)
     return "\n".join(kept) + ("\n" if kept else "")

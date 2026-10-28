@@ -17,7 +17,7 @@ from pathlib import Path
 
 from scripts.deploy.nemo.adapter_gate import ADAPTERS_FILE, PROBE_TIMEOUT_S, plan_probes, run_gate, summary
 from scripts.deploy.nemo.cutover_steps import UnitProblems, apply_cutover, config_candidates, default_unit_dirs
-from scripts.deploy.nemo.freeze_diff import compare, constraint_text
+from scripts.deploy.nemo.freeze_diff import compare, constraint_text, override_names, override_text
 from scripts.deploy.nemo.frontend import mark_preinstalled
 from scripts.deploy.nemo.gate import MissingProfileDatabase, poll_until_quiet
 from scripts.deploy.nemo.health import http_healthy, poll_until_healthy
@@ -93,8 +93,16 @@ def cmd_pin_cache(args: argparse.Namespace) -> int:
 
 
 def cmd_freeze_constraint(args: argparse.Namespace) -> int:
+    drop = None
+    if args.drop_overrides is not None:
+        drop = override_names(args.drop_overrides.read_text(encoding="utf-8-sig"))
     text = args.input.read_text(encoding="utf-8-sig")
-    args.output.write_text(constraint_text(text), encoding="utf-8")
+    args.output.write_text(constraint_text(text, drop=drop), encoding="utf-8")
+    return 0
+
+
+def cmd_uv_overrides(args: argparse.Namespace) -> int:
+    args.output.write_text(override_text(args.lock), encoding="utf-8")
     return 0
 
 
@@ -356,7 +364,19 @@ def register(sub) -> None:
     constraint = sub.add_parser("freeze-constraint", help="drop editable lines from a freeze")
     constraint.add_argument("--input", required=True, type=Path)
     constraint.add_argument("--output", required=True, type=Path)
+    constraint.add_argument(
+        "--drop-overrides", type=Path, default=None,
+        help="uv pip --overrides file; those packages are omitted from -c",
+    )
     constraint.set_defaults(func=cmd_freeze_constraint)
+
+    overrides = sub.add_parser(
+        "uv-overrides",
+        help="write uv.lock [manifest] overrides for uv pip install --overrides",
+    )
+    overrides.add_argument("--lock", required=True, type=Path)
+    overrides.add_argument("--output", required=True, type=Path)
+    overrides.set_defaults(func=cmd_uv_overrides)
 
     diff = sub.add_parser("freeze-compare", help="fail when a nemo pin disappeared")
     diff.add_argument("--old", required=True, type=Path)
