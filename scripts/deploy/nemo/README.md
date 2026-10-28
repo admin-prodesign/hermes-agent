@@ -343,6 +343,62 @@ the signature clears):
 .venv/bin/python -m scripts.deploy.nemo.pdone_alert_watchdog ack 'cron:JOB_ID' --note 'investigating'
 ```
 
+### Neo-first Mattermost escalations (supervisor + notification router)
+
+Critical supervisor findings and failure pages can reach the PD Neo Watch
+automation webhook before the admin Mattermost channel. Copy
+`scripts/deploy/nemo/notification-routes.example.json` to
+`~/.hermes/config/notification-routes.json` and replace the Mattermost
+placeholders. Do **not** commit live channel IDs to the repo.
+
+```json
+{
+  "schema_version": 1,
+  "routes": {
+    "pd_one_failure_escalations": {
+      "pre_targets": ["webhook:neo"],
+      "hold_minutes": 10,
+      "targets": ["mattermost:@your-admin-channel-or-user"]
+    }
+  }
+}
+```
+
+Environment (auth only; URL defaults to the Cursor Neo Watch automation unless
+overridden):
+
+- `NEO_WATCH_WEBHOOK_URL` or `BRIEFING_REPAIR_WEBHOOK_URL` — override webhook URL
+- `NEO_WATCH_WEBHOOK_KEY` or `BRIEFING_REPAIR_WEBHOOK_BEARER` — Bearer token
+- `BRIEFING_REPAIR_WEBHOOK_HMAC_SECRET` or `NEO_WATCH_WEBHOOK_HMAC_SECRET` — optional HMAC (`X-Hermes-Signature`)
+
+Supervisor push (reads `state/hermes_autonomous_supervisor/state.json`):
+
+```bash
+.venv/bin/python -m scripts.hermes_autonomous_supervisor tick --dry-run
+```
+
+Router dry-run (synthetic failure event):
+
+```bash
+.venv/bin/python -m scripts.pd_one_notification_router send \
+  --route pd_one_failure_escalations \
+  --json '{"summary":"synthetic test","fingerprint":"dry-run","severity":"error"}' \
+  --dry-run
+```
+
+Ack from Neo automation (suppresses held Mattermost release):
+
+```bash
+.venv/bin/python -m scripts.pd_one_notification_router ack \
+  --correlation-key 'pdone-surface:YOUR_FINGERPRINT'
+```
+
+**Rollback:** remove `pre_targets` / `hold_minutes` from
+`notification-routes.json` (or restore the previous file) so
+`pd_one_failure_escalations` delivers straight to Mattermost again; disable
+supervisor Neo push by setting `NEO_WATCH_WEBHOOK_URL=` and
+`BRIEFING_REPAIR_WEBHOOK_URL=` to empty strings.
+
 ### OnFailure systemd hooks
 
 Nemo may still have profile-local units such as

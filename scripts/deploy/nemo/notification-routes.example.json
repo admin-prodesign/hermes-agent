@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "routes": {
+    "pd_one_failure_escalations": {
+      "pre_targets": ["webhook:neo"],
+      "hold_minutes": 10,
+      "targets": ["mattermost:REPLACE_WITH_ADMIN_CHANNEL_OR_USER"]
+    },
+    "pd_one_failure_receipts": {
+      "targets": ["mattermost:REPLACE_WITH_RECEIPTS_CHANNEL"]
+    },
+    "pd_one_admin_approvals": {
+      "targets": ["mattermost:REPLACE_WITH_APPROVALS_CHANNEL"]
+    }
+  }
+}
