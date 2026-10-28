@@ -21,7 +21,7 @@ import pytest
 
 from scripts.deploy.nemo.config_paths import rewrite_yaml_text, swap_prefix
 from scripts.deploy.nemo.cutover_steps import apply_cutover
-from scripts.deploy.nemo.freeze_diff import compare, constraint_text
+from scripts.deploy.nemo.freeze_diff import compare, constraint_text, override_names, override_text
 from scripts.deploy.nemo.gate import inspect_db, poll_until_quiet
 from scripts.deploy.nemo.health import HealthCheck, body_healthy, gateway_socket_healthy, poll_until_healthy
 from scripts.deploy.nemo.health import evaluate
@@ -393,6 +393,38 @@ def test_freeze_diff_fails_when_a_nemo_pin_disappears() -> None:
     assert missing == ["pyyaml"]
     assert "- pyyaml==6.0.3" in report
     assert "-e" not in constraint_text(old)
+
+
+def test_lock_overrides_force_pillow_13_and_drop_the_old_freeze_pin(tmp_path: Path) -> None:
+    """The previous release's freeze becomes ``uv pip install -c``. A leftover
+    ``pillow==12.3.0`` there is a second hard pin next to 13.0.0 — the exact
+    unsatisfiable graph auto-deploy logged. ``--overrides`` does not beat
+    ``-c``, so overridden names must leave the constraint file."""
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        "[manifest]\n"
+        "overrides = [\n"
+        '    { name = "pillow", specifier = "==13.0.0" },\n'
+        '    { name = "pynacl", specifier = ">=1.6,<1.7" },\n'
+        "]\n",
+        encoding="utf-8",
+    )
+    overrides = override_text(lock)
+    assert "pillow==13.0.0" in overrides.splitlines()
+    assert "12.3.0" not in overrides
+    old = "pillow==12.3.0\nrequests==2.33.0\n"
+    constrained = constraint_text(old, drop=override_names(overrides))
+    assert "pillow==12.3.0" not in constrained
+    assert "requests==2.33.0" in constrained
+    assert "pillow==12.3.0" in constraint_text(old)
+
+
+def test_repo_lock_overrides_pin_pillow_13_only() -> None:
+    """build.sh reads this lock. A leftover 12.3.0 override would reintroduce
+    the unsatisfiable hermes-agent[nemo] graph."""
+    lines = override_text(ROOT / "uv.lock").splitlines()
+    assert "pillow==13.0.0" in lines
+    assert not any(line.startswith("pillow==12.") for line in lines)
 
 
 def test_swap_prefix_does_not_eat_a_longer_path() -> None:
