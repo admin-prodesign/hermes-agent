@@ -178,7 +178,15 @@ def plan_policy(policy: Policy, script: Path | None, source: str, python: str) -
     if policy.kind == "exec_readonly":
         if script is None:
             return Invocation(policy.job_id, policy.name, "skip", (), "job script not found")
-        return Invocation(policy.job_id, policy.name, "exec", (python, str(script)), "read-only script run")
+        kind = classify_script(script, source)
+        if kind == "python":
+            return Invocation(
+                policy.job_id, policy.name, "exec", (python, str(script)), "read-only script run",
+            )
+        planned = syntax_check_plan(script, source, python)
+        return Invocation(
+            policy.job_id, policy.name, planned.action, planned.argv, planned.reason,
+        )
     if script is not None and accepts:
         return Invocation(
             policy.job_id, policy.name, "exec", (python, str(script), "--dry-run"),
