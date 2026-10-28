@@ -66,7 +66,7 @@ def test_hold_ack_suppresses_mattermost_release(home: Path, monkeypatch) -> None
     monkeypatch.setattr(neo, "post_json_webhook", lambda payload, **kw: posts.append(payload) or True)
     monkeypatch.setattr(
         "scripts.pd_one_notification_router.deliver_mattermost",
-        lambda _h, _t, msg, dry_run=False: mm.append(msg) or True,
+        lambda channel, message, dry_run=False: mm.append(message) or True,
     )
 
     event = {"summary": "disk full", "fingerprint": "abc123"}
@@ -105,7 +105,7 @@ def test_hold_expiry_releases_to_mattermost(home: Path, monkeypatch) -> None:
     mm: list[str] = []
     monkeypatch.setattr(
         "scripts.pd_one_notification_router.deliver_mattermost",
-        lambda _h, _t, msg, dry_run=False: mm.append(msg) or True,
+        lambda channel, message, dry_run=False: mm.append(message) or True,
     )
 
     t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
@@ -184,3 +184,57 @@ def test_webhook_auth_headers_bearer_and_hmac(monkeypatch) -> None:
     headers = neo.build_auth_headers(body)
     assert headers["Authorization"] == "Bearer tok"
     assert headers["X-Hermes-Signature"].startswith("sha256=")
+
+
+def test_ssl_verify_context_never_passes_cert_dir_as_cafile(monkeypatch, tmp_path: Path) -> None:
+    capath = tmp_path / "certs"
+    capath.mkdir()
+    cafile_args: list[str | None] = []
+    real_create = neo.ssl.create_default_context
+
+    def tracking_create(*args, **kwargs):
+        if "cafile" in kwargs:
+            cafile_args.append(kwargs["cafile"])
+        return real_create(*args, **kwargs)
+
+    monkeypatch.setattr(neo.ssl, "create_default_context", tracking_create)
+    monkeypatch.setattr(
+        neo.ssl,
+        "get_default_verify_paths",
+        lambda: type("VerifyPaths", (), {"cafile": None, "capath": str(capath)})(),
+    )
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    neo._ssl_verify_context()
+    assert cafile_args == [] or all(p is None or not Path(str(p)).is_dir() for p in cafile_args)
+
+
+def test_router_dry_run_does_not_write_hold_state(home: Path, monkeypatch) -> None:
+    _routes(
+        home,
+        {
+            "schema_version": 1,
+            "routes": {
+                "pd_one_failure_escalations": {
+                    "pre_targets": ["webhook:neo"],
+                    "hold_minutes": 10,
+                    "targets": ["mattermost:@admin"],
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(neo, "post_json_webhook", lambda *a, **k: True)
+    state_path = home / "state" / "pd_one_notification_router" / "state.json"
+    send_route(home, "pd_one_failure_escalations", {"summary": "x", "fingerprint": "fp-dry"}, dry_run=True)
+    assert not state_path.is_file()
+
+
+def test_supervisor_tick_dry_run_skips_neo_push_file(home: Path, monkeypatch) -> None:
+    monkeypatch.setattr(neo, "post_json_webhook", lambda *a, **k: True)
+    state = {
+        "findings": [{"id": "x", "severity": "critical", "subject": "fire"}],
+        "notified_fingerprint": "",
+    }
+    supervisor.save_json(supervisor.state_path(home), state)
+    push_path = supervisor.neo_push_path(home)
+    supervisor.cmd_tick(home, dry_run=True)
+    assert not push_path.is_file()
