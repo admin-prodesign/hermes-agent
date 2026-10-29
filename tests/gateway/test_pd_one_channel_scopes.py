@@ -271,6 +271,7 @@ def test_scoped_toolsets_ignore_channel_allowlist_keep_platform_and_reviewed_ext
     got = scoped_toolsets(["terminal", "web", "file", "skills"], scope)
     assert got[:4] == ["terminal", "web", "file", "skills"]
     assert "pdone_safe_ops" in got
+    assert "pdone_safe_ops_builtin" in got
     assert "mcp-pdone_safe_ops" in got
     assert "pdone_worker_scheduling" in got
     assert "arbitrary_root" not in got

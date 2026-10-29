@@ -276,7 +276,7 @@ _TABLE_SCHEMA = {
 
 registry.register(
     name="pd_one_appsheet_table_probe",
-    toolset="pdone_safe_ops",
+    toolset="pdone_safe_ops_builtin",
     schema={
         "name": "pd_one_appsheet_table_probe",
         "description": (
@@ -291,7 +291,7 @@ registry.register(
 
 registry.register(
     name="pd_one_appsheet_row_get",
-    toolset="pdone_safe_ops",
+    toolset="pdone_safe_ops_builtin",
     schema={
         "name": "pd_one_appsheet_row_get",
         "description": "Read one AppSheet row for PD One. HRS private columns are omitted.",
@@ -303,7 +303,7 @@ registry.register(
 
 registry.register(
     name="pd_one_hr_private_lookup",
-    toolset="pdone_safe_ops",
+    toolset="pdone_safe_ops_builtin",
     schema={
         "name": "pd_one_hr_private_lookup",
         "description": (
