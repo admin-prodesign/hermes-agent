@@ -181,6 +181,7 @@ def resolve_pd_one_channel_scope(
 _PD_ONE_SCOPED_EXTENSION_TOOLSETS = frozenset({
     "pd_one_wiki",
     "pdone_safe_ops",
+    "pdone_safe_ops_builtin",
     "mcp-pdone_safe_ops",
     "pdone_worker_scheduling",
     "mcp-pdone_worker_scheduling",
@@ -190,6 +191,7 @@ _PD_ONE_SCOPED_EXTENSION_TOOLSETS = frozenset({
 _PD_ONE_SCOPED_EXTENSION_ORDER = (
     "pd_one_wiki",
     "pdone_safe_ops",
+    "pdone_safe_ops_builtin",
     "mcp-pdone_safe_ops",
     "pdone_worker_scheduling",
     "mcp-pdone_worker_scheduling",
