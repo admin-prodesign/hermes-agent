@@ -330,6 +330,8 @@ __all__ = [
     '_load_appsheet_incident_morning_briefing_module',
     '_appsheet_incident_morning_briefing_qa_samples',
     'cmd_appsheet_incident_morning_briefing_qa',
+    'cmd_appsheet_definition_inspect',
+    'cmd_appsheet_definition_apply',
     'cmd_google_group_members',
     'cmd_google_drive_parent_chain',
     'cmd_google_drive_search_files',

@@ -175,6 +175,8 @@ __all__ = [
     'pd_one_appsheet_hr_employee_patch',
     'pd_one_appsheet_table_probe',
     'pd_one_appsheet_incident_morning_briefing_qa',
+    'pd_one_appsheet_definition_inspect',
+    'pd_one_appsheet_definition_apply_approved',
     'pd_one_legacy_xls_inspect',
     'pd_one_xlsx_workbook_inspect',
     'pd_one_equipment_workbook_build',
