@@ -9,12 +9,14 @@ units) go with the last stage; a stage that fails verification stops the rollout
 later profiles never restart onto the new release. Units whose only change was
 ``HERMES_RUNTIME_SHA`` get ``try-restart``.
 
-Restarts run one unit at a time with ``delay_s`` between them, and after a gateway the
-next unit waits until that gateway's new process (the unit's ``MainPID``) wrote a fresh
-``running`` or ``degraded`` state (or failed); the old process's ``stopped`` is ignored. So
-two gateways never start together and load their secrets at once. Each unit is recorded in
-the manifest with its verb before its restart, so a rollback restarts exactly those, with
-the same verb.
+Restarts run one unit at a time with ``delay_s`` between them. ``systemctl`` waits up to
+240s for restart/stop/start so a drain can finish inside the unit's ``TimeoutStopSec``
+(pdone is 3min 30s); a 60s client wait treated a 105s stop as a failed restart. After a
+gateway the next unit waits until that gateway's new process (the unit's ``MainPID``) wrote
+a fresh ``running`` or ``degraded`` state (or failed); the old process's ``stopped`` is
+ignored. So two gateways never start together and load their secrets at once. Each unit is
+recorded in the manifest with its verb before its restart, so a rollback restarts exactly
+those, with the same verb.
 """
 
 from __future__ import annotations
@@ -38,6 +40,14 @@ UnitActive = Callable[["Restart"], str | None]
 _TERMINAL_UNIT_STATES = frozenset({"failed", "inactive", "dead"})
 ProcessAlive = Callable[[int | None], bool]
 SettleTimeout = Callable[["Restart"], float]
+# daemon-reload / is-active stay short. restart/stop/start block until ExecStop
+# finishes; pdone TimeoutStopSec is 3min 30s (210s). A 60s client wait treated a
+# 105s MCP/executor drain as a failed restart and rolled back. Wait at least the
+# stop allowance plus start slack. Timing out the client does not cancel systemd
+# and must not be "fixed" by shortening TimeoutStopSec or SIGKILL.
+SYSTEMCTL_QUICK_TIMEOUT_S = 60
+SYSTEMCTL_RESTART_TIMEOUT_S = 240
+_UNIT_LIFECYCLE = frozenset({"restart", "try-restart", "stop", "start"})
 
 
 def _process_alive(pid: int | None) -> bool:
@@ -63,10 +73,15 @@ class Stage:
     restarts: list[Restart] = field(default_factory=list)
 
 
+def systemctl_timeout(args: list[str]) -> float:
+    """How long the systemctl client may block. Lifecycle verbs outwait TimeoutStop."""
+    return SYSTEMCTL_RESTART_TIMEOUT_S if _UNIT_LIFECYCLE.intersection(args) else SYSTEMCTL_QUICK_TIMEOUT_S
+
+
 def systemctl(args: list[str]) -> int:
     try:
-        return subprocess.run(["systemctl", *args], timeout=60, stdin=subprocess.DEVNULL,
-                              check=False).returncode
+        return subprocess.run(["systemctl", *args], timeout=systemctl_timeout(args),
+                              stdin=subprocess.DEVNULL, check=False).returncode
     except (OSError, subprocess.TimeoutExpired):
         return 1
 
