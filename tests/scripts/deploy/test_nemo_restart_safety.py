@@ -8,13 +8,14 @@ rewritten unit at once, starting stopped oneshots and starving the gateways' sec
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from scripts.deploy.nemo import cli
 from scripts.deploy.nemo.release_swap import runtime_links
-from scripts.deploy.nemo.rollout import Restart, restart, rollback_restarts
+from scripts.deploy.nemo.rollout import Restart, restart, rollback_restarts, systemctl, systemctl_timeout
 from scripts.deploy.nemo.unit_state import concrete_restarts
 
 
@@ -75,6 +76,34 @@ def test_rollback_restarts_only_what_the_rollout_restarted_with_its_own_verb() -
                                            Restart("hermes-review.service", True, "try-restart"),
                                            Restart("hermes-dashboard.service", True, "try-restart")]
     assert rollback_restarts({"units": manifest["units"], "restarted": None}) == []
+
+
+@pytest.mark.platforms("linux", "macos")
+def test_systemctl_restart_waits_at_least_the_unit_stop_timeout() -> None:
+    """pdone TimeoutStopSec is 3m30s; a 60s client wait lost to a 105s drain."""
+    assert systemctl_timeout(["--user", "restart", "hermes-gateway-pdone.service"]) >= 210
+    assert systemctl_timeout(["--user", "try-restart", "hermes-gateway.service"]) >= 210
+    assert systemctl_timeout(["--user", "stop", "hermes-gateway-pdone.service"]) >= 210
+    assert systemctl_timeout(["--user", "start", "hermes-gateway-pdone.service"]) >= 210
+    assert systemctl_timeout(["--user", "daemon-reload"]) < 210
+
+
+@pytest.mark.platforms("linux", "macos")
+def test_systemctl_passes_the_lifecycle_timeout_and_maps_a_client_timeout_to_failure(monkeypatch) -> None:
+    seen: list[float] = []
+
+    def fake_run(argv, **kwargs):
+        seen.append(float(kwargs["timeout"]))
+        assert argv[:1] == ["systemctl"]
+        if argv[-1] == "hang.service":
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    args = ["--user", "restart", "hermes-gateway-pdone.service"]
+    assert systemctl(args) == 0
+    assert seen == [systemctl_timeout(args)]
+    assert systemctl(["--user", "restart", "hang.service"]) == 1
 
 
 @pytest.mark.platforms("linux", "macos")

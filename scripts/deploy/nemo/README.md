@@ -106,7 +106,10 @@ That should print one `<sha>\trefs/heads/main` line.
   scanner, an `OnFailure=` alert) is left as it is and picks up its new file the next time
   it starts. A unit whose only change is `HERMES_RUNTIME_SHA` gets `try-restart`.
   Restarts run one unit at a time, `--restart-delay` seconds apart
-  (`deploy.cutover.restart_delay_s`, default 3), and after a gateway the next unit waits
+  (`deploy.cutover.restart_delay_s`, default 3). The systemctl client waits up to 240s
+  for `restart`/`try-restart`/`stop`/`start` so a drain can finish inside the unit's
+  `TimeoutStopSec` (pdone is 3min 30s); a 60s wait treated a 105s stop as a failed
+  restart and rolled back. After a gateway the next unit waits
   until that gateway's new process writes a fresh `running` or `degraded` state, so two
   gateways never start together and fetch their secrets at once. Only a state written
   after the restart by the unit's `MainPID` counts: the `stopped` the old process stamps
