@@ -453,6 +453,8 @@ bedrock = ["boto3==1.42.89"]
 # `.[nemo]`.
 nemo = [
   "honcho-ai==2.5.1",
+  # PD One AppSheet definition ops read the Chromium editor session cookies.
+  "browser-cookie3==0.20.1",
   "pyyaml==6.0.3",
   "requests==2.33.0",
   "hermes-agent[mcp]",
