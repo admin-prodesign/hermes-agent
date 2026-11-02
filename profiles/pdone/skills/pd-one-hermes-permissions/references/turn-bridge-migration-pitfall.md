@@ -1,0 +1,15 @@
+# PD One permissions — migration / storage-change pitfall
+
+## Permission migration / storage-change pitfall
+When moving PD One permissions out of OpenClaw or changing the policy source location, do not treat "permissions" as only the Mattermost user/role/channel files. Preserve and verify all permission-governance layers:
+
+- **Core Mattermost policy:** canonical Hermes-profile users/roles/channels plus generated exact-sender per-user cache.
+- **Google Workspace document-access evidence:** generated from Drive permissions and Google Group membership, then included as `googleWorkspace.documentAccess` in effective per-user policy; this is access evidence only and sensitive red lines still fail closed.
+- **Review/audit log:** the `review_log` Google Sheet is governance/audit infrastructure, not the core permission source of truth; keep the writer/dry-run path working unless explicitly redesigning the audit workflow.
+- **Operator-visible Google Sheet trackers:** the governance Google Sheet still contains tabs such as `mattermost_user_setup_state`, `user_memory_onboarding_dm_state`, and `automation_registry`. These track who is set up/onboarded, DM onboarding state, roles/DM-enabled fields copied from canonical Hermes policy, and automation ownership/required scope. They are durable/operator-visible backups and review surfaces, but current canonical scoped privileges flow from Hermes-profile `mattermost-users.json`/roles/channels plus generated cache; migrations must preserve these Sheet syncs or intentionally replace them.
+- **Governance Sheet naming:** spreadsheet `1kJntZ6L8P72q_Brsp7ixrQsmxnDs6EACMQqpwgGxLOE` is named `PD One` now, not `OpenClaw`. When auditing or updating permission-bridge docs/scripts, update stale human-facing Sheet references and code constants/functions like `OPENCLAW_SHEET_ID` or `openclaw_tab_names()` to PD One naming while keeping the same spreadsheet ID. Verify the live title with `gog sheets metadata ... -j --no-input` and back up through the private Hermes backup repo.
+
+Migration plans must inventory readers/writers for each layer, generate old and new caches, diff effective per-user results, preserve or replace operator-visible tracker tabs, and smoke-test users with and without group-derived Docs/Sheets access before runtime cutover. For the concrete Hermes-native migration verification checklist, including gateway bridge tests and sub-agent least-privilege handoff checks, see `references/hermes-policy-migration-smoke-checks.md`.
+
+### Hermes-native migration phase gates
+When Andy asks to continue a permission migration through a named phase, be active and keep going until that phase is verified or an approval gate blocks progress. After gateway restart or context compression, resume from the active task list/latest user instruction rather than giving a recap. Use `references/hermes-policy-migration-phase-gates.md` for the durable phase checklist: diff/classify, tool import verification, cache regeneration, Sheet dry-runs, smoke tests, cutover prep without unauthorized restart, and sub-agent-safe least-privilege handoff.

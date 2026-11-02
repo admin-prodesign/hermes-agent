@@ -1,0 +1,2 @@
+## Wake-on-complete cron pattern (job `8d43c3eba364`)
+Working one-shot that posted into MM thread after Andy poked: `schedule.kind=once` / `display: once in 5m`, `deliver=origin`, `attach_to_session=true`, `origin.platform=mattermost` + `chat_id` + `thread_id`, skills `[monthly-worker-scheduling]`, prompt = poll a concrete `poll_solve_preview` output dir and report finished/running/failed only. Keep prompts smaller than that job’s (it hit the single-wake token tripwire).

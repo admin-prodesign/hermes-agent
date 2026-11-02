@@ -245,7 +245,11 @@ docs/superpowers/*
 /channel_aliases.json
 /feishu_comment_pairing.json
 /memories/
-/profiles/
+/profiles/*
+!/profiles/pdone/
+/profiles/pdone/*
+!/profiles/pdone/skills/
+!/profiles/pdone/skills/**
 /credentials/
 /mcp-tokens/
 /pairing/
