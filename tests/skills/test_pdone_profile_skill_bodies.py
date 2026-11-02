@@ -21,6 +21,15 @@ PDONE_SKILL_MD_PATHS: dict[str, str] = {
     "appsheet-copilot": "appsheet-copilot/SKILL.md",
     "pd-one-admin": "pd-one/pd-one-admin/SKILL.md",
     "automation-reliability": "automation-reliability/SKILL.md",
+    "automation-source-key-integrity": (
+        "automation-reliability/automation-source-key-integrity/SKILL.md"
+    ),
+    "approval-queue-incident-response": (
+        "automation-reliability/approval-queue-incident-response/SKILL.md"
+    ),
+    "stateful-runner-delivery": (
+        "automation-reliability/stateful-runner-delivery/SKILL.md"
+    ),
     "gog": "gog/SKILL.md",
     "worker-scheduling-optimization-rules": "worker-scheduling-optimization-rules/SKILL.md",
 }

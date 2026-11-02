@@ -16,10 +16,10 @@ frontmatter; move tables, long prose, and examples into `references/*.md`.
 | `pd-one-hermes-permissions` | 40,600 | `skills.auto_load` on pdone |
 | `monthly-worker-scheduling` | 32,400 | high `skill_view` |
 | `appsheet-copilot` | 25,200 | safe-ops scripts under this tree |
-| `pd-one/pd-one-admin` | 23,200 | office gate script path |
-| `automation-reliability` | 34,700 | |
-| `gog` | 26,900 | |
-| `worker-scheduling-optimization-rules` | 24,300 | |
+| `worker-scheduling-optimization-rules` | 24,300 | **Not in Neo dump (2026-11-02)** — still on nemo only |
+| `pd-one/pd-one-admin` | 23,200 | **Not in Neo dump (2026-11-02)** — still on nemo only |
+
+After lean (this repo, bytes): `pd-one-hermes-permissions` 4509; `monthly-worker-scheduling` 4463; `appsheet-copilot` 1474; `gog` 1208; `automation-reliability` 1400; nested `automation-source-key-integrity` 951, `approval-queue-incident-response` 1535, `stateful-runner-delivery` 1583.
 
 Export from nemo before editing in git (Neo ops: do not change pdone
 `auto_load` or host config in the lean PR):
