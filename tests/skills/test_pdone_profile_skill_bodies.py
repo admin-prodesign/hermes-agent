@@ -1,8 +1,7 @@
 """Size guard for PD One profile skills vendored under profiles/pdone/skills/.
 
-Live pdone skills on nemo are profile-owned; this tree is optional in git until
-export/sync lands. Once a listed SKILL.md exists in the repo, it must stay at
-or under 8192 bytes so auto_load / skill_view do not pin oversized bodies.
+Once a listed SKILL.md exists in the repo, it must stay at or under 8192 bytes
+so auto_load / skill_view do not pin oversized bodies.
 """
 from __future__ import annotations
 
@@ -19,7 +18,7 @@ PDONE_SKILL_MD_PATHS: dict[str, str] = {
     "pd-one-hermes-permissions": "pd-one-hermes-permissions/SKILL.md",
     "monthly-worker-scheduling": "monthly-worker-scheduling/SKILL.md",
     "appsheet-copilot": "appsheet-copilot/SKILL.md",
-    "pd-one-admin": "pd-one/pd-one-admin/SKILL.md",
+    "pd-one-admin": "pd-one-admin/SKILL.md",
     "automation-reliability": "automation-reliability/SKILL.md",
     "automation-source-key-integrity": (
         "automation-reliability/automation-source-key-integrity/SKILL.md"
@@ -42,8 +41,9 @@ def _skill_md(name: str) -> Path:
 @pytest.mark.parametrize("name", sorted(PDONE_SKILL_MD_PATHS))
 def test_pdone_profile_skill_md_at_most_8k_when_vendored(name: str) -> None:
     path = _skill_md(name)
-    if not path.is_file():
-        pytest.skip(f"{path.relative_to(REPO)} not in repo yet (export from nemo pdone profile)")
+    assert path.is_file(), (
+        f"{path.relative_to(REPO)} missing; vendored pdone skills must be present in git"
+    )
     size = path.stat().st_size
     assert size <= MAX_SKILL_MD_BYTES, (
         f"{path.relative_to(REPO)} is {size} bytes; lean/split to <= {MAX_SKILL_MD_BYTES} "
