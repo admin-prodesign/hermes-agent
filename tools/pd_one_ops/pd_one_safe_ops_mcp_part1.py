@@ -1,5 +1,5 @@
 from __future__ import annotations
-__all__ = ['worker_scheduling_setup_rules', '_push_apps_script_content', '_apps_script_project', '_apps_script_file', '_apps_script_syntax_check', '_apps_script_registered_projects', '_safe_staged_source_path', '_apps_script_patch_plan', '_apps_script_stage_file_plan', '_apps_script_verify', 'apps_script_project_ops', 'worker_scheduling_apps_script_patch', '_load_appsheet_record_ops_module', '_appsheet_quote', '_appsheet_hr_employee_compare_value', '_case_payload', '_validate_bulk_case_payload', '_plan_bulk_create_cases', '_find_case_by_id', '_find_case_by_parent_and_title', '_execute_bulk_create_cases', 'appsheet_record_ops', '_appsheet_hr_employee_subset', '_appsheet_hr_employee_plan', 'pd_one_appsheet_hr_employee_patch', 'pd_one_appsheet_table_probe', 'pd_one_appsheet_incident_morning_briefing_qa', 'pd_one_appsheet_definition_inspect', 'pd_one_appsheet_definition_apply_approved', 'pd_one_legacy_xls_inspect', 'pd_one_xlsx_workbook_inspect', 'pd_one_equipment_workbook_build', 'pd_one_item_number_xlsx_compiler', 'pd_one_item_number_render_qa_status', 'pd_one_item_number_historical_sample_summary', 'pd_one_item_number_local_fixture_copy', 'pd_one_doc_extract', 'pd_one_pptx_inspect', 'pd_one_pptx_ooxml_text_inspect', 'pd_one_artifact_base64_encode', 'pd_one_video_frame_sample', 'pd_one_local_video_compose', 'pd_one_origin_thread_media_deliver', 'pd_one_artifact_identity_inventory', 'pd_one_3mf_slicer_inspect', 'pd_one_svg_artifact_inspect', 'pd_one_svg_embed_image', 'pd_one_docx_inspect', 'pd_one_docx_body_xml_inspect', 'pd_one_docx_table_structure', 'pd_one_docx_layout_patch', 'pd_one_docx_table_search', 'pd_one_doc_detect_format', 'pd_one_sip_thread_index_build', 'pd_one_sip_thread_index_audit', 'pd_one_doc_build_artifact', 'pd_one_local_artifact_copy', 'pd_one_json_html_artifact_build', 'pd_one_office_html_to_docx', 'pd_one_ecrn_docx_unique_text_patch', 'pd_one_docx_exact_text_patch', 'pd_one_pptx_exact_text_patch', 'pd_one_pptx_from_template', 'pd_one_office_docprops_inspect', 'pd_one_office_visual_qa', 'pd_one_office_toolchain_status', 'pd_one_office_deb_contents', 'pd_one_item_number_workflow_check', 'pd_one_item_number_windows_excel_qa', 'pd_one_employee_watch', 'pd_one_office_convert_to_pdf', 'pd_one_drive_acl_authorize', 'pd_one_portal_module_change_authorize', 'pd_one_work_manual_change_authorize', 'pd_one_typhoon_automation', 'call_function_twin']
+__all__ = ['worker_scheduling_setup_rules', '_push_apps_script_content', '_apps_script_project', '_apps_script_file', '_apps_script_syntax_check', '_apps_script_registered_projects', '_safe_staged_source_path', '_apps_script_patch_plan', '_apps_script_stage_file_plan', '_apps_script_verify', 'apps_script_project_ops', 'worker_scheduling_apps_script_patch', '_load_appsheet_record_ops_module', '_appsheet_quote', '_appsheet_hr_employee_compare_value', '_case_payload', '_validate_bulk_case_payload', '_plan_bulk_create_cases', '_find_case_by_id', '_find_case_by_parent_and_title', '_execute_bulk_create_cases', 'appsheet_record_ops', '_appsheet_hr_employee_subset', '_appsheet_hr_employee_plan', 'pd_one_appsheet_hr_employee_patch', 'pd_one_appsheet_table_probe', 'pd_one_appsheet_incident_morning_briefing_qa', 'pd_one_appsheet_definition_inspect', 'pd_one_appsheet_definition_apply_approved', 'pd_one_legacy_xls_inspect', 'pd_one_xlsx_workbook_inspect', 'pd_one_equipment_workbook_build', 'pd_one_item_number_xlsx_compiler', 'pd_one_item_number_render_qa_status', 'pd_one_item_number_historical_sample_summary', 'pd_one_item_number_local_fixture_copy', 'pd_one_doc_extract', 'pd_one_office_file_ops', 'pd_one_pptx_inspect', 'pd_one_pptx_ooxml_text_inspect', 'pd_one_artifact_base64_encode', 'pd_one_video_frame_sample', 'pd_one_local_video_compose', 'pd_one_origin_thread_media_deliver', 'pd_one_artifact_identity_inventory', 'pd_one_3mf_slicer_inspect', 'pd_one_svg_artifact_inspect', 'pd_one_svg_embed_image', 'pd_one_docx_inspect', 'pd_one_docx_body_xml_inspect', 'pd_one_docx_table_structure', 'pd_one_docx_layout_patch', 'pd_one_docx_table_search', 'pd_one_doc_detect_format', 'pd_one_sip_thread_index_build', 'pd_one_sip_thread_index_audit', 'pd_one_doc_build_artifact', 'pd_one_local_artifact_copy', 'pd_one_json_html_artifact_build', 'pd_one_office_html_to_docx', 'pd_one_ecrn_docx_unique_text_patch', 'pd_one_docx_exact_text_patch', 'pd_one_pptx_exact_text_patch', 'pd_one_pptx_from_template', 'pd_one_office_docprops_inspect', 'pd_one_office_visual_qa', 'pd_one_office_toolchain_status', 'pd_one_office_deb_contents', 'pd_one_item_number_workflow_check', 'pd_one_item_number_windows_excel_qa', 'pd_one_employee_watch', 'pd_one_office_convert_to_pdf', 'pd_one_drive_acl_authorize', 'pd_one_portal_module_change_authorize', 'pd_one_work_manual_change_authorize', 'pd_one_typhoon_automation', 'call_function_twin']
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import hashlib
@@ -622,7 +622,7 @@ def pd_one_legacy_xls_inspect(input_path: str, sheet: Optional[str]=None, max_sh
     return run_json(cmd, timeout=180)
 
 def pd_one_xlsx_workbook_inspect(input_paths: list[str], sheet: Optional[str]=None, preview_input: Optional[str]=None, row_start: int=1, row_end: int=25, max_columns: int=25, include_values: bool=False) -> str:
-    """Read bounded XLSX/XLSM workbook metadata and optional sheet values in admin scope."""
+    """Read bounded XLSX/XLSM workbook metadata and optional sheet values under approved document roots."""
     if not input_paths or len(input_paths) > 12:
         raise ValueError('input_paths must contain 1 to 12 approved workbook paths')
     if sheet is not None and len(str(sheet)) > 200:
@@ -669,11 +669,52 @@ def pd_one_item_number_local_fixture_copy() -> str:
     return run_json([sys.executable, str(SAFE_OPS()), 'item-number-local-fixture-copy'], timeout=900)
 
 def pd_one_doc_extract(input_path: str) -> str:
-    """Extract bounded document text. DOCX receipts include indexed body paragraphs; PPTX receipts include package stats plus bounded slide text. The exact canonical company-announcement template is allowlisted read-only."""
+    """Extract bounded document text from approved PD One document roots. DOCX receipts include indexed body paragraphs; PPTX receipts include package stats plus bounded slide text. The exact canonical company-announcement template is allowlisted read-only."""
     return run_json([sys.executable, str(SAFE_OPS()), 'doc-extract', '--input', input_path], timeout=120)
 
+def pd_one_office_file_ops(
+    action: str,
+    input_path: str='',
+    output_path: str='',
+    spec_path: str='',
+    format: str='',
+    sheet: Optional[str]=None,
+    max_rows: int=2000,
+    max_cols: int=100,
+) -> str:
+    """Read or write bounded Office files under approved PD One document roots.
+
+    Employees may use this for drafting XLSX, CSV, TSV, DOCX, and PPTX artifacts in
+    cache/documents, artifacts, tmp, workspace out, employee exports, and employee
+    artifacts. Read supports common Office suffixes; write supports xlsx, csv, tsv,
+    docx, and pptx only. Writes always target a new output path and never overwrite
+    the input file.
+    """
+    action = str(action or '').strip().lower()
+    if action not in {'read', 'write'}:
+        raise ValueError('action must be read or write')
+    cmd = [sys.executable, str(SAFE_OPS()), 'office-file-ops', '--action', action]
+    if action == 'read':
+        if not input_path:
+            raise ValueError('input_path is required for read')
+        cmd += ['--input', input_path]
+        if sheet:
+            cmd += ['--sheet', sheet]
+        cmd += ['--max-rows', str(max(1, min(int(max_rows), 2000))), '--max-cols', str(max(1, min(int(max_cols), 100)))]
+    else:
+        if not output_path:
+            raise ValueError('output_path is required for write')
+        if not spec_path:
+            raise ValueError('spec_path is required for write')
+        cmd += ['--out', output_path, '--spec', spec_path]
+        if input_path:
+            cmd += ['--input', input_path]
+        if format:
+            cmd += ['--format', str(format)]
+    return run_json(cmd, timeout=180)
+
 def pd_one_pptx_inspect(input_path: str, include_text: bool=True) -> str:
-    """Inspect one bounded PPTX for slide dimensions and recursive shape/run text in admin scope."""
+    """Inspect one bounded PPTX for slide dimensions and recursive shape/run text under approved document roots."""
     cmd = [sys.executable, str(SAFE_OPS()), 'pptx-inspect', '--input', input_path]
     if not include_text:
         cmd.append('--no-text')
@@ -750,7 +791,7 @@ def pd_one_svg_embed_image(input_path: str, action: str='inspect') -> str:
     return run_json([sys.executable, str(SAFE_OPS()), 'svg-embed-image', '--action', action, '--input', input_path], timeout=45)
 
 def pd_one_docx_inspect(input_path: str, table_index: int, row_index: int, cell_index: int, paragraph_index: int=0, include_runs: bool=True) -> str:
-    """Inspect one bounded DOCX table-cell paragraph and optional run text in admin scope."""
+    """Inspect one bounded DOCX table-cell paragraph and optional run text under approved document roots."""
     indices = {'table_index': table_index, 'row_index': row_index, 'cell_index': cell_index, 'paragraph_index': paragraph_index}
     for name, value in indices.items():
         if isinstance(value, bool) or not isinstance(value, int) or value < 0 or (value > 500):

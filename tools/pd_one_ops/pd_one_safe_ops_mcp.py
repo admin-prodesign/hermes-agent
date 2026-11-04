@@ -185,6 +185,7 @@ __all__ = [
     'pd_one_item_number_historical_sample_summary',
     'pd_one_item_number_local_fixture_copy',
     'pd_one_doc_extract',
+    'pd_one_office_file_ops',
     'pd_one_pptx_inspect',
     'pd_one_pptx_ooxml_text_inspect',
     'pd_one_artifact_base64_encode',
