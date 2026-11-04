@@ -445,6 +445,7 @@ __all__ = [
     'harvest_google_file_ids',
     '_authorize_drive_writer',
     'employee_live_drive_writer_skips_admin_ticket',
+    'employee_message_for_approval_notify',
     'cmd_admin_approval_request',
     'cmd_admin_approval_list_open',
     'cmd_admin_approval_decide',
