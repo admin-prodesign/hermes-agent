@@ -603,6 +603,7 @@ __all__ = [
     'cmd_office_visual_qa',
     'convert_html_to_docx',
     'cmd_office_html_to_docx',
+    'cmd_office_file_ops',
     'cmd_doc_build',
     '_load_ecrn_docx_patch_module',
     'cmd_ecrn_docx_unique_text_patch',

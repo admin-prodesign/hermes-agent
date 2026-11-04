@@ -1,5 +1,5 @@
 from __future__ import annotations
-__all__ = ['cmd_3mf_slicer_inspect', 'cmd_svg_embed_image', 'cmd_pptx_inspect', 'cmd_docx_inspect', 'cmd_docx_body_xml_inspect', 'cmd_pptx_ooxml_text_inspect', 'cmd_docx_table_structure', 'cmd_docx_table_search', 'cmd_legacy_xls_inspect', '_xlsx_preview_value', 'inspect_xlsx_workbooks', 'cmd_xlsx_workbook_inspect', '_load_equipment_workbook_module', 'cmd_equipment_workbook', '_item_number_compiler_python', '_ensure_item_number_compiler_imports', '_load_item_number_compiler_module', '_item_number_smoke_approval', 'item_number_xlsx_compiler_check', 'item_number_xlsx_compiler_smoke', 'cmd_item_number_xlsx_compiler', 'cmd_doc_detect_format', 'render_legacy_xls_summary_pdf', 'inspect_office_toolchain', 'inspect_office_deb_contents', 'cmd_office_deb_contents', 'inspect_item_number_render_qa_status', '_ecrn_approval_pilot_status_blocked', '_summarize_ecrn_approval_pilot_preview', '_summarize_ecrn_approval_pilot_thread', 'inspect_ecrn_approval_pilot_status', 'inspect_timezone_snapshot', '_LoopbackOnlyRedirectHandler', '_protected_portal_allowed_paths', '_protected_portal_fetch', 'inspect_protected_portal_origin_probe', 'inspect_timestamp_to_epoch', 'inspect_epoch_milliseconds_to_iso', 'SHEETS_SERIAL_EPOCH', 'SHEETS_SERIAL_MIN', 'SHEETS_SERIAL_MAX', 'SHEETS_SERIAL_MAX_ITEMS', 'SHEETS_COLUMN_MAX_LEN', 'SHEETS_COLUMN_MAX_INDEX', 'SHEETS_COLUMN_MAX_ITEMS', 'SHEETS_RANGE_MAX_ITEMS', '_a1_column_to_index', 'inspect_sheets_serial_column_convert', 'cmd_timezone_snapshot', 'cmd_protected_portal_origin_probe', 'cmd_timestamp_to_epoch', 'cmd_epoch_milliseconds_to_iso', 'cmd_sheets_serial_column_convert', 'cmd_office_toolchain_status', 'cmd_item_number_render_qa_status', 'cmd_item_number_historical_sample_summary', 'cmd_item_number_local_fixture_copy', 'cmd_item_number_windows_excel_qa', 'cmd_ecrn_approval_pilot_status', 'cmd_ecrn_approval_pilot_check', '_item_number_workflow_component_paths', 'cmd_item_number_workflow_check', 'convert_office_to_pdf', 'cmd_office_convert_pdf', '_require_str', '_require_list', '_apply_table', 'build_html_from_paragraph_spec', 'cmd_json_html_artifact', '_iter_docx_table_paragraphs', '_iter_docx_story_paragraphs', 'inspect_or_stage_docx_layout', 'cmd_docx_layout_patch', '_replace_one_visible_paragraph_text', 'build_company_announcement_from_spec', 'build_docx_from_spec', '_office_visual_qa_file_receipts', 'run_office_visual_qa', 'run_visual_qa', '_office_docprops_local_name', '_office_docprops_safe_member', '_office_docprops_parse_xml', 'cmd_office_docprops_inspect', 'cmd_office_visual_qa', 'convert_html_to_docx', 'cmd_office_html_to_docx', 'cmd_doc_build', '_load_ecrn_docx_patch_module', 'cmd_ecrn_docx_unique_text_patch']
+__all__ = ['cmd_3mf_slicer_inspect', 'cmd_svg_embed_image', 'cmd_pptx_inspect', 'cmd_docx_inspect', 'cmd_docx_body_xml_inspect', 'cmd_pptx_ooxml_text_inspect', 'cmd_docx_table_structure', 'cmd_docx_table_search', 'cmd_legacy_xls_inspect', '_xlsx_preview_value', 'inspect_xlsx_workbooks', 'cmd_xlsx_workbook_inspect', '_load_equipment_workbook_module', 'cmd_equipment_workbook', '_item_number_compiler_python', '_ensure_item_number_compiler_imports', '_load_item_number_compiler_module', '_item_number_smoke_approval', 'item_number_xlsx_compiler_check', 'item_number_xlsx_compiler_smoke', 'cmd_item_number_xlsx_compiler', 'cmd_doc_detect_format', 'render_legacy_xls_summary_pdf', 'inspect_office_toolchain', 'inspect_office_deb_contents', 'cmd_office_deb_contents', 'inspect_item_number_render_qa_status', '_ecrn_approval_pilot_status_blocked', '_summarize_ecrn_approval_pilot_preview', '_summarize_ecrn_approval_pilot_thread', 'inspect_ecrn_approval_pilot_status', 'inspect_timezone_snapshot', '_LoopbackOnlyRedirectHandler', '_protected_portal_allowed_paths', '_protected_portal_fetch', 'inspect_protected_portal_origin_probe', 'inspect_timestamp_to_epoch', 'inspect_epoch_milliseconds_to_iso', 'SHEETS_SERIAL_EPOCH', 'SHEETS_SERIAL_MIN', 'SHEETS_SERIAL_MAX', 'SHEETS_SERIAL_MAX_ITEMS', 'SHEETS_COLUMN_MAX_LEN', 'SHEETS_COLUMN_MAX_INDEX', 'SHEETS_COLUMN_MAX_ITEMS', 'SHEETS_RANGE_MAX_ITEMS', '_a1_column_to_index', 'inspect_sheets_serial_column_convert', 'cmd_timezone_snapshot', 'cmd_protected_portal_origin_probe', 'cmd_timestamp_to_epoch', 'cmd_epoch_milliseconds_to_iso', 'cmd_sheets_serial_column_convert', 'cmd_office_toolchain_status', 'cmd_item_number_render_qa_status', 'cmd_item_number_historical_sample_summary', 'cmd_item_number_local_fixture_copy', 'cmd_item_number_windows_excel_qa', 'cmd_ecrn_approval_pilot_status', 'cmd_ecrn_approval_pilot_check', '_item_number_workflow_component_paths', 'cmd_item_number_workflow_check', 'convert_office_to_pdf', 'cmd_office_convert_pdf', '_require_str', '_require_list', '_apply_table', 'build_html_from_paragraph_spec', 'cmd_json_html_artifact', '_iter_docx_table_paragraphs', '_iter_docx_story_paragraphs', 'inspect_or_stage_docx_layout', 'cmd_docx_layout_patch', '_replace_one_visible_paragraph_text', 'build_company_announcement_from_spec', 'build_docx_from_spec', '_office_visual_qa_file_receipts', 'run_office_visual_qa', 'run_visual_qa', '_office_docprops_local_name', '_office_docprops_safe_member', '_office_docprops_parse_xml', 'cmd_office_docprops_inspect', 'cmd_office_visual_qa', 'convert_html_to_docx', 'cmd_office_html_to_docx', 'cmd_office_file_ops', 'cmd_doc_build', '_load_ecrn_docx_patch_module', 'cmd_ecrn_docx_unique_text_patch']
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import argparse
@@ -241,7 +241,7 @@ def cmd_pptx_inspect(args: argparse.Namespace) -> None:
 def cmd_docx_inspect(args: argparse.Namespace) -> None:
     path = require_allowed_doc_path(Path(args.input))
     result = inspect_docx_paragraph(path, table_index=args.table_index, row_index=args.row_index, cell_index=args.cell_index, paragraph_index=args.paragraph_index, include_runs=args.include_runs)
-    result.update({'status': 'ok', 'capability': 'pd_one_docx_inspect', 'input': str(path), 'type': '.docx', 'safety': {'read_only': True, 'admin_only': True, 'approved_document_root': True, 'bounded_target': True, 'shell_used': False, 'source_system_writes_forbidden': True}})
+    result.update({'status': 'ok', 'capability': 'pd_one_docx_inspect', 'input': str(path), 'type': '.docx', 'safety': {'read_only': True, 'approved_document_root': True, 'bounded_target': True, 'shell_used': False, 'source_system_writes_forbidden': True}})
     emit(result)
 
 def cmd_docx_body_xml_inspect(args: argparse.Namespace) -> None:
@@ -1750,6 +1750,42 @@ def convert_html_to_docx(input_path: Path, out: Path) -> dict[str, Any]:
 
 def cmd_office_html_to_docx(args: argparse.Namespace) -> None:
     emit(convert_html_to_docx(Path(args.input), Path(args.out)))
+
+def cmd_office_file_ops(args: argparse.Namespace) -> None:
+    """Read or write bounded Office files under approved PD One document roots."""
+    from tools.pd_one_ops import pd_one_office_file_ops as office_ops
+
+    action = str(args.action or '').strip().lower()
+    try:
+        if action == 'read':
+            if not args.input:
+                fail('--input is required for read')
+            result = office_ops.read_office_file(
+                args.input,
+                sheet=args.sheet,
+                max_rows=_bounded_int(args.max_rows, '--max-rows', 1, office_ops.OFFICE_FILE_OPS_MAX_ROWS),
+                max_cols=_bounded_int(args.max_cols, '--max-cols', 1, office_ops.OFFICE_FILE_OPS_MAX_COLS),
+            )
+        elif action == 'write':
+            if not args.out:
+                fail('--out is required for write')
+            if not args.spec:
+                fail('--spec is required for write')
+            result = office_ops.write_office_file(
+                args.out,
+                args.spec,
+                input_path=args.input,
+                format_hint=args.format,
+            )
+        else:
+            fail('action must be read or write')
+    except ValueError as exc:
+        logging.getLogger('pd_one_ops').exception('pd one command failed')
+        fail(str(exc))
+    emit(result)
+    if result.get('status') != 'ok':
+        raise SystemExit(1)
+
 
 def cmd_doc_build(args: argparse.Namespace) -> None:
     spec_path = require_allowed_doc_path(Path(args.spec))

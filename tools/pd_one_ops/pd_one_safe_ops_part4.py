@@ -40,6 +40,7 @@ from tools.pd_one_ops.pd_one_safe_ops_part0 import *
 from tools.pd_one_ops.pd_one_safe_ops_part1 import *
 from tools.pd_one_ops.pd_one_safe_ops_part2 import *
 from tools.pd_one_ops.pd_one_safe_ops_part3 import *
+from tools.pd_one_ops import pd_one_office_file_ops as office_ops
 
 def cmd_docx_exact_text_patch(args: argparse.Namespace) -> None:
     """Inspect or stage a bounded set of exact visible-text DOCX replacements."""
@@ -821,6 +822,16 @@ def build_parser():
         p.add_argument('--input', required=True)
         p.add_argument('--out')
         p.set_defaults(func=cmd_doc_extract)
+        p = sub.add_parser('office-file-ops', help='Employee-safe bounded Office file read/write under approved roots')
+        p.add_argument('--action', required=True, choices=['read', 'write'])
+        p.add_argument('--input', help='Input file path under approved roots; optional on write to forbid same-path output')
+        p.add_argument('--out', help='Output path for write (must differ from --input when both are set)')
+        p.add_argument('--spec', help='JSON write spec path for action=write')
+        p.add_argument('--format', help='Optional write format hint: xlsx, csv, tsv, docx, pptx')
+        p.add_argument('--sheet', help='Optional workbook sheet name for read')
+        p.add_argument('--max-rows', type=int, default=office_ops.OFFICE_FILE_OPS_MAX_ROWS)
+        p.add_argument('--max-cols', type=int, default=office_ops.OFFICE_FILE_OPS_MAX_COLS)
+        p.set_defaults(func=cmd_office_file_ops)
         p = sub.add_parser('pptx-ooxml-text-inspect', help='Inspect bounded DrawingML a:t text from allowlisted PPTX members')
         p.add_argument('--input', required=True)
         p.add_argument('--member', action='append', required=True, help='Allowlisted ppt/slides|notesSlides|diagrams|charts member; repeat 1-12 times')
