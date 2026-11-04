@@ -40,6 +40,21 @@ def test_policy_selects_surface_and_isolates_cwd(tmp_path):
             build_policy(params, {})
 
 
+def test_pdapp_executor_source_runs_as_cli_and_keeps_label(tmp_path):
+    """PD One's admin-approval executor uses ``--source pdapp-executor`` for usage attribution."""
+    from gateway.session_policy import build_policy, created_surface
+    from hermes_state_runtime import RuntimeStoreError
+
+    cfg = {'platform_toolsets': {'cli': ['terminal']}}
+    policy = build_policy({'source': 'pdapp-executor', 'cwd': str(tmp_path), 'model': 'm'}, cfg)
+    assert policy.source == 'pdapp-executor'
+    assert policy.platform == 'cli'
+    assert created_surface('pdapp-executor') == 'pdapp-executor'
+    with pytest.raises(RuntimeStoreError, match='invalid_params') as caught:
+        build_policy({'source': 'not-a-surface', 'cwd': str(tmp_path), 'model': 'm'}, cfg)
+    assert caught.value.field == 'source'
+
+
 @pytest.mark.asyncio
 async def test_launch_options_reach_the_owner_frozen_and_hooks_consented(tmp_path, monkeypatch):
     """`-s/--skills`, `--checkpoints`, `--pass-session-id`, `--accept-hooks` (and an exported
