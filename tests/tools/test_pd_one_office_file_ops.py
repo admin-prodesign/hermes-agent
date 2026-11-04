@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import subprocess
 import sys
 import types
@@ -12,6 +13,17 @@ from pathlib import Path
 import pytest
 
 from tools.pd_one_ops import pd_one_office_file_ops as office_ops
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SAFE_OPS_SCRIPT = REPO_ROOT / "tools" / "pd_one_ops" / "pd_one_safe_ops.py"
+
+
+def _safe_ops_subprocess_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(base or os.environ)
+    prefix = str(REPO_ROOT)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = prefix if not existing else f"{prefix}{os.pathsep}{existing}"
+    return env
 
 S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -89,6 +101,44 @@ def pdone_root(tmp_path, monkeypatch):
     return root
 
 
+def test_safe_ops_launcher_registry_list_prints_json(tmp_path):
+    pdone = tmp_path / "profiles" / "pdone"
+    registry = pdone / "capabilities" / "registry.yaml"
+    registry.parent.mkdir(parents=True)
+    registry.write_text("tools: []\n", encoding="utf-8")
+    env = _safe_ops_subprocess_env()
+    env["HERMES_HOME"] = str(tmp_path)
+    result = subprocess.run(
+        [sys.executable, str(SAFE_OPS_SCRIPT), "registry-list"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        env=env,
+        cwd=str(REPO_ROOT),
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip(), "direct script run must print JSON, not empty stdout"
+    payload = json.loads(result.stdout)
+    assert payload.get("status") == "ok"
+    assert "registry" in payload
+
+
+def test_office_file_ops_cli_reaches_argparse():
+    result = subprocess.run(
+        [sys.executable, str(SAFE_OPS_SCRIPT), "office-file-ops", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        env=_safe_ops_subprocess_env(),
+        cwd=str(REPO_ROOT),
+    )
+    assert result.returncode == 0
+    assert "office-file-ops" in result.stdout
+    assert "--action" in result.stdout
+
+
 def test_xlsx_write_verifies_chinese_shared_strings(pdone_root, monkeypatch):
     fake = _FakeWorkbook()
 
@@ -125,6 +175,23 @@ def test_xlsx_write_verifies_chinese_shared_strings(pdone_root, monkeypatch):
     assert "测试" in shared
 
 
+def test_xlsx_write_chinese_shared_strings_real_openpyxl(pdone_root):
+    pytest.importorskip("openpyxl")
+    spec_path = pdone_root / "tmp" / "spec-real.json"
+    out_path = pdone_root / "tmp" / "out-real.xlsx"
+    spec_path.write_text(
+        json.dumps({"sheets": [{"name": "数据", "rows": [["中文", "测试"]]}]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    result = office_ops.write_office_file(out_path, spec_path)
+    assert result["status"] == "ok"
+    assert result["build"]["shared_strings_verified"] is True
+    with zipfile.ZipFile(out_path) as archive:
+        shared = archive.read("xl/sharedStrings.xml").decode("utf-8")
+    assert "中文" in shared
+    assert "测试" in shared
+
+
 def test_csv_round_trip(pdone_root):
     source = pdone_root / "tmp" / "source.csv"
     with source.open("w", encoding="utf-8", newline="") as handle:
@@ -139,6 +206,18 @@ def test_csv_round_trip(pdone_root):
     write_back = office_ops.write_office_file(out_path, spec_path)
     assert write_back["status"] == "ok"
     assert out_path.read_text(encoding="utf-8").splitlines() == ["a,b", "1,2"]
+
+
+def test_non_ascii_csv_write_flags_windows_code_page_risk(pdone_root):
+    spec_path = pdone_root / "tmp" / "unicode.csv.json"
+    out_path = pdone_root / "tmp" / "unicode.csv"
+    spec_path.write_text(
+        json.dumps({"rows": [["名称", "值"], ["一", "二"]]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    result = office_ops.write_office_file(out_path, spec_path)
+    assert result["status"] == "ok"
+    assert result["build"]["excel_windows_code_page_risk"] is True
 
 
 def test_path_outside_approved_roots_rejected(pdone_root, tmp_path):
