@@ -443,8 +443,11 @@ def _merge_mcp_into_per_job_toolsets(per_job: list[str], cfg: dict) -> list[str]
     if "no_mcp" in per_job:
         return result
     # lazy: avoid heavy hermes_cli import at module load; shares MCP-membership with gateway/CLI
-    from hermes_cli.tools_config import enabled_mcp_server_names
+    from hermes_cli.tools_config import enabled_mcp_server_names, toolsets_request_no_tools
     enabled_mcp = enabled_mcp_server_names(cfg)
+    configured = (cfg or {}).get("mcp_servers") if isinstance((cfg or {}).get("mcp_servers"), dict) else {}
+    if toolsets_request_no_tools(per_job, enabled_mcp | {str(name) for name in configured}):
+        return result
     if set(result) & enabled_mcp:
         return result
     for name in sorted(enabled_mcp):

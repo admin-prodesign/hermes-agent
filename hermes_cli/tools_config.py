@@ -696,6 +696,37 @@ def _recover_platform_native_toolsets(enabled_toolsets: set[str], platform: str,
             claimed.update(ts_tools)
 
 
+def _mcp_alias_name(name: str, known: set[str]) -> str:
+    """Bare MCP server name: ``mcp-<server>`` unwraps unless a server is literally named that."""
+    if name.startswith("mcp-") and name not in known and name[4:] in known:
+        return name[4:]
+    return name
+
+
+def toolsets_request_no_tools(toolset_names: list[str], known_mcp: set[str]) -> bool:
+    """True when the caller selected only empty native toolsets (or nothing).
+
+    ``bot_room`` is a verified text-only toolset with zero tools. Callers pick it intending
+    no tools, but default MCP merge would otherwise inject every enabled server — including
+    generated ``list_prompts`` / ``list_resources`` utilities the model then spends a
+    single-turn budget on. An explicit MCP server name still opts in.
+    """
+    names = [str(raw).strip() for raw in toolset_names if str(raw).strip() and str(raw).strip() != "no_mcp"]
+    if not names:
+        return True
+    known = {str(name) for name in known_mcp}
+    if any(_mcp_alias_name(name, known) in known for name in names):
+        return False
+    from toolsets import resolve_toolset, validate_toolset
+
+    for name in names:
+        if not validate_toolset(name):
+            return False
+        if resolve_toolset(name):
+            return False
+    return True
+
+
 def _merge_mcp_servers(
     config: dict, toolset_names: list[str], explicit_passthrough: set[str], include_default_mcp_servers: bool
 ) -> set[str]:
@@ -706,10 +737,9 @@ def _merge_mcp_servers(
     known = enabled_mcp_servers | {str(name) for name in configured}
     # ``mcp-<server>`` names the same server as its bare alias: either spelling selects only that server
     # (unless a server is literally named ``mcp-<server>``).
-    explicit_passthrough = {ts[4:] if ts.startswith("mcp-") and ts not in known
-                            and ts[4:] in known else ts for ts in explicit_passthrough}
+    explicit_passthrough = {_mcp_alias_name(ts, known) for ts in explicit_passthrough}
     result = explicit_passthrough - known
-    if "no_mcp" in toolset_names:
+    if "no_mcp" in toolset_names or toolsets_request_no_tools(toolset_names, known):
         return result - {"no_mcp"}
     explicit_mcp_servers = explicit_passthrough & enabled_mcp_servers
     # A listed server that is configured but disabled is still the user's server selection: it stays

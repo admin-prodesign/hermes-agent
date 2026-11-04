@@ -405,6 +405,36 @@ def test_a_saved_disabled_mcp_server_does_not_enable_every_other_server(listed):
     assert not {"dead", "mcp-dead", "live"} & enabled, enabled
 
 
+def test_empty_bot_room_toolset_does_not_inject_default_mcp_servers():
+    """``bot_room`` has zero tools. Callers pick it intending no tools; default MCP
+    merge used to inject every enabled server (list_prompts / list_resources)."""
+    from hermes_cli.tools_config import toolsets_request_no_tools
+
+    config = {
+        "platform_toolsets": {"cli": ["bot_room"]},
+        "mcp_servers": {
+            "survey_passcodes": {"url": "https://example.invalid/survey"},
+            "pdone_google_group_owners": {"url": "https://example.invalid/owners"},
+        },
+    }
+
+    assert toolsets_request_no_tools(["bot_room"], {"survey_passcodes", "pdone_google_group_owners"})
+    assert toolsets_request_no_tools([], {"survey_passcodes"})
+    enabled = _get_platform_tools(config, "cli")
+    assert "survey_passcodes" not in enabled
+    assert "pdone_google_group_owners" not in enabled
+    assert "mcp-survey_passcodes" not in enabled
+
+    empty_enabled = _get_platform_tools(
+        {
+            "platform_toolsets": {"cli": []},
+            "mcp_servers": {"survey_passcodes": {"url": "https://example.invalid/survey"}},
+        },
+        "cli",
+    )
+    assert "survey_passcodes" not in empty_enabled
+
+
 # ─── Imagegen Backend Picker Wiring ────────────────────────────────────────
 
 
