@@ -96,6 +96,7 @@ __all__ = [
     'pd_one_google_group_change_apply',
     'pd_one_smb_unc_content_search',
     'pd_one_sqlsrv_windows_acl_read',
+    'pd_one_unc_docx_table',
     'pd_one_google_group_change_dry_run',
     'pd_one_auth_browser_status',
     'pd_one_sysstat_summary',
@@ -228,3 +229,4 @@ __all__ = [
 ]
 from tools.pd_one_ops.pd_one_safe_ops_mcp_part0 import *
 from tools.pd_one_ops.pd_one_safe_ops_mcp_part1 import *
+from tools.pd_one_ops.pd_one_safe_ops_mcp_part2 import *

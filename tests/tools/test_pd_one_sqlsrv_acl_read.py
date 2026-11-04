@@ -75,11 +75,16 @@ def _ace(kind: str, rights: str) -> dict[str, Any]:
 
 
 def test_allow_read_ace_authorizes(monkeypatch, capsys):
-    _use(monkeypatch, FakeHelper({"ok": True, "authorized": True, "sam": "person", "errors": [], "matched_aces": [_ace("Allow", "ReadAndExecute, Synchronize")]}))
+    _use(monkeypatch, FakeHelper({
+        "ok": True, "authorized": True, "sam": "person", "errors": [],
+        "matched_aces": [_ace("Allow", "ReadAndExecute, Synchronize")],
+        "identities": ["JSPD\\person", "JSPD\\Domain Users"],
+    }))
     code, payload = _run(capsys, "--requester-user-id", REQUESTER, "--path", SHARE)
     assert code == 0
     assert payload["authorized"] is True and payload["admin_bypass"] is False
     assert payload["windows_sam"] == "person" and payload["matched_ace_count"] == 1
+    assert payload["identities"] == ["JSPD\\person", "JSPD\\Domain Users"]
 
 
 @pytest.mark.parametrize("raw", [

@@ -169,7 +169,7 @@ def authorize(requester_user_id: str, path: str) -> dict[str, Any]:
     helper = _sqlsrv()
     target = helper.unc_path(path)
     if is_admin(rec):
-        return {'ok': True, 'authorized': True, 'admin_bypass': True, 'path': target, 'windows_sam': None, 'matched_ace_count': 0}
+        return {'ok': True, 'authorized': True, 'admin_bypass': True, 'path': target, 'windows_sam': None, 'matched_ace_count': 0, 'identities': []}
     emails = company_emails(rec)
     if not emails:
         fail('requester has no company email for the AD lookup', {'requester_user_id': requester_user_id})
@@ -179,7 +179,8 @@ def authorize(requester_user_id: str, path: str) -> dict[str, Any]:
     aces = [ace for ace in raw.get('matched_aces') or [] if isinstance(ace, dict)]
     errors = [str(error) for error in raw.get('errors') or []]
     authorized = bool(raw.get('authorized')) and _read_aces(aces, 'Allow') and not _read_aces(aces, 'Deny') and not errors
-    result = {'ok': not errors, 'authorized': authorized, 'admin_bypass': False, 'path': target, 'windows_sam': raw.get('sam'), 'matched_ace_count': len(aces), 'matched_aces': aces}
+    identities = [str(name) for name in (raw.get('identities') or []) if str(name).strip()]
+    result = {'ok': not errors, 'authorized': authorized, 'admin_bypass': False, 'path': target, 'windows_sam': raw.get('sam'), 'matched_ace_count': len(aces), 'matched_aces': aces, 'identities': identities}
     if not authorized:
         result['error'] = '; '.join(errors) or 'NTFS does not grant Read or Write on that path to the requester'
     return result

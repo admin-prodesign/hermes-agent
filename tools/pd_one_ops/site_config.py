@@ -153,6 +153,35 @@ def site_text(name: str) -> str:
     return os.environ.get(name, "") or ""
 
 
+def unc_docx_roots() -> list[dict[str, Any]]:
+    """Allowlisted UNC Word roots from ``pd_one.unc_docx_roots``. Not a secret.
+
+    Each item is a UNC string or ``{root, skip_folders}``. Built-in SIP originals
+    stay available even when this key is unset; config only adds or refines roots.
+    """
+    raw = _config_section().get("unc_docx_roots")
+    if not isinstance(raw, list):
+        return []
+    roots: list[dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, str) and item.strip():
+            roots.append({"root": item.strip(), "skip_folders": []})
+            continue
+        if not isinstance(item, dict):
+            continue
+        root = str(item.get("root") or "").strip()
+        if not root:
+            continue
+        skips = item.get("skip_folders") or item.get("skip") or []
+        if isinstance(skips, str):
+            skips = [skips]
+        roots.append({
+            "root": root,
+            "skip_folders": [str(name).strip() for name in skips if str(name).strip()],
+        })
+    return roots
+
+
 def profile_tools_enabled() -> bool:
     """Profile ``tools/`` fallback. Off unless ``pd_one.load_profile_tools`` is true."""
     from utils import is_truthy_value

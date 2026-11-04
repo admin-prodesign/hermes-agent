@@ -67,8 +67,9 @@ def test_selftest_passes_against_a_readonly_copy_of_the_release(healthy_home):
     assert proc.returncode == 0 and not failures, failures
     assert report["release"] != str(REPO)
     tool_names = {r["name"] for r in report["results"]}
-    assert {"pd_one_sqlsrv_windows_acl_read", "pd_one_smb_unc_content_search", "build_server"} <= tool_names
+    assert {"pd_one_sqlsrv_windows_acl_read", "pd_one_smb_unc_content_search", "pd_one_unc_docx_table", "build_server"} <= tool_names
     assert any(name.startswith("start pd_one_sqlsrv_windows_acl_read.py") for name in tool_names)
+    assert any(name.startswith("start pd_one_unc_docx_table.py") for name in tool_names)
     assert "stdlib interpreter has no ruamel" in tool_names
     assert any(name == "start pd_one_smb_unc_content_search.py (stdlib-only)" for name in tool_names)
 
