@@ -4,14 +4,21 @@ Reuse upstream authority-only value shapes; these overrides do not widen METHODS
 """
 from typing import Literal
 
+from gateway.session_policy import SURFACES
 from pydantic import RootModel
 
-from .base import JsonValue, Params, Result
+from .base import JsonValue, Params, Result, WireEnum
 from .common import ProfileParams, TranscriptMessage
 from .connectors_operation import ConnectionRequestPayload
 from .sessions import TodoState
 from .canonical import AdmissionStatus, CanonicalSessionRef, PromptResponseResult, SessionInventoryFields
 from .registry import canonical_method
+
+# ``source`` keys must match ``gateway.session_policy.SURFACES`` (see tests below).
+SessionCreateSource = WireEnum(
+    'SessionCreateSource',
+    {key: key for key in sorted(SURFACES)},
+)
 
 
 class CanonicalSessionParams(ProfileParams):
@@ -20,7 +27,7 @@ class CanonicalSessionParams(ProfileParams):
 
 class CanonicalCreateParams(ProfileParams):
     request_id: str | None = None
-    source: Literal['cli', 'tui', 'gui', 'acp', 'tool', 'oneshot'] = 'cli'
+    source: SessionCreateSource = SessionCreateSource.cli
     cwd: str | None = None
     # The sessions-row ``cwd`` when it differs from the execution ``cwd`` (the classic CLI records
     # main's stamp: the launch dir, ``""`` = none); ``cwd`` stays where the tools run.
