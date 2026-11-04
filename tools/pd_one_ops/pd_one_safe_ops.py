@@ -636,3 +636,6 @@ from tools.pd_one_ops.pd_one_safe_ops_part1 import *
 from tools.pd_one_ops.pd_one_safe_ops_part2 import *
 from tools.pd_one_ops.pd_one_safe_ops_part3 import *
 from tools.pd_one_ops.pd_one_safe_ops_part4 import *
+
+if __name__ == '__main__':
+    raise SystemExit(main())

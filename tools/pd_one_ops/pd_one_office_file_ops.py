@@ -11,9 +11,15 @@ import hashlib
 import io
 import json
 import os
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import Any
+
+_OOXML_SPREADSHEET_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+_OOXML_PACKAGE_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships'
+_OOXML_CONTENT_TYPES_NS = 'http://schemas.openxmlformats.org/package/2006/content-types'
+_OOXML_OFFICE_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
 from tools.pd_one_ops.pd_one_safe_ops_part0 import DOC_ALLOWED_ROOTS, ROOT
 from tools.pd_one_ops.pd_one_safe_ops_part2 import is_within
@@ -309,6 +315,98 @@ def _collect_table_strings(rows: list[list[Any]]) -> set[str]:
     return found
 
 
+def _ooxml_inline_string_text(cell: ET.Element) -> str:
+    parts: list[str] = []
+    for node in cell.iter(f'{{{_OOXML_SPREADSHEET_NS}}}t'):
+        parts.append(node.text or '')
+    return ''.join(parts)
+
+
+def _promote_xlsx_inline_strings_to_shared(path: Path) -> None:
+    """openpyxl 3.x writes string cells as inlineStr; Excel tooling expects shared strings."""
+    with zipfile.ZipFile(path, 'r') as archive:
+        entries = {name: archive.read(name) for name in archive.namelist()}
+
+    shared_index: dict[str, int] = {}
+    shared_values: list[str] = []
+    reference_count = 0
+
+    def intern_string(text: str) -> int:
+        if text not in shared_index:
+            shared_index[text] = len(shared_values)
+            shared_values.append(text)
+        return shared_index[text]
+
+    sheet_names = sorted(
+        name for name in entries if name.startswith('xl/worksheets/sheet') and name.endswith('.xml')
+    )
+    for sheet_name in sheet_names:
+        root = ET.fromstring(entries[sheet_name])
+        for cell in root.iter(f'{{{_OOXML_SPREADSHEET_NS}}}c'):
+            if cell.get('t') != 'inlineStr':
+                continue
+            text = _ooxml_inline_string_text(cell)
+            idx = intern_string(text)
+            reference_count += 1
+            cell.attrib['t'] = 's'
+            for child in list(cell):
+                cell.remove(child)
+            value = ET.SubElement(cell, f'{{{_OOXML_SPREADSHEET_NS}}}v')
+            value.text = str(idx)
+        entries[sheet_name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+
+    if not shared_values:
+        return
+
+    sst = ET.Element(
+        f'{{{_OOXML_SPREADSHEET_NS}}}sst',
+        count=str(reference_count),
+        uniqueCount=str(len(shared_values)),
+    )
+    for text in shared_values:
+        item = ET.SubElement(sst, f'{{{_OOXML_SPREADSHEET_NS}}}si')
+        text_node = ET.SubElement(item, f'{{{_OOXML_SPREADSHEET_NS}}}t')
+        text_node.text = text
+    entries['xl/sharedStrings.xml'] = ET.tostring(sst, encoding='utf-8', xml_declaration=True)
+
+    types_root = ET.fromstring(entries['[Content_Types].xml'])
+    override_tag = f'{{{_OOXML_CONTENT_TYPES_NS}}}Override'
+    shared_part = '/xl/sharedStrings.xml'
+    if not any(element.get('PartName') == shared_part for element in types_root.findall(override_tag)):
+        override = ET.SubElement(types_root, override_tag)
+        override.set('PartName', shared_part)
+        override.set(
+            'ContentType',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml',
+        )
+    entries['[Content_Types].xml'] = ET.tostring(types_root, encoding='utf-8', xml_declaration=True)
+
+    rels_path = 'xl/_rels/workbook.xml.rels'
+    rels_root = ET.fromstring(entries[rels_path])
+    rel_tag = f'{{{_OOXML_PACKAGE_REL_NS}}}Relationship'
+    if not any(element.get('Target') == 'sharedStrings.xml' for element in rels_root.findall(rel_tag)):
+        rel_ids = [
+            element.get('Id', '')
+            for element in rels_root.findall(rel_tag)
+            if (element.get('Id') or '').startswith('rId')
+        ]
+        next_num = max((int(rel_id[3:]) for rel_id in rel_ids if rel_id[3:].isdigit()), default=0) + 1
+        relationship = ET.SubElement(rels_root, rel_tag)
+        relationship.set('Id', f'rId{next_num}')
+        relationship.set('Type', f'{_OOXML_OFFICE_REL_NS}/sharedStrings')
+        relationship.set('Target', 'sharedStrings.xml')
+    entries[rels_path] = ET.tostring(rels_root, encoding='utf-8', xml_declaration=True)
+
+    temp = path.with_name(f'.{path.name}.{os.getpid()}.shared.tmp')
+    try:
+        with zipfile.ZipFile(temp, 'w', zipfile.ZIP_DEFLATED) as archive:
+            for name, data in entries.items():
+                archive.writestr(name, data)
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
 def _verify_shared_strings(path: Path, expected: set[str]) -> bool:
     non_ascii = {value for value in expected if any(ord(ch) > 127 for ch in value)}
     if not non_ascii:
@@ -369,6 +467,7 @@ def _write_xlsx(out: Path, spec: dict[str, Any]) -> dict[str, Any]:
     try:
         workbook.save(temp)
         os.replace(temp, out)
+        _promote_xlsx_inline_strings_to_shared(out)
     finally:
         workbook.close()
         temp.unlink(missing_ok=True)

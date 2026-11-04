@@ -457,6 +457,10 @@ nemo = [
   "browser-cookie3==0.20.1",
   "pyyaml==6.0.3",
   "requests==2.33.0",
+  # PD One employee office-file-ops (XLSX/DOCX/PPTX writes on the release host).
+  "openpyxl==3.1.5",
+  "python-docx==1.2.0",
+  "python-pptx==1.0.2",
   "hermes-agent[mcp]",
   # Gateway adapters on the host (webhook, Mattermost, LINE) import aiohttp from here.
   "hermes-agent[messaging]",
@@ -573,6 +577,10 @@ dev = [
 test = [
   "distlib==0.4.3; sys_platform == 'win32'",
   "anthropic==0.87.0",
+  # PD One office-file-ops E2E (production host installs the same pins via [nemo]).
+  "openpyxl==3.1.5",
+  "python-docx==1.2.0",
+  "python-pptx==1.0.2",
 ]
 
 [build-system]
