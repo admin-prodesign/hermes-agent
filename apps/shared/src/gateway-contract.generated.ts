@@ -4970,7 +4970,7 @@ export interface GroupsDiscardResult {
 export interface CanonicalCreateParams {
   profile?: string | null
   request_id?: string | null
-  source?: 'cli' | 'tui' | 'gui' | 'acp' | 'tool' | 'oneshot'
+  source?: SessionCreateSource
   cwd?: string | null
   row_cwd?: string | null
   model?: string | null
@@ -4998,6 +4998,7 @@ export interface CanonicalCreateParams {
   verbose?: boolean
   client_env?: Record<string, string> | null
 }
+export type SessionCreateSource = 'acp' | 'cli' | 'gui' | 'oneshot' | 'pdapp-executor' | 'tool' | 'tui'
 export interface CanonicalSnapshot {
   session_id: string
   stored_session_id: string
