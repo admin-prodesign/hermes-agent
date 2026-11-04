@@ -7,12 +7,13 @@ instead of handing ``<unset pd_one.external.<key>>`` to the OS as a file name.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
-from tools.pd_one_ops.site_config import UNSET_MARK, MissingExternalConfig, external_path
+from tools.pd_one_ops.site_config import UNSET_MARK, MissingExternalConfig, external_path, unc_docx_roots
 
 RELEASE_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -71,6 +72,7 @@ def external_child_env(base: Optional[Mapping[str, str]] = None) -> dict[str, st
     env["PD_ONE_LEDGER_TOOLS"] = str(root / "legacy-openclaw/workspace/tools")
     env["PD_ONE_ACL_TOOL"] = str(root / "tools/pd_one_sqlsrv_windows_acl_read.py")
     env["PD_ONE_OWNER_MM_USERNAME"] = site_text("PDONE_OWNER_MM_USERNAME").strip()
+    env["PD_ONE_UNC_DOCX_ROOTS"] = json.dumps(unc_docx_roots(), ensure_ascii=False)
     for key, var in (
         ("sqlsrv_readonly", "PD_ONE_SQLSRV_READONLY"),
         ("winrm_site_packages", "PD_ONE_WINRM_SITE_PACKAGES"),

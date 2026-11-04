@@ -92,6 +92,10 @@ pd_one:
   scheduling_rule_w12_name: Worker Name
   portal_public_hosts: portal.example.com,portal-alt.example.com
   docx_repair_ticket_id: PDAPP-EXAMPLE
+  unc_docx_roots:
+    - root: \\sql-srv\SIP&SOP\SIP\_原檔_新版本
+      skip_folders:
+        - 淘汰或已發行新版SIP原檔留存
   external:
     sqlsrv_readonly: /path/to/sqlsrv_readonly.py
     winrm_python: /path/to/winrm/bin/python
@@ -129,6 +133,7 @@ pd_one:
 | `scheduling_rule_w12_name` | `PDONE_SCHEDULING_RULE_W12_NAME` |
 | `portal_public_hosts` | `PDONE_PORTAL_PUBLIC_HOSTS` (comma-separated) |
 | `docx_repair_ticket_id` | `PDONE_DOCX_REPAIR_TICKET_ID` |
+| `unc_docx_roots` | Extra allowlisted UNC Word roots for `pd_one_unc_docx_table` (list of UNC strings or `{root, skip_folders}`). The SIP originals root is built in. |
 
 `portal_public_hosts` must be set. An empty list does not classify a public
 URL as the local probe. Any other `PDONE_*` name can be set under
@@ -165,6 +170,21 @@ interpreter running the MCP server, or the configured one
 (`pd_one.external.winrm_python` for the file-server content search). Children
 get `HERMES_HOME` and the release on `PYTHONPATH`, so a helper started by a
 different interpreter still imports `tools.pd_one_ops`.
+
+## Allowlisted UNC Word tables
+
+`pd_one_unc_docx_table` is the staff-wide read-only tool for paging `.docx`
+files under an allowlisted UNC root and extracting a named Word table (for
+example `重量檢測`). The first built-in root is
+`\\sql-srv\SIP&SOP\SIP\_原檔_新版本`, and the archive folder
+`淘汰或已發行新版SIP原檔留存` is skipped unless `include_skipped` is true.
+More roots can be added with `pd_one.unc_docx_roots`.
+
+Every list and extract reuses `pd_one_sqlsrv_windows_acl_read.authorize`:
+Mattermost sender id → company email → AD → NTFS Allow/Deny Read. The sql-srv
+helper identity is used only after that gate. A user without Finance folder
+ACL cannot list, search, or read Finance paths. Paths outside the allowlist
+are refused before any ACL or SMB call. There are no writes.
 
 ## Apps Script self-registration
 

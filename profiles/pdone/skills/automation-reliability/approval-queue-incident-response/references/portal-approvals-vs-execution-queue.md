@@ -47,7 +47,7 @@ If Andy asks why **In progress** still has many tickets that should already have
 When someone says a request is stuck on approval and the admin sees no card:
 
 1. An empty open / Needs me queue is not the end. Search Closed for `expired`, and the ledger by requester plus bound action.
-2. Portal-only tickets are not posted to Mattermost. `admin_approval_post_id=portal-only` means nothing was sent to the Admin channel or by DM. Do not treat requester-facing handoff prose that says the ticket was sent to Admin as delivery evidence.
+2. Portal-only tickets are not posted to Mattermost. `admin_approval_post_id=portal-only` means nothing was sent to the Admin channel or by DM. Requester-facing handoff text for that class names the portal queue, not the Admin channel. Do not treat older prose that said the ticket was sent to Admin as delivery evidence.
 3. Pending tickets do not auto-expire. `expire_due_pending` is a no-op. A missing card is not explained by a 24-hour decision window. Already-expired historical tickets stay expired until a human reopens them.
 4. If the admin then authorizes the bound action in the origin thread, execute in-session. Do not open a replacement ticket for them to approve their own request.
 

@@ -45,7 +45,7 @@ Do not bypass typed status or approval tools with shell ledger mutations.
 
 ### 3a. Admin sees nothing to approve
 
-An empty open queue is not proof that no request was filed. Load `references/portal-approvals-vs-execution-queue.md` and also search Closed for historical `expired` rows. Portal-only tickets have no Mattermost card. Requester-facing handoff text can still say the ticket was sent to the Admin channel when `admin_approval_post_id` is `portal-only`. Pending tickets do not auto-expire. If the admin then authorizes the bound action in the origin thread, that message is the authorization — do not open a replacement ticket for them to approve their own request.
+An empty open queue is not proof that no request was filed. Load `references/portal-approvals-vs-execution-queue.md` and also search Closed for historical `expired` rows. Portal-only tickets have no Mattermost card. Requester-facing handoff text for that class names the portal queue, not the Admin channel. Pending tickets do not auto-expire. If the admin then authorizes the bound action in the origin thread, that message is the authorization — do not open a replacement ticket for them to approve their own request.
 
 ### 4. Reconcile staged worker mappings
 

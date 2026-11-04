@@ -28,6 +28,7 @@ _PROFILE_ENV = ("HERMES_PROFILE_HOME", "PD_ONE_PROFILE_HOME", "HERMES_PROFILE", 
 _RELEASE_SCRIPTS = (
     "pd_one_sqlsrv_windows_acl_read.py",
     "pd_one_smb_unc_content_search.py",
+    "pd_one_unc_docx_table.py",
     "pd_one_dangerous_command_audit.py",
     "google_group_owner_ops.py",
     "mattermost_policy_lookup.py",
@@ -113,6 +114,17 @@ def test_acl_read_wrapper_runs_the_release_copy_through_an_interpreter(install_r
     argv = captured[-1]
     assert argv[0] == sys.executable
     assert argv[1] == str(release_package / "pd_one_sqlsrv_windows_acl_read.py")
+    assert launch_problems(argv) == []
+
+
+def test_unc_docx_table_wrapper_runs_the_release_copy_through_an_interpreter(install_root, release_package, captured):
+    from tools.pd_one_ops.pd_one_safe_ops_mcp_part2 import pd_one_unc_docx_table
+
+    pd_one_unc_docx_table("user-id-placeholder", root=r"\\sql-srv\SIP&SOP\SIP\_原檔_新版本")
+    argv = captured[-1]
+    assert argv[0] == sys.executable
+    assert argv[1] == str(release_package / "pd_one_unc_docx_table.py")
+    assert "--requester-user-id" in argv
     assert launch_problems(argv) == []
 
 
