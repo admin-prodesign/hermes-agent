@@ -796,11 +796,11 @@ def deliver_route_notification(outcome: dict[str, Any], alert: dict[str, Any], *
     route = notification_route_for_outcome(outcome)
     cmd = [
         *_router_base_cmd(),
-        "send",
         "--config",
         str(Path(os.environ.get("PD_ONE_NOTIFICATION_ROUTES", "/home/prodesign/.hermes/config/notification-routes.json"))),
         "--state-dir",
         str(NOTIFICATION_STATE_DIR),
+        "send",
         "--route", route,
         "--event-id", _alert_ref(alert),
         "--correlation-key", _notification_correlation_key(alert),
@@ -808,7 +808,7 @@ def deliver_route_notification(outcome: dict[str, Any], alert: dict[str, Any], *
         "--title", title,
         "--body", body,
     ]
-    proc = subprocess.run(cmd, text=True, capture_output=True, timeout=SUPERVISOR_DELIVERY_TIMEOUT_SECONDS, check=False)
+    proc = subprocess.run(cmd, cwd=str(HERMES_AGENT), text=True, capture_output=True, timeout=SUPERVISOR_DELIVERY_TIMEOUT_SECONDS, check=False)
     result_text = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
     try:
         payload = json.loads((proc.stdout or "{}").strip() or "{}")
@@ -857,14 +857,15 @@ def main() -> int:
                 flush = subprocess.run(
                     [
                         *_router_base_cmd(),
-                        "flush",
                         "--config",
                         str(Path(os.environ.get("PD_ONE_NOTIFICATION_ROUTES", "/home/prodesign/.hermes/config/notification-routes.json"))),
                         "--state-dir",
                         str(NOTIFICATION_STATE_DIR),
+                        "flush",
                         "--route",
                         route,
                     ],
+                    cwd=str(HERMES_AGENT),
                     text=True,
                     capture_output=True,
                     timeout=SUPERVISOR_DELIVERY_TIMEOUT_SECONDS,
