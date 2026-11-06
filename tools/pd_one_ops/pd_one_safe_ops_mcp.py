@@ -123,6 +123,7 @@ __all__ = [
     'pd_one_mattermost_channel_post_audit',
     'pd_one_admin_alert_source_audit',
     'pd_one_mattermost_channel_setup',
+    'pd_one_mattermost_channel_create',
     'pd_one_admin_approval_request',
     'pd_one_admin_approval_list_open',
     'pd_one_admin_approval_decide',

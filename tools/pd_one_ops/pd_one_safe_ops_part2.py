@@ -1,5 +1,5 @@
 from __future__ import annotations
-__all__ = ['cmd_approval_ticket_cancel', '_bounded_json_object', 'cmd_admin_approval_kanban_status', 'load_hr_policy_lookup_module', 'cmd_hr_policy_lookup', 'post_file_entries', 'match_post_terms', 'cmd_mattermost_member_search', 'channel_policy_suggestion', 'cmd_mattermost_channel_setup', 'load_json', 'is_within', 'require_allowed_doc_path', 'ledger_ticket', 'require_approved_ticket', 'stable_dump', 'ensure_user', 'validate_mm_user_id', 'cmd_policy_change_dry_run', 'cmd_policy_change_apply', 'extract_docx', 'inspect_docx_paragraph', 'inspect_docx_body_xml', 'inspect_docx_table_structure', 'inspect_docx_table_matches', 'extract_legacy_doc', 'PPTX_EXTRACT_MAX_ARCHIVE_BYTES', 'PPTX_EXTRACT_MAX_SLIDE_XML_BYTES', 'PPTX_EXTRACT_MAX_SLIDES', 'PPTX_EXTRACT_MAX_TEXTS_PER_SLIDE', 'PPTX_EXTRACT_MAX_TEXT', '_pptx_reject_unsafe_zip_name', '_pptx_package_stats', '_extract_pptx_stdlib', 'extract_pptx', '_normalize_pptx_ooxml_member', '_pptx_ooxml_drawingml_texts', 'inspect_pptx_ooxml_text', '_pptx_trim_text', '_pptx_shape_type_name', '_pptx_is_group', '_pptx_collect_text_frame', 'inspect_pptx', 'extract_pdf', '_legacy_xls_column_name', '_legacy_xls_cell_address', '_legacy_xls_visibility_label', '_legacy_xls_cell_type_label', '_legacy_xls_trim_text', '_legacy_xls_jsonable', '_legacy_xls_sheet_attrs', '_legacy_xls_decode_cell_value', '_legacy_xls_encryption_probe', 'inspect_legacy_xls', 'extracted_plain_text', 'ANNOUNCEMENT_SIGNALS', 'REWARD_DISCIPLINE_SIGNALS', 'classify_company_announcement', 'extract_by_suffix', 'cmd_doc_extract', 'cmd_artifact_base64_encode', 'cmd_local_artifact_copy', 'cmd_video_frame_sample', 'cmd_svg_artifact_inspect', '_parse_3mf_slicer_settings', '_safe_3mf_zip_info', '_validate_artifact_identity_glob', 'cmd_artifact_identity_inventory']
+__all__ = ['cmd_approval_ticket_cancel', '_bounded_json_object', 'cmd_admin_approval_kanban_status', 'load_hr_policy_lookup_module', 'cmd_hr_policy_lookup', 'post_file_entries', 'match_post_terms', 'cmd_mattermost_member_search', 'channel_policy_suggestion', 'cmd_mattermost_channel_setup', 'cmd_mattermost_channel_create', '_normalize_mm_username_list', 'load_json', 'is_within', 'require_allowed_doc_path', 'ledger_ticket', 'require_approved_ticket', 'stable_dump', 'ensure_user', 'validate_mm_user_id', 'cmd_policy_change_dry_run', 'cmd_policy_change_apply', 'extract_docx', 'inspect_docx_paragraph', 'inspect_docx_body_xml', 'inspect_docx_table_structure', 'inspect_docx_table_matches', 'extract_legacy_doc', 'PPTX_EXTRACT_MAX_ARCHIVE_BYTES', 'PPTX_EXTRACT_MAX_SLIDE_XML_BYTES', 'PPTX_EXTRACT_MAX_SLIDES', 'PPTX_EXTRACT_MAX_TEXTS_PER_SLIDE', 'PPTX_EXTRACT_MAX_TEXT', '_pptx_reject_unsafe_zip_name', '_pptx_package_stats', '_extract_pptx_stdlib', 'extract_pptx', '_normalize_pptx_ooxml_member', '_pptx_ooxml_drawingml_texts', 'inspect_pptx_ooxml_text', '_pptx_trim_text', '_pptx_shape_type_name', '_pptx_is_group', '_pptx_collect_text_frame', 'inspect_pptx', 'extract_pdf', '_legacy_xls_column_name', '_legacy_xls_cell_address', '_legacy_xls_visibility_label', '_legacy_xls_cell_type_label', '_legacy_xls_trim_text', '_legacy_xls_jsonable', '_legacy_xls_sheet_attrs', '_legacy_xls_decode_cell_value', '_legacy_xls_encryption_probe', 'inspect_legacy_xls', 'extracted_plain_text', 'ANNOUNCEMENT_SIGNALS', 'REWARD_DISCIPLINE_SIGNALS', 'classify_company_announcement', 'extract_by_suffix', 'cmd_doc_extract', 'cmd_artifact_base64_encode', 'cmd_local_artifact_copy', 'cmd_video_frame_sample', 'cmd_svg_artifact_inspect', '_parse_3mf_slicer_settings', '_safe_3mf_zip_info', '_validate_artifact_identity_glob', 'cmd_artifact_identity_inventory']
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import argparse
@@ -365,6 +365,94 @@ def cmd_mattermost_channel_setup(args: argparse.Namespace) -> None:
     plan['apply_response'] = {k: applied.get(k) for k in ['id', 'display_name', 'purpose', 'update_at']}
     plan['readback'] = {'display_name': readback.get('display_name'), 'purpose': readback.get('purpose'), 'display_name_match': readback.get('display_name') == target_display, 'purpose_match': readback.get('purpose') == target_purpose}
     emit(plan)
+
+def _normalize_mm_username_list(raw: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in raw or []:
+        u = validate_mattermost_name(str(item).strip().lower(), 'member_username')
+        key = u.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(u)
+    return out
+
+def cmd_mattermost_channel_create(args: argparse.Namespace) -> None:
+    """Create a private Mattermost channel with display name, purpose, and members (typed; no shell)."""
+    team_name = validate_mattermost_name(args.team_name, 'team_name')
+    channel_name = validate_mattermost_name(args.channel_name, 'channel_name')
+    display_name = (args.display_name or '').strip()
+    if not display_name:
+        fail('--display-name is required')
+    purpose = (args.purpose or '').strip()
+    action = str(getattr(args, 'action', 'dry_run') or 'dry_run')
+    if action not in {'dry_run', 'apply'}:
+        fail('--action must be dry_run or apply')
+    member_usernames = _normalize_mm_username_list(list(args.member_username or []))
+    if len(member_usernames) > 50:
+        fail('at most 50 member --member-username entries are allowed')
+    base = _PdUnset
+    channel_id = _PdUnset
+    create_body = _PdUnset
+    headers = _PdUnset
+    me = _PdUnset
+    plan = _PdUnset
+    readback = _PdUnset
+    resolved = _PdUnset
+    team = _PdUnset
+    team_id = _PdUnset
+
+    def _pd_phase_create():
+        nonlocal base, channel_id, create_body, headers, me, plan, readback, resolved, team, team_id
+        base, headers, me = mattermost_context()
+        team = mm_request('GET', base, headers, f'/api/v4/teams/name/{team_name}')
+        team_id = str(team.get('id') or '')
+        if not team_id:
+            fail('team lookup returned no id')
+        resolved = []
+        for uname in member_usernames:
+            u = mm_request('GET', base, headers, f'/api/v4/users/username/{uname}')
+            uid = str(u.get('id') or '')
+            if not uid:
+                fail(f'user lookup returned no id for username {uname!r}')
+            if int(u.get('delete_at') or 0) > 0:
+                fail(f'refusing deleted Mattermost user: {uname!r}')
+            resolved.append({'id': uid, 'username': str(u.get('username') or uname)})
+        create_body = {'team_id': team_id, 'name': channel_name, 'display_name': display_name, 'purpose': purpose, 'type': 'P'}
+        endpoints = [{'method': 'POST', 'path': '/api/v4/channels', 'json': create_body}]
+        for r in resolved:
+            endpoints.append({'method': 'POST', 'path': '/api/v4/channels/{channel_id}/members', 'json': {'user_id': r['id']}})
+        endpoints.extend([{'method': 'GET', 'path': '/api/v4/channels/{channel_id}'}, {'method': 'GET', 'path': '/api/v4/channels/{channel_id}/members', 'note': 'readback membership'}])
+        plan = {'status': 'ok', 'capability': 'pd_one_mattermost_channel_create', 'action': action, 'requested': {'team_name': team_name, 'channel_name': channel_name, 'display_name': display_name, 'purpose': purpose, 'member_usernames': member_usernames}, 'safety': {'shell_used': False, 'token_printed': False, 'authorization_header_printed': False, 'policy_permissions_changed': False, 'mattermost_post_forbidden': True, 'live_write': action == 'apply', 'live_confirmation_required': MATTERMOST_CHANNEL_CREATE_CONFIRMATION if action == 'apply' else None}, 'bot': {'id': me.get('id'), 'username': me.get('username')}, 'team': {'id': team_id, 'name': team.get('name')}, 'user_resolution': [{'username': r['username'], 'user_id': r['id']} for r in resolved], 'create_plan': {'private_channel_type': 'P', 'create_body': create_body, 'member_add_plan': [{'user_id': r['id'], 'username': r['username']} for r in resolved], 'http_sequence': endpoints}}
+        if action == 'dry_run':
+            emit(plan)
+            return _PdReturn(None)
+        if getattr(args, 'confirm_live_write', None) != MATTERMOST_CHANNEL_CREATE_CONFIRMATION:
+            fail(f'apply requires --confirm-live-write {MATTERMOST_CHANNEL_CREATE_CONFIRMATION!r}')
+        created = mm_request('POST', base, {**headers, 'Content-Type': 'application/json'}, '/api/v4/channels', json=create_body, timeout=35)
+        channel_id = str(created.get('id') or '')
+        if not channel_id:
+            fail('channel create returned no id')
+        for r in resolved:
+            mm_request('POST', base, {**headers, 'Content-Type': 'application/json'}, f'/api/v4/channels/{channel_id}/members', json={'user_id': r['id']}, timeout=35)
+        readback = mm_request('GET', base, headers, f'/api/v4/channels/{channel_id}')
+        members = fetch_channel_members(base, headers, channel_id)
+        member_user_ids = [str(m.get('user_id') or '') for m in members if m.get('user_id')]
+        users_map = mm_users_by_id(base, headers, member_user_ids)
+        added_usernames = []
+        for r in resolved:
+            urow = users_map.get(r['id'], {})
+            added_usernames.append(str(urow.get('username') or r['username']))
+        plan['apply_status'] = 'applied'
+        plan['channel_readback'] = {'id': readback.get('id'), 'name': readback.get('name'), 'display_name': readback.get('display_name'), 'purpose': readback.get('purpose'), 'type': readback.get('type'), 'team_id': readback.get('team_id')}
+        wanted_ids = {r['id'] for r in resolved}
+        plan['membership_readback'] = {'added_usernames': sorted(added_usernames), 'member_count_observed': len([uid for uid in member_user_ids if uid in wanted_ids])}
+        emit(plan)
+        return _PdReturn(None)
+    _pd_result = _pd_phase_create()
+    if isinstance(_pd_result, _PdReturn):
+        return _pd_result.value
 
 def load_json(path: Path) -> Any:
     try:
