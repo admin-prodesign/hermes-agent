@@ -6,6 +6,39 @@ import shutil
 import subprocess
 import sys
 
+# Written by scripts/deploy/nemo before a release is made read-only.
+# The dashboard terminal must not npm-install into that tree.
+FRONTEND_PREINSTALL_MARKER = Path(".hermes") / "frontend-preinstalled"
+_npm_skip_logged = False
+
+
+def runtime_npm_install_allowed(project_root: Path) -> bool:
+    """False when this tree was sealed at build time.
+
+    A preinstall marker stops the install even for root (mode bits do not).
+    A tree that is not writable stops it for everyone else, which is what
+    ``chmod -R a-w`` on a nemo release relies on.
+    """
+    root = Path(project_root)
+    if (root / FRONTEND_PREINSTALL_MARKER).is_file():
+        return False
+    probe = root / "node_modules"
+    if not probe.exists():
+        probe = root
+    return os.access(probe, os.W_OK)
+
+
+def note_runtime_npm_skipped() -> None:
+    """One line per process. The websocket retries; the log should not."""
+    global _npm_skip_logged
+    if _npm_skip_logged:
+        return
+    _npm_skip_logged = True
+    print(
+        "Skipping npm install: frontend dependencies were installed at build time.",
+        file=sys.stderr,
+    )
+
 
 def source_product_current(project_root: Path, product: str, out: Path) -> bool:
     """Read the compiler's receipt without acquiring tools or dependencies."""

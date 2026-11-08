@@ -1,0 +1,430 @@
+# Nemo pull deploy
+
+Nemo polls GitHub for `main` about once a minute and deploys a new commit on its own.
+Nothing has to reach nemo from outside: no webhook, no Tailscale tags or OAuth client,
+and no GitHub secrets. Nemo still decides when the merge goes live. It builds the exact
+SHA, waits until every Hermes profile is idle, cuts over, and rolls back on its own if
+health fails.
+
+```
+nemo: hermes-deploy-poll.timer → hermes-deploy-poll.service   (poll.py, every ~60 s + jitter)
+       skips its turn while a deploy holds deploy/deploy.lock
+       git ls-remote <mirror remote> refs/heads/main
+       main == live SHA, refused, or already queued → nothing
+       otherwise → deploy/queue/<sha>.json
+nemo: hermes-deploy.path → hermes-deploy.service  (oneshot worker, autodeploy.py)
+       1. fetches main; refuses a SHA that is not on main, or is older than the live SHA
+       2. classifies the diff: noop / skills / restart          (changes.py)
+       3. prunes old releases, then build.sh --sha <sha> --build hermes-agent-<sha10>-auto
+       4. restart: cutover.sh  (PD One selftest → adapter gate → idle gate → render units → swap links
+                                → daemon-reload → staged restart + adapter/port verify → /health → rollback)
+          noop/skills: cutover.sh without gate or restart, then sync bundled skills
+       5. prunes again (keeps current, its rollback target, and the running build)
+nemo: hermes-deploy-drift.timer  (hourly: live files vs the deployed SHA)
+```
+
+The poller only reads `main` and writes the queue. It never builds, restarts, or reads
+profile state. Every unit runs code from `releases/current`, so a merged change to this
+directory goes live with the release that carries it. A worker change therefore first
+runs on the deploy *after* the one that shipped it.
+
+## Read access to the private repo
+
+The poller and the worker use the bare mirror that `build.sh` already fetches from
+(`--mirror`). They run `git --git-dir <mirror> ls-remote origin refs/heads/main` and
+`git fetch origin` as the user that owns the Hermes home, so they use the mirror's
+`origin` URL and whatever read credential that user already has for it: an SSH deploy
+key (`~/.ssh`, or `core.sshCommand` in the mirror's config) or a git credential helper
+for an HTTPS URL. No new credential is added, and nothing goes into the repo.
+
+Units run without a terminal or an SSH agent, and they set `GIT_TERMINAL_PROMPT=0`, so a
+credential that needs a prompt or a passphrase fails instead of hanging. Check it the
+way the timer will run it:
+
+```bash
+git --git-dir /path/to/hermes-agent.git config --get remote.origin.url
+env -u SSH_AUTH_SOCK GIT_TERMINAL_PROMPT=0 \
+  git --git-dir /path/to/hermes-agent.git ls-remote origin refs/heads/main
+```
+
+That should print one `<sha>\trefs/heads/main` line.
+
+## What happens to a deploy
+
+| Diff touches | Mode | Restart | Idle gate |
+| --- | --- | --- | --- |
+| only `website/`, `tests/`, `tests-js/`, `.github/`, `contributors/`, `AGENTS.md`, root `README*/CONTRIBUTING*/SECURITY*.md` | `noop` | no | no |
+| the above plus `skills/` | `skills` | no | no |
+| anything else (Python, prompts, locales, dependencies, `optional-skills/`, `SOUL.md`), or an unreadable diff | `restart` | yes | yes |
+
+- **PD One selftest.** Before the idle gate, `cutover.sh` runs
+  `<release>/.venv/bin/python -m tools.pd_one_ops.selftest --hermes-home <home> --profile pdone`
+  from the new release directory. It calls every safe-ops MCP tool once with placeholder
+  arguments in dry-run mode: child processes are planned, not run, network is refused, and
+  writes outside a scratch directory are refused. Then it starts each release helper with `--help`.
+  A failure (a script run without an interpreter, an unset `pd_one.external.*` key, an import
+  error, a write into the release) stops the deploy with nothing changed. A key that is absent on
+  nemo on purpose is passed as `--selftest-allow-missing <key>`; `--skip-selftest` turns it off.
+  No-restart deploys skip it. `build.sh` publishes `tools/**/*.py` without the exec bit, so a
+  launch that still depends on it fails here.
+- **Adapter gate.** Next, for every profile, the gateway unit and its drop-ins are rendered
+  against the new release in memory, and `adapter_probe.py` runs in the new release's
+  interpreter with the environment that unit would give the gateway (`Environment=`,
+  `EnvironmentFile=`, the profile's `HERMES_HOME` and `.env`). Every enabled adapter is
+  created but not connected: its dependency check (e.g. `aiohttp` for webhook and
+  Mattermost), its config validation, and its constructor. The requirements `pyproject.toml`
+  declares for the build's extra must also be installed. Any failure stops the deploy with
+  nothing changed; `upgrade-audits/<build>/adapters.json` says which adapter and why.
+  No-restart deploys skip it; `--skip-adapter-gate` turns it off.
+- **Idle gate.** `cutover.sh` waits until pdone and the top-level default profile
+  (PD Neo; `--profile default`, with `pdneo` as an alias) have no turn or
+  compression lease, no live goal, and no message newer than 90 s (`gate.py`).
+  Active goals with 0 turns whose creation (and last update, if tracked) is older
+  than 7 days are ignored and logged; the gate does not write goal state. A
+  configured profile whose `state.db` is missing fails immediately instead of
+  waiting. It waits up to 6 h. If the profiles are still busy it exits 75 and
+  nothing changes. You get a `waiting` alert, and the next poll queues the newest
+  `main` again for another wait. A running turn is never interrupted.
+- **Units.** Every `*.service` and `*.service.d/*.conf` in the unit directories is
+  rendered against the new release, whichever release it named before: each
+  `<releases>/<build>` path (`ExecStart`, `ExecStop`, `ExecStopPost`, `PATH`, `VIRTUAL_ENV`,
+  `PYTHONPATH`, `WorkingDirectory`) moves to the new release, a `.hermes/bin` wrapper the
+  release does not have becomes `.venv/bin`, and `HERMES_RUNTIME_SHA` becomes the new SHA.
+  `releases/current` and the other stable links are left as they are. If a rendered unit
+  would run or load a path the release lacks, the cutover stops before writing anything.
+  The originals go to `upgrade-audits/<build>/units/`.
+- **Links.** `previous` points at the old `current`, the runtime links at the new release,
+  `.running` at the new build when it restarts, and `current` moves last. The runtime links
+  are `--runtime-link PATH` (repeatable), else `deploy.cutover.runtime_links` in
+  `<home>/config.yaml`, else every existing `<home>/runtime/current` and
+  `<releases>/runtime/current` symlink. A link is moved only when it names a build under
+  `releases/`; a named link that is missing or points elsewhere is left alone with a
+  warning. The prior state of each is in the manifest.
+- **Restart and verify.** After `daemon-reload`, the rewritten units restart, but only
+  concrete units that are active and not oneshot. A template (`name@.service`) is never
+  restarted; its active instances are, if any. A stopped unit or a oneshot (a bridge, a
+  scanner, an `OnFailure=` alert) is left as it is and picks up its new file the next time
+  it starts. A unit whose only change is `HERMES_RUNTIME_SHA` gets `try-restart`.
+  Restarts run one unit at a time, `--restart-delay` seconds apart
+  (`deploy.cutover.restart_delay_s`, default 3). The systemctl client waits up to 240s
+  for `restart`/`try-restart`/`stop`/`start` so a drain can finish inside the unit's
+  `TimeoutStopSec` (pdone is 3min 30s); a 60s wait treated a 105s stop as a failed
+  restart and rolled back. After a gateway the next unit waits
+  until that gateway's new process writes a fresh `running` or `degraded` state, so two
+  gateways never start together and fetch their secrets at once. Only a state written
+  after the restart by the unit's `MainPID` counts: the `stopped` the old process stamps
+  on its way out is waited out, not read as a failure. A `stopped` mark from the new
+  `MainPID` is also waited out while systemd still has the unit active and the process
+  alive (heartbeats can refresh `pid` before `gateway_state` advances); `startup_failed`
+  or a terminal `stopped` (unit failed/inactive or the main process exited) fails at once.
+  Settle waits up to `deploy.verify.<profile>.settle_timeout` (default 180s for `pdone`,
+  else `--health-timeout`). Each profile's `gateway_state.json` must then say
+  `running` and every expected adapter `connected`, both written after the restart, and
+  every expected port must accept a connection, within `--health-timeout`. `degraded`
+  (a configured platform was parked, e.g. one with no token) passes the same way, but
+  only for a profile that expects at least one adapter or port and with no watchdog
+  `exit_reason`. Adapters nobody expects (a tokenless `telegram` or `discord`) are never
+  checked. Expected adapters are `--expect P=PLATFORM`, else
+  `deploy.verify.<P>.platforms` in `<home>/config.yaml`, else what the adapter gate
+  created. Ports are only checked when configured, on `deploy.verify.<P>.host`, else
+  `--port-host` (default `127.0.0.1`):
+
+  ```yaml
+  deploy:
+    verify:
+      default: {platforms: [webhook], ports: [8644], host: 127.0.0.1}
+      pdone: {platforms: [mattermost, line], ports: [8646], settle_timeout: 180}
+    cutover:
+      runtime_links: [runtime/current]   # relative to the home; ~ and $HERMES_HOME work
+      restart_delay_s: 3
+  ```
+
+  With `--canary` (worker: `install_autodeploy.sh install --canary`), the top-level profile's
+  gateway (PD Neo) restarts and is verified alone first; pdone and the other units restart
+  only once it passes. To rehearse a rollout against a build's manifest without touching
+  systemd or the manifest, run `cli rollout --manifest <manifest> --canary --dry-run`
+  (add the same `--profile` flags): it prints each stage and what each profile is
+  expected to serve.
+- **Rollback.** If a restart, the verify, systemd, the gateway control socket (PD One LINE /
+  `pdone`), or HTTP health (PD Neo `:8644`, dashboard `:8765` on nemo) fails, `cutover.sh`
+  restores the units, drop-ins, configs, and links from `upgrade-audits/<build>/`, reloads
+  systemd, and restarts only the units the rollout restarted, each with the verb it used,
+  one at a time as above. Nothing that was stopped before the cutover is started. Then it
+  runs the same verify against the previous release (the rollout stored its targets in the
+  manifest, so `rollback.sh --manifest` alone does the same by hand). If a gateway does not
+  come back, the rollback prints which check failed and `cutover.sh` reports
+  `ROLLBACK FAILED`; either way the cutover exits 1.
+- **Refused SHAs.** A SHA that is `rejected` (not on main, or older than the live one)
+  or `failed` (build failed, too little disk, rolled back, skill sync failed) goes into
+  `deploy/refused.jsonl`. The poller skips it, so a broken commit does not rebuild every
+  minute. The next commit on main is a new SHA and is tried as usual. To try a refused
+  SHA again, run `autodeploy.py retry <sha>` (no SHA clears the whole list).
+- **Transient failures.** If `git ls-remote` fails or times out, the poll records an
+  `error` and queues nothing. If the worker can't fetch main, the outcome is `deferred`.
+  Nothing is built or refused, and the next poll tries again. The drift check alerts if
+  main stays ahead of the live SHA for more than 2 h.
+- **Skills without restart.** The release's bundled skills are synced into each
+  profile's `skills/` with the usual `sync_skills` rules (user-edited and
+  curator-pruned skills are left alone). The gateway reads a skill by name at call
+  time. A newly added or removed skill shows in the slash-command list after
+  `/reload-skills`. The processes keep running the previous release directory, which
+  `releases/.running` protects from pruning until the next restart deploy.
+- **Release names.** Autodeploy publishes `hermes-agent-<sha10>-auto`, the same
+  `hermes-agent-<sha10>-<suffix>` shape as a hand-built release. Existing directories
+  named with a bare SHA still resolve from the audit manifest or the directory name.
+- **Retention.** Nemo's disk is nearly full. Before a build, only `current` and the
+  running build stay. After a deploy, `current`, its rollback target, and the running
+  build stay. That's 2 releases, or 3 right after a no-restart deploy. A build that rolled back
+  is deleted; its audit directory stays. The worker refuses to build with less than
+  2 GB free.
+- **Queue.** Only the newest SHA matters. Older queued SHAs are dropped as
+  superseded.
+- **Dependencies.** A change to `pyproject.toml` or `uv.lock` is a `restart` deploy like
+  any other code change: `build.sh` installs the locked environment into the new
+  release. The `nemo` extra includes `messaging` (the gateway adapters' dependencies);
+  after the install `build.sh` checks that every requirement the extra declares at that
+  SHA is installed (`extras.py`), so a release cannot publish without them. There is no
+  separate manual-approval step.
+
+## Status
+
+```bash
+cd ~/.hermes/releases/current
+.venv/bin/python -m scripts.deploy.nemo.autodeploy status
+```
+
+This prints:
+
+- `deploy`: the last worker outcome (`<home>/deploy/status.json`). One of `deployed`,
+  `live` (already current), `waiting`, `deferred`, `failed`, or `rejected`.
+  `<home>/deploy/history.jsonl` keeps every outcome.
+- `poll`: the last poll (`<home>/deploy/poll.json`): `main`, `live`, and one of `live`,
+  `queued`, `pending` (already queued), `busy` (a deploy holds the lock), `refused`, or
+  `error`.
+- `queued`: what is waiting for the worker.
+- `refused`: SHAs the poller skips, with the reason.
+
+## Drift check
+
+`hermes-deploy-drift.timer` runs hourly. It alerts when:
+
+- a tracked file in the live release differs from `git ls-tree <deployed sha>`, or is
+  missing (git blob hashes, so mode-only noise does not count);
+- an untracked `.py` or `.sh` file sits in the release outside build output (`.venv`,
+  `.python`, `node_modules`, `web_dist`, `ui-tui/dist`, `__pycache__`);
+- a systemd unit or drop-in differs from a render against `current` or the running build:
+  another release's path, a `.hermes/bin` wrapper the release lacks, or a stale
+  `HERMES_RUNTIME_SHA`;
+- `main` has been ahead of the live SHA for more than 2 h with nothing queued. That covers
+  a refused SHA, a poller that keeps failing, and a gate that never goes quiet.
+
+## Runtime drift check
+
+`hermes-runtime-drift-check.timer` runs daily at 07:50 Asia/Taipei (up to 60 s jitter).
+It runs `python -m scripts.deploy.nemo.runtime_drift` from `releases/current` and compares
+each running gateway's live release tree to `origin/main` in the deploy mirror: runtime SHA
+markers, an archive hash of tracked files, and writes after build time. Exit codes:
+
+- `0` — clean
+- `1` — drift found (writes `state/runtime_drift_notify/drift-*.json`; systemd treats this as success)
+- `2` — check failed (for example could not resolve the release directory from the running
+  interpreter); systemd marks the unit failed
+
+## One-time setup
+
+Nothing changes in GitHub or Tailscale. Everything below runs on nemo.
+
+### 1. Ship this code to nemo the existing way
+
+Build and cut over a `main` SHA that contains this directory with the hand flow in
+`website/docs/user-guide/pd-one-safe-ops.md` (`build.sh`, then `cutover.sh`).
+
+The worker runs `cutover.sh` from `releases/current`, so the deploy that ships a change
+to this directory still runs the old one. See
+[the first rollout](../../../website/docs/user-guide/pd-one-safe-ops.md#first-rollout-of-unit-rendering-and-the-adapter-gate)
+for the hand steps that put the unit rendering and adapter gate live.
+
+### 2. Check the mirror's read credential
+
+Run the `ls-remote` check under [Read access](#read-access-to-the-private-repo).
+
+### 3. Install the timer
+
+From the deployed release, as the user that owns the Hermes home:
+
+```bash
+cd ~/.hermes/releases/current
+loginctl enable-linger "$USER"     # user units keep running after logout
+bash scripts/deploy/nemo/install_autodeploy.sh install \
+  --mirror /path/to/hermes-agent.git \
+  --alert-script ~/.hermes/deploy/alert.sh     # optional, see below
+```
+
+- `--dry-run` prints all ten units (poll service and timer, worker service and path,
+  release drift service and timer, runtime drift service and timer, and PD One
+  neo-watch alert service and timer) without writing anything.
+- `--poll-every 2min` polls less often. Each poll waits an extra 0–20 s of jitter.
+- If the Hermes gateway units are system units (`/etc/systemd/system`), run the
+  installer with `sudo` and `--scope system --run-as <hermes user>`. The worker
+  rewrites and restarts those units, so give it the same identity the hand cutover
+  uses (`--worker-user`, which defaults to `--run-as`). The `--run-as` user needs the
+  mirror credential.
+- If an earlier version installed `hermes-deploy-listener.service`, the installer
+  disables and removes it. You can delete `~/.hermes/deploy/webhook-secret`, and the
+  `TS_OAUTH_*` and `NEMO_DEPLOY_*` repo secrets if anyone added them.
+
+The alert script is called as `alert.sh "<subject>"` with JSON details on stdin.
+For example, posting to a Mattermost incoming webhook whose URL is in a 0600 file:
+
+```bash
+#!/usr/bin/env bash
+jq -Rs --arg s "$1" '{text: ("**" + $s + "**\n" + .)}' \
+  | curl -fsS -H 'Content-Type: application/json' -d @- "$(cat ~/.hermes/deploy/mattermost-hook)"
+```
+
+Without an alert script, failures still show in `journalctl` and `systemctl --failed`.
+
+### 4. Check it
+
+```bash
+systemctl --user list-timers 'hermes-deploy-*'
+systemctl --user start hermes-deploy-poll.service && journalctl --user -u hermes-deploy-poll.service -n 5
+.venv/bin/python -m scripts.deploy.nemo.autodeploy status
+journalctl --user -u hermes-deploy.service -f
+```
+
+The poll prints `"action": "live"` when nemo already runs `main`, or `"queued"` and the
+worker starts.
+
+## Operating
+
+- **Pause automatic deploys:** `systemctl --user stop hermes-deploy-poll.timer hermes-deploy.path`.
+  `start` both to resume; the next poll queues `main` if it moved.
+- **Hand deploys:** pause first. `build.sh` and `cutover.sh` do not take the worker's
+  lock (`deploy/deploy.lock`).
+- **Retry a refused SHA:** `.venv/bin/python -m scripts.deploy.nemo.autodeploy retry <sha>`.
+- **Remove:** `install_autodeploy.sh uninstall` (add `--scope system` if installed so).
+
+## PD One neo-watch alert watchdog
+
+`hermes-pdone-alert-watch.timer` runs every five minutes and executes
+`python -m scripts.deploy.nemo.pdone_alert_watchdog` from `releases/current`.
+It posts `neo-watch.alert.v1` JSON to the URL in
+`<home>/secrets/neo-watch-webhook.env` (mode `600` only; group/world readable
+files are refused). Create that file on nemo before enabling the timer:
+
+```bash
+install -d -m 700 ~/.hermes/secrets
+umask 077
+cat > ~/.hermes/secrets/neo-watch-webhook.env <<'EOF'
+NEO_WATCH_WEBHOOK_URL=https://example.invalid/hooks/neo-watch
+NEO_WATCH_WEBHOOK_KEY=replace-me
+# optional:
+# NEO_WATCH_WEBHOOK_KEY_HEADER=Authorization
+# NEO_WATCH_WEBHOOK_KEY_PREFIX=Bearer 
+# NEO_WATCH_FALLBACK_TARGET=mattermost:@your-user-id
+EOF
+chmod 600 ~/.hermes/secrets/neo-watch-webhook.env
+```
+
+After a release containing this module is live, re-run the autodeploy installer
+with the same flags you already use, then smoke-test without posting:
+
+```bash
+cd ~/.hermes/releases/current
+bash scripts/deploy/nemo/install_autodeploy.sh install \
+  --mirror /path/to/hermes-agent.git \
+  --alert-script ~/.hermes/deploy/alert.sh    # if you use one
+.venv/bin/python -m scripts.deploy.nemo.pdone_alert_watchdog --dry-run
+systemctl --user list-timers 'hermes-pdone-alert-watch*'
+```
+
+Acknowledge an incident (suppresses the 45-minute dead-man Mattermost DM until
+the signature clears):
+
+```bash
+.venv/bin/python -m scripts.deploy.nemo.pdone_alert_watchdog ack 'cron:JOB_ID' --note 'investigating'
+```
+
+### Neo-first Mattermost escalations (supervisor + notification router)
+
+Critical supervisor findings and failure pages can reach the PD Neo Watch
+automation webhook before the admin Mattermost channel. Copy
+`scripts/deploy/nemo/notification-routes.example.json` to
+`~/.hermes/config/notification-routes.json` and replace the Mattermost
+placeholders. Do **not** commit live channel IDs to the repo.
+
+```json
+{
+  "schema_version": 1,
+  "routes": {
+    "pd_one_failure_escalations": {
+      "pre_targets": ["webhook:neo"],
+      "hold_minutes": 10,
+      "targets": ["mattermost:@your-admin-channel-or-user"]
+    }
+  }
+}
+```
+
+Environment (auth only; URL defaults to the Cursor Neo Watch automation unless
+overridden):
+
+- `NEO_WATCH_WEBHOOK_URL` or `BRIEFING_REPAIR_WEBHOOK_URL` — override webhook URL
+- `NEO_WATCH_WEBHOOK_KEY` or `BRIEFING_REPAIR_WEBHOOK_BEARER` — Bearer token
+- `BRIEFING_REPAIR_WEBHOOK_HMAC_SECRET` or `NEO_WATCH_WEBHOOK_HMAC_SECRET` — optional HMAC (`X-Hermes-Signature`)
+
+Supervisor push (reads `state/hermes_autonomous_supervisor/state.json`):
+
+```bash
+.venv/bin/python -m scripts.hermes_autonomous_supervisor tick --dry-run
+```
+
+Router dry-run (synthetic failure event):
+
+```bash
+.venv/bin/python -m scripts.pd_one_notification_router send \
+  --route pd_one_failure_escalations \
+  --json '{"summary":"synthetic test","fingerprint":"dry-run","severity":"error"}' \
+  --dry-run
+```
+
+Ack from Neo automation (suppresses held Mattermost release):
+
+```bash
+.venv/bin/python -m scripts.pd_one_notification_router ack \
+  --correlation-key 'pdone-surface:YOUR_FINGERPRINT'
+```
+
+**Rollback:** remove `pre_targets` / `hold_minutes` from
+`notification-routes.json` (or restore the previous file) so
+`pd_one_failure_escalations` delivers straight to Mattermost again; disable
+supervisor Neo push by setting `NEO_WATCH_WEBHOOK_URL=` and
+`BRIEFING_REPAIR_WEBHOOK_URL=` to empty strings.
+
+### OnFailure systemd hooks
+
+Nemo may still have profile-local units such as
+`pd-one-systemd-failure-alert@.service` that DM the owner directly when a
+gateway unit fails. Those units are not rendered by this repo's autodeploy
+installer; they are maintained on the host. When you control their `ExecStart`,
+prefer posting through this watchdog's webhook (or call
+`pdone_alert_watchdog` with a synthetic key) instead of opening a separate DM
+path, so PD One alerts share one schema and dedupe store. Leave rpi5-hosted
+failure notify units unchanged unless that host also installs neo-watch.
+
+## PD One Mattermost status timer
+
+The pinned PD One health post on Mattermost is updated by
+`tools/pd_one_ops/mattermost_status` (see that directory's `README.md` for the
+`ExecStart` line pointing at `releases/current/.venv/bin/python -m
+tools.pd_one_ops.mattermost_status`).
+
+## Not covered yet
+
+- Prompts are built in Python and profile `config.yaml` is not in this repo, so neither
+  has a no-restart path. Only bundled skills do.
+- A newer merge that lands while the worker waits on the idle gate is not seen until
+  that wait ends: the poller skips its turn while the deploy holds the lock.
+- Each release still copies `node_modules` from the previous one. Hard-linking it
+  (releases are read-only) would cut most of the per-release disk use.
