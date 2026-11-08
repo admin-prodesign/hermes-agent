@@ -43,8 +43,10 @@ def main(argv=None) -> int:
         # The staging interpreter need not be a Hermes runtime; render icons on one.
         icon_python = prepare_icon_environment(source, products / "icon-environment", args.cache)
         env = {**os.environ, "HERMES_PYTHON": str(icon_python)}
+        from hermes_cli.terminal_node_deps import publish_terminal_node_modules, terminal_deps_install_command
+
         commands = [
-            ["scripts/build/node-deps.mjs", "--source", str(source), "--workspace", "ui-tui", "--workspace", "web"],
+            terminal_deps_install_command(source),
             ["scripts/generate-icons.mjs", "--source", str(source), "--out", str(products / "icons")],
             ["scripts/build/tui.mjs", "--source", str(source), "--out", str(products / "tui")],
             ["scripts/build/web.mjs", "--source", str(source), "--icons", str(products / "icons"), "--out", str(products / "web")],
@@ -52,7 +54,12 @@ def main(argv=None) -> int:
         for command in commands:
             subprocess.run([node, *command], cwd=ROOT, env=env, check=True)
         args.frontends = {"tui": products / "tui", "web": products / "web"}
-        return stage_native(args)
+        status = stage_native(args)
+        if status == 0:
+            # The git snapshot omits node_modules. Keep the build-time install
+            # in the release so the dashboard terminal does not npm ci at runtime.
+            publish_terminal_node_modules(source, out / "hermes-agent")
+        return status
 
 
 if __name__ == "__main__":

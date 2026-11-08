@@ -18,6 +18,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, WebSocket, WebSocketDisco
 from agent.interrupt_scope import InterruptScope, bind_interrupt_scope
 from hermes_cli.active_sessions import ActiveSessionRegistryError, active_session_registry_snapshot
 from hermes_cli.pty_session import RegistryFull
+from hermes_cli.terminal_node_deps import TerminalDepsUnavailable
 from hermes_cli.web_deps import LateState, late
 from hermes_cli.web_server_chat import (
     _build_sidecar_url, _close_stalled_pty_input, _get_console_executor, _legacy_pump, _pty_fail, _ws_auth_ok,
@@ -530,7 +531,9 @@ async def pty_ws(ws: WebSocket) -> None:
             _discard_active_session_file(ws.app, channel, active_session_file)
         await _pty_fail(ws, exc)
         return
-    except SystemExit as exc:  # _make_tui_argv sys.exit(1)s when node/npm is missing
+    except (SystemExit, TerminalDepsUnavailable) as exc:
+        # SystemExit: node/npm missing. TerminalDepsUnavailable: already warned
+        # once inside the deps latch — close the socket, do not traceback.
         if not marker_preexisting:
             _discard_active_session_file(ws.app, channel, active_session_file)
         await _pty_fail(ws, exc)

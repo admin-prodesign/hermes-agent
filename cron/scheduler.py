@@ -444,7 +444,7 @@ def _merge_mcp_into_per_job_toolsets(per_job: list[str], cfg: dict) -> list[str]
     if "no_mcp" in per_job:
         return result
     # lazy: avoid heavy hermes_cli import at module load; shares MCP-membership with gateway/CLI
-    from hermes_cli.tools_config import enabled_mcp_server_names
+    from hermes_cli.tools_config import enabled_mcp_server_names, toolsets_request_no_tools
     enabled_mcp = enabled_mcp_server_names(cfg)
     # A job names an MCP server by its TOOLSET name (``mcp-<server>``) or by the bare alias the
     # registry registers for it; compare against BOTH, or a job that named one server never matched

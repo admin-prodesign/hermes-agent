@@ -89,7 +89,7 @@ SURFACES = {'cli': 'cli', 'tui': 'tui', 'gui': 'desktop', 'acp': 'acp', 'tool': 
 # integrations), ``acp`` (editor clients), or the ``bot_room`` / ``a2a`` policies hosted rooms and peers stage.
 DAYBREAK_LABELS = frozenset({'cli', 'tui', 'gui', 'oneshot'})
 # Every other creation label is rewritten to ``source='local'`` on peer refresh.
-_KEEP_STORED_LABEL = frozenset({'tool', 'oneshot'})
+_KEEP_STORED_LABEL = frozenset({'tool', 'oneshot', 'pdapp-executor'})
 STORED_AS_LOCAL = frozenset(SURFACES) - _KEEP_STORED_LABEL
 # Routing labels and the accounting placeholder: never a creating surface.
 _NOT_A_SURFACE = frozenset({None, '', 'local', 'unknown'})

@@ -127,6 +127,14 @@ explicit input/output contracts in the builder README.
 a temporary snapshot of that same revision. Explicit frontend products must
 come from the selected revision.
 
+That automatic path installs the dashboard terminal's Node dependencies
+(`ui-tui` and `web`, via `scripts/build/node-deps.mjs --reuse`) and copies the
+resulting `node_modules` into `<out>/hermes-agent/node_modules`. A built
+release already contains them, so the dashboard terminal does not run `npm ci`
+when it starts. If that tree is missing and the release directory is not
+writable, Hermes logs one warning and disables the terminal. It does not retry
+the install and it does not write outside the release.
+
 `hermes pm bundle --out /work/agent-payload --ref HEAD` stages native tools,
 the application environment, and the agent. That PM command does not build
 frontends. `npm run payload --workspace apps/desktop` uses the stage driver

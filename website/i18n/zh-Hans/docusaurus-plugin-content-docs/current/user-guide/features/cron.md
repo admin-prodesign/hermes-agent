@@ -443,7 +443,7 @@ hermes cron create "every 5m" \
 - 最后一行输出 `{"wakeAgent": false}` → 静默 tick（与 LLM 任务使用相同的门控）。
 - 无 token、无模型、无 provider 回退——任务永远不会触及推理层。
 
-`.sh`/`.bash` 文件优先使用 `PATH` 中的 `bash`，不可用时回退到 `/bin/bash`（这对 Windows Git Bash 尤其重要）；其他文件默认使用当前 Python 解释器（`sys.executable`）。脚本路径必须解析到 `$HERMES_HOME/scripts/` 内部——只要解析后的目标仍位于该目录，相对路径、绝对路径和以 `~` 开头的路径都可以；逃逸该目录的路径会被拒绝。Python `script` 或 `monitor_script` 也可以通过在创建/编辑时传入 `--interpreter ~/venvs/.../bin/python` 来指定一个用户自管的 venv（用于 Hermes 运行时不携带的包）——参见[使用你自己的 Python 环境](../../guides/cron-script-only.md#使用你自己的-python-环境)。Hermes 管理的 venv 仍归 Hermes 所有；系统不会自动安装或恢复任何包。子进程环境会被净化，因此 cron 脚本**不会**继承 provider API 凭据和其他由 Hermes 管理的秘密。
+`.sh`/`.bash` 文件优先使用 `PATH` 中的 `bash`，不可用时回退到 `/bin/bash`（这对 Windows Git Bash 尤其重要）。其他文件默认使用发布目录的 Python：有托管依赖环境时用该环境，否则用检出目录的 `.venv` 或 `venv`（发布主机上是 `releases/current/.venv`），再否则用正在跑网关的解释器。该解释器的 `bin` 会放在每个脚本（含 shell 包装）的 `PATH` 最前，因此包装里的 `python3` 和 `#!/usr/bin/env python3` 与 `.py` 用同一套包。cron 脚本自身的 shebang 仍然不是解释器选择器。脚本路径必须解析到 `$HERMES_HOME/scripts/` 内部——只要解析后的目标仍位于该目录，相对路径、绝对路径和以 `~` 开头的路径都可以；逃逸该目录的路径会被拒绝。Python `script` 或 `monitor_script` 也可以通过在创建/编辑时传入 `--interpreter ~/venvs/.../bin/python` 来指定一个用户自管的 venv（用于 Hermes 运行时不携带的包）——参见[使用你自己的 Python 环境](../../guides/cron-script-only.md#使用你自己的-python-环境)。Hermes 管理的 venv 仍归 Hermes 所有；系统不会自动安装或恢复任何包。子进程环境会被净化，因此 cron 脚本**不会**继承 provider API 凭据和其他由 Hermes 管理的秘密。
 
 ### Agent 为你设置这些
 

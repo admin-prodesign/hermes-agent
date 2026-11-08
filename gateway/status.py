@@ -1112,7 +1112,14 @@ def _prepare_runtime_status_update(
         payload.setdefault("platforms", {})
         if not isinstance(payload["platforms"], dict):
             payload["platforms"] = {}
-        if clear_profile_platforms or drop_profile_platforms:
+        if clear_all_platforms:
+            # A fresh gateway process must not inherit any adapter state from the
+            # prior process. Active/enabled adapters repopulate their entries with
+            # the current writer PID/start-time as they connect; disabled/removed
+            # platforms therefore disappear instead of staying connected/fatal
+            # forever in gateway_state.json and dashboard health.
+            payload["platforms"] = {}
+        elif clear_profile_platforms or drop_profile_platforms:
             drop_prefix = f"{drop_profile_platforms}:" if drop_profile_platforms else None
             payload["platforms"] = {
                 k: v for k, v in payload["platforms"].items()
