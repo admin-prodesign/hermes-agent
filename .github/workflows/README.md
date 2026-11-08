@@ -141,12 +141,27 @@ events made with the default `GITHUB_TOKEN`. `workflow_dispatch` and
 
 ### Runners
 
-`blacksmith-*` labels are Blacksmith runners (`4vcpu` for small jobs,
-`32vcpu` for test suites and builds, `-arm` for native arm64). `macos-15`,
-`windows-latest-32-core` and `windows-latest-32-arm-core` are GitHub-hosted.
-No workflow runs on Intel macOS. Some publish jobs run on `ubuntu-latest` on purpose:
-`docker buildx imagetools` cannot commit manifest lists to Docker Hub from
-Blacksmith.
+Jobs request free GitHub-hosted runners. A repository variable overrides the
+default when it is set; unset, the expression falls through to the hosted label:
+
+| Variable | Default | Jobs |
+|---|---|---|
+| `RUNNER_LINUX` | `ubuntu-latest` | Linux x64 |
+| `RUNNER_LINUX_ARM` | `ubuntu-24.04-arm` | Linux arm64 |
+| `RUNNER_WINDOWS` | `windows-latest` | Windows x64 |
+| `RUNNER_WINDOWS_ARM` | `windows-11-arm` | Windows arm64 |
+| `RUNNER_MACOS` | `macos-latest` | macOS |
+
+Linux and Windows arm64 labels are standard hosted runners (free on public
+repositories). Larger runners are not used. No workflow runs on Intel macOS.
+Some publish jobs run on `ubuntu-latest` on purpose: `docker buildx imagetools`
+commits manifest lists to Docker Hub from that builder.
+
+Release, canary, publish, and bundle workflows that need upstream secrets or
+registries skip unless `github.repository` is `NousResearch/hermes-agent`.
+The same condition treats an empty repository as upstream: Actions always sets
+`github.repository`, and the workflow-graph tests omit it. Pull-request checks
+(tests, lint, structural checks, Nix) still run on this fork.
 
 ---
 
