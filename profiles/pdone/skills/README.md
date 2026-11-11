@@ -23,6 +23,10 @@ frontmatter; move tables, long prose, and examples into `references/*.md`.
 | `stateful-runner-delivery` | 14,970 | 1,583 |
 | `approval-queue-incident-response` | 14,543 | 1,502 |
 | `automation-source-key-integrity` | 10,711 | 951 |
+| `it-meeting-briefing` | 6,501 | 6,501 |
+| `it-meeting-progress-summary` | — | 4,253 |
+
+`it-meeting-briefing` is the 2026-11-11 live skill, kept intact so the 12:00 pack job still inlines the same body. `it-meeting-progress-summary` is the summary-only skill for cron job `9606f49ec7ec`.
 
 Export from nemo before editing in git (Neo ops: do not change pdone
 `auto_load` or host config in the lean PR):
