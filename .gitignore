@@ -251,6 +251,15 @@ docs/superpowers/*
 !/profiles/pdone/AGENTS.md
 !/profiles/pdone/skills/
 !/profiles/pdone/skills/**
+# Summary-job packet only. The rest of the pdone profile stays host state.
+!/profiles/pdone/scripts/
+/profiles/pdone/scripts/*
+!/profiles/pdone/scripts/it_meeting_progress_summary_gate.py
+!/profiles/pdone/scripts/it_meeting_progress_summary_packet.py
+!/profiles/pdone/scripts/it_meeting_progress_summary_gather.py
+!/profiles/pdone/cron/
+/profiles/pdone/cron/*
+!/profiles/pdone/cron/job-9606f49ec7ec.contract.json
 /credentials/
 /mcp-tokens/
 /pairing/

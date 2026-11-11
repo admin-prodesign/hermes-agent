@@ -31,6 +31,8 @@ PDONE_SKILL_MD_PATHS: dict[str, str] = {
     ),
     "gog": "gog/SKILL.md",
     "worker-scheduling-optimization-rules": "worker-scheduling-optimization-rules/SKILL.md",
+    "it-meeting-briefing": "it-meeting-briefing/SKILL.md",
+    "it-meeting-progress-summary": "it-meeting-progress-summary/SKILL.md",
 }
 
 
