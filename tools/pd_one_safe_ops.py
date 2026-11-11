@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.secret_scope import UnscopedSecretError, get_secret
-from gateway.session_context import bound_session_value
+from gateway.session_context import get_session_env
 from tools.pd_one_hr_fields import (
     PRIVATE_HRS_TABLES,
     members_are_hr_only,
@@ -144,12 +144,12 @@ def session_destination_allows_private_hr() -> bool:
     arguments and ``os.environ`` are ignored so a tool call cannot retarget the
     lookup at an HR room while the turn is somewhere else.
     """
-    platform = (bound_session_value("HERMES_SESSION_PLATFORM") or "").strip().lower()
+    platform = (get_session_env("HERMES_SESSION_PLATFORM") or "").strip().lower()
     if platform != "mattermost":
         return False
-    chat_type = (bound_session_value("HERMES_SESSION_CHAT_TYPE") or "").strip().lower()
-    chat_id = (bound_session_value("HERMES_SESSION_CHAT_ID") or "").strip()
-    user_id = (bound_session_value("HERMES_SESSION_USER_ID") or "").strip()
+    chat_type = (get_session_env("HERMES_SESSION_CHAT_TYPE") or "").strip().lower()
+    chat_id = (get_session_env("HERMES_SESSION_CHAT_ID") or "").strip()
+    user_id = (get_session_env("HERMES_SESSION_USER_ID") or "").strip()
     if not chat_id or not chat_type:
         return False
     if chat_type in {"dm", "direct"}:

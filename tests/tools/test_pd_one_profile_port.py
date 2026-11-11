@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import tools.pd_one_safe_ops as ops
-import tools.pd_one_safe_ops_mcp as mcp
+import tools.pd_one_ops.pd_one_safe_ops_mcp as mcp
 from tools.pd_one_hr_fields import column_is_private
 from tools.pd_one_ops._catalog import CLI_SUBCOMMANDS, MCP_TOOLS
 from tools.pd_one_ops.hr_guard import guard_hr_payload

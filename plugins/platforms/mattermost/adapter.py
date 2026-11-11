@@ -1835,14 +1835,11 @@ class MattermostAdapter(BasePlatformAdapter):
             sender_id, channel_id, chat_type, message_text, post,
         )
         channel_context = self._combine_channel_context(policy_context, workflow_context, thread_context)
-        # Recall sees thread posts only. The bridge and outbound-workflow blocks stay on
-        # channel_context for the model and are not a search query.
-        recall_posts = list(thread_posts) if (policy_context or workflow_context or thread_posts) else None
         await self.handle_message(MessageEvent(
             text=message_text, message_type=msg_type, source=source, raw_message=post, message_id=post_id,
             media_urls=media_urls, media_types=media_types,
             channel_prompt=resolve_channel_prompt(self.config.extra, channel_id, None),
-            channel_context=channel_context, recall_posts=recall_posts))
+            channel_context=channel_context))
 
 
 # --- Plugin standalone-send (out-of-process cron delivery via Mattermost REST) ---

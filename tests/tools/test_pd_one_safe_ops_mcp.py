@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 import tools.pd_one_safe_ops as ops
-import tools.pd_one_safe_ops_mcp as mcp
+import tools.pd_one_ops.pd_one_safe_ops_mcp as mcp
 from tests.tools.test_pd_one_hr_private import DENIED, ROW, SECRET_VALUES
 
 _PROFILE_SOURCE = """

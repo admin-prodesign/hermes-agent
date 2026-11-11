@@ -231,10 +231,10 @@ def private_projection(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _session_cache_key() -> str:
-    from gateway.session_context import bound_session_value
+    from gateway.session_context import get_session_env
 
     for name in ("HERMES_SESSION_ID", "HERMES_SESSION_KEY"):
-        value = (bound_session_value(name) or "").strip()
+        value = (get_session_env(name) or "").strip()
         if value:
             return value
     return ""

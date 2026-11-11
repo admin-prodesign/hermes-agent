@@ -256,9 +256,9 @@ def bound_requester() -> dict[str, Any]:
     ``HERMES_SESSION_*`` environment values are ignored. They are writable
     from a terminal inside the turn.
     """
-    from gateway.session_context import bound_session_value
+    from gateway.session_context import get_session_env
 
-    user_id = str(bound_session_value("HERMES_SESSION_USER_ID") or "").strip()
+    user_id = str(get_session_env("HERMES_SESSION_USER_ID") or "").strip()
     policy = _load_policy(user_id) if user_id else None
     return {
         "user_id": user_id,
