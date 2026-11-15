@@ -76,7 +76,7 @@ def _layout_name(xml_bytes: bytes) -> str:
     return match.group(1).decode('utf-8', 'replace')
 
 def _choose_layout_file(slide_index: int, parts: dict[str, bytes], *, title: str='', is_last: bool=False) -> str:
-    layouts = sorted((name for name in parts if re.fullmatch('ppt/slideLayouts/slideLayout\\d+\\.xml', name)))
+    layouts = sorted(name for name in parts if re.fullmatch('ppt/slideLayouts/slideLayout\\d+\\.xml', name))
     names = {name: _layout_name(parts[name]) for name in layouts}
 
     def first(pred) -> str | None:
@@ -121,7 +121,7 @@ def _set_xfrm(block: str, box: tuple[int, int, int, int]) -> str:
     return block
 
 def _shape_blocks(xml: str, tag: str) -> list[str]:
-    return re.findall(f'<{tag}\\b[^>]*>.*?</{tag}>', xml, flags=re.S)
+    return re.findall(f'<{tag}\\b[^>]*>.*?</{tag}>', xml, flags=re.DOTALL)
 
 def _layout_placeholders(layout_xml: str) -> dict[str, str]:
     found: dict[str, str] = {}
@@ -151,10 +151,10 @@ def _body_box(placeholders: dict[str, str], slide_index: int) -> tuple[int, int,
 def _union(boxes: list[tuple[int, int, int, int]]) -> tuple[int, int, int, int] | None:
     if not boxes:
         return None
-    x0 = min((b[0] for b in boxes))
-    y0 = min((b[1] for b in boxes))
-    x1 = max((b[0] + b[2] for b in boxes))
-    y1 = max((b[1] + b[3] for b in boxes))
+    x0 = min(b[0] for b in boxes)
+    y0 = min(b[1] for b in boxes)
+    x1 = max(b[0] + b[2] for b in boxes)
+    y1 = max(b[1] + b[3] for b in boxes)
     return (x0, y0, max(1, x1 - x0), max(1, y1 - y0))
 
 def _fit_group(src: tuple[int, int, int, int], dest: tuple[int, int, int, int], box: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
@@ -176,10 +176,10 @@ def _set_placeholder_text(block: str, text: str) -> str:
     text = (text or '').strip()
     if not text:
         return block
-    run = re.search('<a:r>.*?</a:r>', block, flags=re.S)
+    run = re.search('<a:r>.*?</a:r>', block, flags=re.DOTALL)
     rpr = '<a:rPr lang="zh-TW" altLang="en-US" dirty="0"/>'
     if run:
-        rpr_m = re.search('<a:rPr\\b[^>]*/>', run.group(0)) or re.search('<a:rPr\\b.*?</a:rPr>', run.group(0), flags=re.S)
+        rpr_m = re.search('<a:rPr\\b[^>]*/>', run.group(0)) or re.search('<a:rPr\\b.*?</a:rPr>', run.group(0), flags=re.DOTALL)
         if rpr_m:
             rpr = rpr_m.group(0)
     paragraphs = []
@@ -191,7 +191,7 @@ def _set_placeholder_text(block: str, text: str) -> str:
     paragraph = ''.join(paragraphs)
     if '<p:txBody>' not in block:
         return block
-    return re.sub('(<p:txBody>.*?<a:lstStyle/>).*?(</p:txBody>)', '\\1' + paragraph + '\\2', block, count=1, flags=re.S)
+    return re.sub('(<p:txBody>.*?<a:lstStyle/>).*?(</p:txBody>)', '\\1' + paragraph + '\\2', block, count=1, flags=re.DOTALL)
 
 def _next_shape_id(start: int) -> int:
     return start + 1
@@ -361,7 +361,7 @@ def _is_chrome_pic(box: tuple[int, int, int, int], slide_cx: int, slide_cy: int)
 
 def _skeleton_slides(parts: dict[str, bytes]) -> dict[str, dict[str, Any]]:
     found: dict[str, dict[str, Any]] = {}
-    for rel_name in sorted((name for name in parts if re.fullmatch('ppt/slides/_rels/slide\\d+\\.xml.rels', name))):
+    for rel_name in sorted(name for name in parts if re.fullmatch('ppt/slides/_rels/slide\\d+\\.xml.rels', name)):
         rels = _parse_rels(parts[rel_name])
         layout = next((Path(target).name for target in rels.values() if 'slideLayout' in target), '')
         if not layout or layout in found:
@@ -406,7 +406,7 @@ def _fill_skeleton(skeleton: str, *, title: str, subtitle: str, dest_items: list
         extras.append(block)
     if extras:
         xml = xml.replace('</p:spTree>', ''.join(extras) + '</p:spTree>', 1)
-    xml = re.sub('(<a:fld\\b[^>]*type="slidenum"[^>]*>.*?<a:t>)[^<]*(</a:t>)', f'\\g<1>{int(slide_index)}\\2', xml, count=1, flags=re.S)
+    xml = re.sub('(<a:fld\\b[^>]*type="slidenum"[^>]*>.*?<a:t>)[^<]*(</a:t>)', f'\\g<1>{int(slide_index)}\\2', xml, count=1, flags=re.DOTALL)
     if 'a14:' in xml and 'xmlns:a14=' not in xml:
         xml = xml.replace('<p:sld ', '<p:sld xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main" ', 1)
     return (xml, chrome_rels)
@@ -471,7 +471,7 @@ def _prune_unused_layouts(parts: dict[str, bytes], keep_layout_names: set[str]) 
             parts[rel_name] = _rels_xml(entries)
             master_xml = parts[f'ppt/slideMasters/{master_name}'].decode('utf-8', 'replace')
             ids = ''.join((f'<p:sldLayoutId id="{2147483649 + i}" r:id="{rid}"/>' for i, rid in enumerate(layout_rids)))
-            master_xml = re.sub('<p:sldLayoutIdLst>.*?</p:sldLayoutIdLst>', f'<p:sldLayoutIdLst>{ids}</p:sldLayoutIdLst>', master_xml, count=1, flags=re.S)
+            master_xml = re.sub('<p:sldLayoutIdLst>.*?</p:sldLayoutIdLst>', f'<p:sldLayoutIdLst>{ids}</p:sldLayoutIdLst>', master_xml, count=1, flags=re.DOTALL)
             parts[f'ppt/slideMasters/{master_name}'] = _ms_xml(master_xml)
         for name in list(parts):
             if name.startswith('ppt/theme/') and Path(name).name not in keep_themes and (not name.endswith('.rels')):
@@ -514,14 +514,14 @@ def _rewrite_app_props(parts: dict[str, bytes], slide_count: int, titles: list[s
     text = re.sub('<HiddenSlides>\\d+</HiddenSlides>', '<HiddenSlides>0</HiddenSlides>', text)
     if old_n:
         text = re.sub(f'(<(?:vt:lpstr)>[^<]*(?:投影片標題|Slide Titles)[^<]*</vt:lpstr></vt:variant><vt:variant><vt:i4>){old_n}(</vt:i4>)', f'\\g<1>{int(slide_count)}\\2', text, count=1)
-    block = re.search('<TitlesOfParts><vt:vector size=\\"(\\d+)\\" baseType=\\"lpstr\\">(.*?)</vt:vector></TitlesOfParts>', text, flags=re.S)
+    block = re.search('<TitlesOfParts><vt:vector size=\\"(\\d+)\\" baseType=\\"lpstr\\">(.*?)</vt:vector></TitlesOfParts>', text, flags=re.DOTALL)
     if block:
         size = int(block.group(1))
         items = re.findall('<vt:lpstr>(.*?)</vt:lpstr>', block.group(2))
         prefix_n = max(0, size - old_n) if old_n else min(3, len(items))
         prefix = items[:prefix_n]
         new_items = prefix + [title or f'Slide {i}' for i, title in enumerate(titles, start=1)]
-        body = ''.join((f'<vt:lpstr>{_xml_escape(item)}</vt:lpstr>' for item in new_items))
+        body = ''.join(f'<vt:lpstr>{_xml_escape(item)}</vt:lpstr>' for item in new_items)
         repl = f'<TitlesOfParts><vt:vector size="{len(new_items)}" baseType="lpstr">{body}</vt:vector></TitlesOfParts>'
         text = text[:block.start()] + repl + text[block.end():]
     parts['docProps/app.xml'] = _ms_xml(text)
@@ -579,10 +579,10 @@ def _rewrite_presentation(parts: dict[str, bytes], slide_count: int, titles: lis
         pres = parts['ppt/presentation.xml'].decode('utf-8', 'replace')
         master_ids = ''.join((f'<p:sldMasterId id="{2147483648 + i}" r:id="{rid}"/>' for i, rid in enumerate(master_rids)))
         if '<p:sldMasterIdLst>' in pres:
-            pres = re.sub('<p:sldMasterIdLst>.*?</p:sldMasterIdLst>', f'<p:sldMasterIdLst>{master_ids}</p:sldMasterIdLst>', pres, count=1, flags=re.S)
+            pres = re.sub('<p:sldMasterIdLst>.*?</p:sldMasterIdLst>', f'<p:sldMasterIdLst>{master_ids}</p:sldMasterIdLst>', pres, count=1, flags=re.DOTALL)
         sld_ids = ''.join((f'<p:sldId id="{256 + i}" r:id="{rid}"/>' for i, rid in enumerate(slide_rids)))
         if '<p:sldIdLst>' in pres:
-            pres = re.sub('<p:sldIdLst>.*?</p:sldIdLst>', f'<p:sldIdLst>{sld_ids}</p:sldIdLst>', pres, count=1, flags=re.S)
+            pres = re.sub('<p:sldIdLst>.*?</p:sldIdLst>', f'<p:sldIdLst>{sld_ids}</p:sldIdLst>', pres, count=1, flags=re.DOTALL)
         else:
             pres = pres.replace('</p:sldMasterIdLst>', '</p:sldMasterIdLst><p:sldIdLst>' + sld_ids + '</p:sldIdLst>', 1)
         parts['ppt/presentation.xml'] = _ms_xml(pres)
@@ -666,7 +666,7 @@ def reflow_apply(source: Path, template: Path, dest: Path) -> dict[str, Any]:
     chrome = _title_sample_chrome(parts)
     skeletons = _skeleton_slides(parts)
     _drop_template_slides(parts)
-    source_slide_count = sum((1 for name in source_parts if re.fullmatch('ppt/slides/slide\\d+\\.xml', name)))
+    source_slide_count = sum(1 for name in source_parts if re.fullmatch('ppt/slides/slide\\d+\\.xml', name))
     layout_map: dict[str, str] = {}
     copied_media: dict[str, str] = {}
     titles: list[str] = []
@@ -684,7 +684,7 @@ def reflow_apply(source: Path, template: Path, dest: Path) -> dict[str, Any]:
         items = _collect_content(slide_xml, rels)
         subtitle = ''
         if index == 1:
-            subtitle = '\n'.join((item['text'] for item in items if item['kind'] == 'text'))
+            subtitle = '\n'.join(item['text'] for item in items if item['kind'] == 'text')
             items = [item for item in items if item['kind'] == 'pic']
         placeholders = _layout_placeholders(layout_xml)
         dest_box = _body_box(placeholders, index)

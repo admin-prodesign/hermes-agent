@@ -1088,7 +1088,7 @@ class TestMattermostAutoThreadRootHeading:
             {"message": "##### 出貨延遲檢討 / Shipping Delay Review\n\nCan someone look at this?"},
         )
         # No @mention in the reply, so the normal agent path should still be skipped.
-        assert getattr(self.adapter.handle_message, "call_count") == 0
+        assert self.adapter.handle_message.call_count == 0
 
     @pytest.mark.asyncio
     async def test_own_thread_reply_adds_heading_but_does_not_reenter_agent(self):
@@ -1112,7 +1112,7 @@ class TestMattermostAutoThreadRootHeading:
             "posts/root_post/patch",
             {"message": "##### 使用者問題 / User Question\n\nUntitled user question"},
         )
-        assert getattr(self.adapter.handle_message, "call_count") == 0
+        assert self.adapter.handle_message.call_count == 0
 
     @pytest.mark.asyncio
     async def test_thread_reply_updates_existing_non_bilingual_heading(self):

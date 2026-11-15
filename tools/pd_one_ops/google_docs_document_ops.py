@@ -84,7 +84,7 @@ def _error(error: str, detail: str, **extra: Any) -> dict[str, Any]:
 def _load_registry(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f'Google Docs document-ops registry not found: {path}')
-    data = json.loads(path.read_text(encoding='utf-8'))
+    data = json.loads(path.read_text(encoding='utf-8-sig'))
     if data.get('schema') != 'pd-one.google-docs-document-ops.v1':
         raise ValueError('unsupported Google Docs document-ops registry schema')
     if not isinstance(data.get('documents'), dict):
@@ -125,7 +125,7 @@ def _bilingual_paragraph_ok(text: str) -> bool:
     chinese_for_language_check = re.sub(identifier_pattern, '', chinese_for_language_check, flags=re.IGNORECASE)
     english_for_language_check = re.sub(identifier_pattern, '', english_for_language_check, flags=re.IGNORECASE)
     chinese_latin_words = re.findall('[A-Za-z]+', chinese_for_language_check)
-    return any(('一' <= char <= '鿿' for char in chinese)) and (not any((any((char.islower() for char in word)) for word in chinese_latin_words))) and any((char.isascii() and char.isalpha() for char in english)) and (not any(('一' <= char <= '鿿' for char in english_for_language_check)))
+    return any('一' <= char <= '鿿' for char in chinese) and (not any(any(char.islower() for char in word) for word in chinese_latin_words)) and any(char.isascii() and char.isalpha() for char in english) and (not any('一' <= char <= '鿿' for char in english_for_language_check))
 
 def _require_bilingual_paragraphs(values: Iterable[str], field_name: str) -> None:
     failures = [index + 1 for index, value in enumerate(values) if not _bilingual_paragraph_ok(value)]
@@ -139,11 +139,11 @@ def _manual_fragment_is_exempt(text: str) -> bool:
         return False
     if re.fullmatch('https?://\\S+', value, flags=re.IGNORECASE):
         return True
-    if value.startswith('=') and (not any(('一' <= char <= '鿿' for char in value))):
+    if value.startswith('=') and (not any('一' <= char <= '鿿' for char in value)):
         return True
     if not re.fullmatch('[A-Za-z0-9_./:@#%+()\\[\\]-]+', value):
         return False
-    return any((char.isdigit() for char in value)) or any((char in '_./:@#%+()[]-' for char in value)) or (value.isupper() and 2 <= len(value) <= 16)
+    return any(char.isdigit() for char in value) or any(char in '_./:@#%+()[]-' for char in value) or (value.isupper() and 2 <= len(value) <= 16)
 
 def _require_bilingual_manual_fragment(text: str, field_name: str) -> None:
     value = str(text or '').strip()
@@ -165,7 +165,7 @@ def _google_translate_text(text: str, target_language: str) -> str:
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             data = json.loads(response.read().decode('utf-8'))
-        translated = ''.join((str(part[0]) for part in data[0] or [] if part and part[0])).strip().strip('"')
+        translated = ''.join(str(part[0]) for part in data[0] or [] if part and part[0]).strip().strip('"')
     except Exception:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return ''
@@ -173,9 +173,9 @@ def _google_translate_text(text: str, target_language: str) -> str:
 
 def _translate_checked(text: str, target_language: str, translator: Callable[[str, str], str]) -> str:
     chunks = [text[index:index + 1800] for index in range(0, len(text), 1800)] or ['']
-    translated = ''.join((str(translator(chunk, target_language) or '') for chunk in chunks)).strip()
-    has_han = any(('一' <= char <= '鿿' for char in translated))
-    has_latin = any((char.isascii() and char.isalpha() for char in translated))
+    translated = ''.join(str(translator(chunk, target_language) or '') for chunk in chunks).strip()
+    has_han = any('一' <= char <= '鿿' for char in translated)
+    has_latin = any(char.isascii() and char.isalpha() for char in translated)
     if target_language == 'en' and (not has_latin or has_han):
         raise ValueError(f'automatic English translation failed for {text[:80]!r}')
     if target_language == 'zh-TW' and (not has_han):
@@ -186,8 +186,8 @@ def _split_bilingual_scripts(text: str) -> tuple[str, str] | None:
     value = str(text or '').strip()
     if value.count('\x0b') == 1:
         first, second = (part.strip() for part in value.split('\x0b', 1))
-        first_han = any(('一' <= char <= '鿿' for char in first))
-        second_han = any(('一' <= char <= '鿿' for char in second))
+        first_han = any('一' <= char <= '鿿' for char in first)
+        second_han = any('一' <= char <= '鿿' for char in second)
         if first_han and (not second_han):
             return (first, second)
         if second_han and (not first_han):
@@ -214,8 +214,8 @@ def _repair_manual_text(text: str, *, field_name: str, heading: bool, translator
     pair = _split_bilingual_scripts(value)
     method = 'reordered_existing_translation'
     if pair is None:
-        has_han = any(('一' <= char <= '鿿' for char in value))
-        has_latin = any((char.isascii() and char.isalpha() for char in value))
+        has_han = any('一' <= char <= '鿿' for char in value)
+        has_latin = any(char.isascii() and char.isalpha() for char in value)
         if has_han and (not has_latin):
             pair = (value, _translate_checked(value, 'en', translator))
             method = 'added_english_translation'
@@ -231,7 +231,7 @@ def _repair_manual_text(text: str, *, field_name: str, heading: bool, translator
     return (normalized, {'field': field_name, 'method': method, 'original_text': value, 'normalized_text': normalized})
 
 def _paragraph_text(paragraph: dict[str, Any]) -> str:
-    return ''.join((str(element.get('textRun', {}).get('content') or '') for element in paragraph.get('elements') or [] if element.get('textRun') is not None))
+    return ''.join(str(element.get('textRun', {}).get('content') or '') for element in paragraph.get('elements') or [] if element.get('textRun') is not None)
 
 def _walk_structural_elements(content: Iterable[dict[str, Any]], *, include_toc: bool=True) -> Iterable[dict[str, Any]]:
     for block in content:
@@ -256,7 +256,7 @@ def _body_paragraphs(docs_module: Any, doc: dict[str, Any], tab_id: Optional[str
 
 def _body_text(docs_module: Any, doc: dict[str, Any], tab_id: Optional[str]) -> str:
     paragraphs, _ = _body_paragraphs(docs_module, doc, tab_id)
-    return ''.join((_paragraph_text(block['paragraph']) for block in paragraphs))
+    return ''.join(_paragraph_text(block['paragraph']) for block in paragraphs)
 
 def _selected_document_tab(doc: dict[str, Any], tab_id: Optional[str]) -> dict[str, Any]:
     tabs = doc.get('tabs') or []
@@ -384,7 +384,7 @@ def _section_placement_postcondition(docs_module: Any, doc: dict[str, Any], sect
             continue
         scoped.append({'text': text, 'style': str((paragraph.get('paragraphStyle') or {}).get('namedStyleType') or 'NORMAL_TEXT')})
     expected_bodies = [str(value or '').strip('\n') for value in body_paragraphs or []]
-    bodies_ok = [item['text'] for item in scoped] == expected_bodies and all((item['style'] == 'NORMAL_TEXT' for item in scoped))
+    bodies_ok = [item['text'] for item in scoped] == expected_bodies and all(item['style'] == 'NORMAL_TEXT' for item in scoped)
     return {'ok': getattr(target, 'level', '') == heading_style and bodies_ok and anchor_ok and parent_ok, 'heading': _heading_payload(target), 'scoped_body_paragraphs': scoped, 'expected_body_paragraphs': expected_bodies, 'actual_anchor_heading': actual_anchor, 'expected_anchor_heading': anchor_heading, 'actual_parent_heading': str(getattr(parent, 'text', '') or '') if parent else '', 'expected_parent_heading': parent_heading, 'anchor_ok': anchor_ok, 'parent_ok': parent_ok, 'bodies_ok': bodies_ok}
 
 def _registered_document(registry: dict[str, Any], document_key: str, action: str) -> dict[str, Any]:
@@ -393,7 +393,7 @@ def _registered_document(registry: dict[str, Any], document_key: str, action: st
         raise ValueError('document_key must be a registered lowercase slug')
     document = registry['documents'].get(key)
     if not isinstance(document, dict):
-        raise ValueError(f'document_key is not registered; allowed={sorted(registry['documents'])}')
+        raise ValueError(f"document_key is not registered; allowed={sorted(registry['documents'])}")
     allowed = set(document.get('allowed_actions') or [])
     if action not in allowed:
         raise ValueError(f'action {action!r} is not allowed for registered document {key!r}')
@@ -443,7 +443,7 @@ def _assert_registered_identity(document: dict[str, Any], doc: dict[str, Any]) -
     if doc.get('documentId') != expected_id:
         raise RuntimeError('Google Docs readback document ID does not match the registry')
     if expected_title and doc.get('title') != expected_title:
-        raise RuntimeError(f'Google Docs title mismatch: expected {expected_title!r}, got {doc.get('title')!r}')
+        raise RuntimeError(f"Google Docs title mismatch: expected {expected_title!r}, got {doc.get('title')!r}")
 
 def _check_revision(doc: dict[str, Any], expected_revision_id: Optional[str]) -> Optional[dict[str, Any]]:
     expected = str(expected_revision_id or '').strip()
@@ -482,8 +482,8 @@ def _batch_update(client: Any, document_id: str, requests: list[dict[str, Any]],
 
 def _write_receipt(document_key: str, action: str, result: dict[str, Any]) -> str:
     RECEIPT_ROOT().mkdir(parents=True, exist_ok=True)
-    stamp = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
-    path = RECEIPT_ROOT() / f'{stamp}-{document_key or 'registry'}-{action}.json'
+    stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%S.%fZ')
+    path = RECEIPT_ROOT() / f"{stamp}-{document_key or 'registry'}-{action}.json"
     path.write_text(json.dumps(_json_safe(result), ensure_ascii=False, indent=2), encoding='utf-8')
     return str(path)
 
@@ -508,7 +508,7 @@ def _summarize_inspect_receipt(inspect_receipt_path: Optional[str], heading_term
     size = resolved.stat().st_size
     if size > INSPECT_RECEIPT_MAX_BYTES:
         raise ValueError(f'inspect receipt exceeds {INSPECT_RECEIPT_MAX_BYTES} bytes')
-    payload = json.loads(resolved.read_text(encoding='utf-8'))
+    payload = json.loads(resolved.read_text(encoding='utf-8-sig'))
     if not isinstance(payload, dict):
         raise ValueError('inspect receipt must be a JSON object')
     if payload.get('capability') != 'pd_one_google_docs_document_ops':
@@ -536,7 +536,7 @@ def _summarize_inspect_receipt(inspect_receipt_path: Optional[str], heading_term
         text = _normalize_heading_display(item.get('text'))
         if terms:
             haystack = text.casefold()
-            if not any((term.casefold() in haystack for term in terms)):
+            if not any(term.casefold() in haystack for term in terms):
                 continue
         matched += 1
         if len(displayed) < HEADING_SUMMARY_MAX:
@@ -567,7 +567,7 @@ def _read_translation_cache(key: str) -> Optional[dict[str, Any]]:
     path = _translation_cache_path(key)
     if not path.is_file():
         return None
-    data = json.loads(path.read_text(encoding='utf-8'))
+    data = json.loads(path.read_text(encoding='utf-8-sig'))
     if data.get('idempotency_key') != key:
         raise RuntimeError('translation cache key hash collision or corrupted record')
     return data
@@ -575,7 +575,7 @@ def _read_translation_cache(key: str) -> Optional[dict[str, Any]]:
 def _write_translation_cache(*, key: str, request_sha256: str, normalized_inputs: dict[str, Any], translation_repairs: list[dict[str, Any]]) -> str:
     IDEMPOTENCY_ROOT().mkdir(parents=True, exist_ok=True)
     path = _translation_cache_path(key)
-    record = {'schema': 'pd-one.google-docs-document-ops-translation-cache.v1', 'idempotency_key': key, 'request_sha256': request_sha256, 'normalized_inputs': normalized_inputs, 'translation_repairs': translation_repairs, 'recorded_at_utc': dt.datetime.now(dt.timezone.utc).isoformat()}
+    record = {'schema': 'pd-one.google-docs-document-ops-translation-cache.v1', 'idempotency_key': key, 'request_sha256': request_sha256, 'normalized_inputs': normalized_inputs, 'translation_repairs': translation_repairs, 'recorded_at_utc': dt.datetime.now(dt.UTC).isoformat()}
     tmp = path.with_suffix('.tmp')
     tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
     tmp.replace(path)
@@ -585,7 +585,7 @@ def _read_idempotency_record(key: str) -> Optional[dict[str, Any]]:
     path = _idempotency_path(key)
     if not path.is_file():
         return None
-    data = json.loads(path.read_text(encoding='utf-8'))
+    data = json.loads(path.read_text(encoding='utf-8-sig'))
     if data.get('idempotency_key') != key:
         raise RuntimeError('idempotency ledger key hash collision or corrupted record')
     return data
@@ -593,7 +593,7 @@ def _read_idempotency_record(key: str) -> Optional[dict[str, Any]]:
 def _write_idempotency_record(*, key: str, fingerprint_sha256: str, fingerprint: dict[str, Any], result: dict[str, Any]) -> str:
     IDEMPOTENCY_ROOT().mkdir(parents=True, exist_ok=True)
     path = _idempotency_path(key)
-    record = {'schema': 'pd-one.google-docs-document-ops-idempotency.v1', 'idempotency_key': key, 'fingerprint_sha256': fingerprint_sha256, 'fingerprint': fingerprint, 'status': result.get('status'), 'document_key': result.get('document_key'), 'document_id': result.get('document_id'), 'action': result.get('action'), 'receipt_path': result.get('receipt_path'), 'new_revision_id': (result.get('execution') or {}).get('new_revision_id'), 'recorded_at_utc': dt.datetime.now(dt.timezone.utc).isoformat()}
+    record = {'schema': 'pd-one.google-docs-document-ops-idempotency.v1', 'idempotency_key': key, 'fingerprint_sha256': fingerprint_sha256, 'fingerprint': fingerprint, 'status': result.get('status'), 'document_key': result.get('document_key'), 'document_id': result.get('document_id'), 'action': result.get('action'), 'receipt_path': result.get('receipt_path'), 'new_revision_id': (result.get('execution') or {}).get('new_revision_id'), 'recorded_at_utc': dt.datetime.now(dt.UTC).isoformat()}
     tmp = path.with_suffix('.tmp')
     tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
     tmp.replace(path)
@@ -617,7 +617,7 @@ def _verify_intent_postcondition(*, docs_module: Any, doc: dict[str, Any], actio
                 continue
             value = docs_module.header_text(doc, header_id, readback_tab).rstrip('\n')
             headers.append({'type': header_type, 'header_id': header_id, 'text': value, 'date_highlight_ok': _header_date_highlight_ok(doc, header_id, value, readback_tab)})
-        return {'ok': bool(headers) and all((item['text'] == header_text.strip('\n') and item['date_highlight_ok'] for item in headers)), 'headers': headers}
+        return {'ok': bool(headers) and all(item['text'] == header_text.strip('\n') and item['date_highlight_ok'] for item in headers), 'headers': headers}
     if action == 'append_changelog':
         try:
             heading = _find_exact_heading(docs_module, doc, section_heading, tab_id)
@@ -626,7 +626,7 @@ def _verify_intent_postcondition(*, docs_module: Any, doc: dict[str, Any], actio
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             return {'ok': False, 'detail': str(exc)}
         matched = [entry for entry in entries if _normalize(entry.get('text', '')).startswith(_normalize(changelog_date)) and (getattr(heading, 'heading_id', '') in (entry.get('linkHeadingIds') or []) or _normalize(section_heading) in _normalize(entry.get('text', '')))]
-        return {'ok': bool(matched), 'matched_entries': matched, 'summary_present': any((_normalize(changelog_summary) in _normalize(entry.get('text', '')) for entry in matched))}
+        return {'ok': bool(matched), 'matched_entries': matched, 'summary_present': any(_normalize(changelog_summary) in _normalize(entry.get('text', '')) for entry in matched)}
     return {'ok': False, 'detail': f'unsupported postcondition action {action!r}'}
 
 def _base_result(action: str, document_key: str, document: dict[str, Any], doc: dict[str, Any], dry_run: bool, tab_id: str, docs_module: Any) -> dict[str, Any]:
@@ -676,7 +676,7 @@ def _unique_text_patch_plan(docs_module: Any, doc: dict[str, Any], old_text: str
         raise ValueError('expected_match_count must be >= 1')
     if len(matches) != wanted:
         raise ValueError(f'old_text must match exactly {wanted} time(s) in body text runs; matched {len(matches)} times')
-    if any((str(match.get('paragraph_style') or '') == 'TITLE' for match in matches)):
+    if any(str(match.get('paragraph_style') or '') == 'TITLE' for match in matches):
         raise ValueError('unique_text_patch cannot modify title paragraphs')
     requests: list[dict[str, Any]] = []
     for match in sorted(matches, key=lambda item: int(item['start_index']), reverse=True):
@@ -694,9 +694,9 @@ def _insert_section_plan(docs_module: Any, doc: dict[str, Any], anchor_heading: 
     if heading_style not in HEADING_STYLES:
         raise ValueError(f'heading_style must be one of {sorted(HEADING_STYLES)}')
     bodies = [str(value or '').strip('\n') for value in body_paragraphs or []]
-    if not bodies or any((not value for value in bodies)):
+    if not bodies or any(not value for value in bodies):
         raise ValueError('body_paragraphs must contain at least one non-empty paragraph')
-    if len(bodies) > 50 or any((len(value) > 4000 for value in bodies)) or sum((len(value) for value in bodies)) > 20000:
+    if len(bodies) > 50 or any(len(value) > 4000 for value in bodies) or sum(len(value) for value in bodies) > 20000:
         raise ValueError('body_paragraphs exceed the bounded count/size limit')
     existing = [h for h in docs_module.collect_headings(doc, tab_id) if _normalize(getattr(h, 'text', '')) == _normalize(section_heading)]
     if existing:
@@ -716,7 +716,7 @@ def _insert_section_plan(docs_module: Any, doc: dict[str, Any], anchor_heading: 
             raise ValueError('anchor_heading is not currently inside the requested Heading 1 parent section')
     resolved_tab_id = str(getattr(anchor, 'tab_id', '') or tab_id or '')
     insert_at = int(getattr(anchor, 'start_index', 0))
-    text = section_heading + '\n' + ''.join((body + '\n' for body in bodies))
+    text = section_heading + '\n' + ''.join(body + '\n' for body in bodies)
     heading_end = insert_at + _u16_len(section_heading + '\n')
     total_end = insert_at + _u16_len(text)
     normal_style, normal_fields = _normal_text_style(docs_module, doc, resolved_tab_id)
@@ -734,7 +734,7 @@ def _set_header_plan(docs_module: Any, doc: dict[str, Any], header_text: str, he
     date_match = dates[0]
     choices = set(getattr(docs_module, 'HEADER_TYPE_CHOICES', []))
     selected = header_types or list(getattr(docs_module, 'HEADER_TYPE_CHOICES', []))
-    if not selected or any((value not in choices for value in selected)):
+    if not selected or any(value not in choices for value in selected):
         raise ValueError(f'header_types must be a non-empty subset of {sorted(choices)}')
     style, resolved_tab_id = docs_module.document_style(doc, tab_id)
     requests: list[dict[str, Any]] = []
@@ -813,7 +813,7 @@ def _append_changelog_plan(docs_module: Any, doc: dict[str, Any], changelog_date
 
 def _verify_required_strings(docs_module: Any, doc: dict[str, Any], required_strings: Optional[list[str]], tab_id: Optional[str]) -> dict[str, Any]:
     strings = [str(value or '') for value in required_strings or []]
-    if len(strings) > 50 or any((not value or len(value) > 4000 for value in strings)):
+    if len(strings) > 50 or any(not value or len(value) > 4000 for value in strings):
         raise ValueError('required_strings must contain 1-50 non-empty strings of <= 4000 characters')
     text = _body_text(docs_module, doc, tab_id)
     missing = [value for value in strings if value not in text]
@@ -821,7 +821,7 @@ def _verify_required_strings(docs_module: Any, doc: dict[str, Any], required_str
 
 def _verify_toc_headings(docs_module: Any, doc: dict[str, Any], required_toc_headings: Optional[list[str]], tab_id: Optional[str]) -> dict[str, Any]:
     required = [str(value or '').strip() for value in required_toc_headings or []]
-    if len(required) > 50 or any((not value or len(value) > 240 for value in required)):
+    if len(required) > 50 or any(not value or len(value) > 240 for value in required):
         raise ValueError('required_toc_headings must contain 1-50 non-empty headings of <= 240 characters')
     content, _ = _body_content(docs_module, doc, tab_id)
     entries: list[dict[str, Any]] = []
@@ -859,7 +859,7 @@ def _verify_toc_headings(docs_module: Any, doc: dict[str, Any], required_toc_hea
         if not target_id or entry_ids != {target_id}:
             wrong_identity.append(heading_text)
     encoded_entries = json.dumps(entries, ensure_ascii=False, sort_keys=True)
-    return {'ok': bool(entries) and (not missing) and (not wrong_identity) and (not duplicate_or_conflicting), 'native_toc_count': sum((1 for block in content if block.get('tableOfContents'))), 'native_toc_entry_count': len(entries), 'required_toc_headings_count': len(required), 'missing_toc_headings': missing, 'wrong_identity_toc_headings': wrong_identity, 'duplicate_or_conflicting_toc_headings': duplicate_or_conflicting, 'toc_entries_sha256': _sha(encoded_entries)}
+    return {'ok': bool(entries) and (not missing) and (not wrong_identity) and (not duplicate_or_conflicting), 'native_toc_count': sum(1 for block in content if block.get('tableOfContents')), 'native_toc_entry_count': len(entries), 'required_toc_headings_count': len(required), 'missing_toc_headings': missing, 'wrong_identity_toc_headings': wrong_identity, 'duplicate_or_conflicting_toc_headings': duplicate_or_conflicting, 'toc_entries_sha256': _sha(encoded_entries)}
 
 def _verify_work_manual_section(docs_module: Any, doc: dict[str, Any], section_heading: str, tab_id: Optional[str]) -> dict[str, Any]:
     target = str(section_heading or '').strip()
@@ -916,9 +916,9 @@ def _verify_work_manual_section(docs_module: Any, doc: dict[str, Any], section_h
             continue
         text = docs_module.header_text(doc, header_id, resolved_tab_id).rstrip('\n')
         header_checks.append({'type': header_type, 'text': text, 'date_highlight_ok': _header_date_highlight_ok(doc, header_id, text, resolved_tab_id)})
-    return {'ok': audited_body > 0 and child_headings > 0 and (not body_failures) and (not heading_failures) and bool(header_checks) and all((item['date_highlight_ok'] for item in header_checks)), 'parent_heading': target, 'parent_style': target_level, 'audited_body_paragraphs': audited_body, 'child_headings': child_headings, 'non_bilingual_body_paragraphs': body_failures[:20], 'non_bilingual_child_headings': heading_failures[:20], 'headers': header_checks}
+    return {'ok': audited_body > 0 and child_headings > 0 and (not body_failures) and (not heading_failures) and bool(header_checks) and all(item['date_highlight_ok'] for item in header_checks), 'parent_heading': target, 'parent_style': target_level, 'audited_body_paragraphs': audited_body, 'child_headings': child_headings, 'non_bilingual_body_paragraphs': body_failures[:20], 'non_bilingual_child_headings': heading_failures[:20], 'headers': header_checks}
 
-def execute_document_ops(*, action: str='list_registered_documents', document_key: str='', requester_user_id: str, channel_id: str='', chat_type: str='', old_text: str='', new_text: str='', anchor_heading: str='', parent_heading: str='', section_heading: str='', body_paragraphs: Optional[list[str]]=None, heading_style: str='HEADING_2', header_text: str='', header_types: Optional[list[str]]=None, changelog_date: str='', changelog_summary: str='', changelog_heading: str='變更日誌 Changelog', required_strings: Optional[list[str]]=None, required_toc_headings: Optional[list[str]]=None, expected_revision_id: Optional[str]=None, idempotency_key: Optional[str]=None, tab_id: Optional[str]=None, expected_match_count: Optional[int]=None, inspect_receipt_path: Optional[str]=None, heading_terms: Optional[list[str]]=None, dry_run: bool=True, confirm_live_write: Optional[str]=None, registry_path: Path=None, docs_module: Any=None, client: Any=None, translator: Optional[Callable[[str, str], str]]=None) -> dict[str, Any]:
+def execute_document_ops(*, action: str='list_registered_documents', document_key: str='', requester_user_id: str, channel_id: str='', chat_type: str='', old_text: str='', new_text: str='', anchor_heading: str='', parent_heading: str='', section_heading: str='', body_paragraphs: Optional[list[str]]=None, heading_style: str='HEADING_2', header_text: str='', header_types: Optional[list[str]]=None, changelog_date: str='', changelog_summary: str='', changelog_heading: str='變更日誌 Changelog', required_strings: Optional[list[str]]=None, required_toc_headings: Optional[list[str]]=None, expected_revision_id: Optional[str]=None, idempotency_key: Optional[str]=None, tab_id: Optional[str]=None, expected_match_count: Optional[int]=None, inspect_receipt_path: Optional[str]=None, heading_terms: Optional[list[str]]=None, dry_run: bool=True, confirm_live_write: Optional[str]=None, registry_path: Path | None=None, docs_module: Any=None, client: Any=None, translator: Optional[Callable[[str, str], str]]=None) -> dict[str, Any]:
     """Execute one bounded Google Docs action and return a structured receipt."""
     if registry_path is None:
         registry_path = REGISTRY_PATH()
@@ -1077,7 +1077,7 @@ def execute_document_ops(*, action: str='list_registered_documents', document_ke
                 if _is_work_manual(document) and section_heading:
                     result['work_manual_compliance'] = _verify_work_manual_section(module, doc, section_heading, resolved_tab_id)
                     checks.append(result['work_manual_compliance'])
-                result['status'] = 'ok' if all((check.get('ok') for check in checks)) else 'error'
+                result['status'] = 'ok' if all(check.get('ok') for check in checks) else 'error'
                 result['receipt_path'] = _write_receipt(document_key, action_key, result)
                 return _PdReturn(result)
 
@@ -1186,4 +1186,4 @@ def execute_document_ops(*, action: str='list_registered_documents', document_ke
     except Exception:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
     return result
-__all__ = ['execute_document_ops', 'LIVE_CONFIRMATION', 'REGISTRY_PATH']
+__all__ = ['LIVE_CONFIRMATION', 'REGISTRY_PATH', 'execute_document_ops']

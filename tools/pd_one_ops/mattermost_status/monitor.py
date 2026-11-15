@@ -21,7 +21,7 @@ from tools.pd_one_ops.mattermost_status import providers as prov
 
 
 def utc_now() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)
+    return dt.datetime.now(dt.UTC)
 
 
 def tpe_stamp(ts: dt.datetime | None = None) -> str:
@@ -98,7 +98,7 @@ def load_env_file(path: Path) -> dict[str, str]:
     vals: dict[str, str] = {}
     if not path.exists():
         return vals
-    for raw in path.read_text(encoding="utf-8").splitlines():
+    for raw in path.read_text(encoding="utf-8-sig").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -112,7 +112,7 @@ def load_state() -> dict[str, Any]:
     if not p.exists():
         return {}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        return json.loads(p.read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
 
@@ -134,7 +134,7 @@ def log_event(event: dict[str, Any]) -> None:
 
 def run_cmd(args: list[str], timeout: float = cfg.REQUEST_TIMEOUT) -> tuple[bool, str]:
     try:
-        cp = subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
+        cp = subprocess.run(args, check=False, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
         return cp.returncode == 0, cp.stdout.strip()
     except Exception as exc:
         return False, f"{type(exc).__name__}: {exc}"
@@ -175,12 +175,12 @@ def http_multipart_image(url: str, *, token: str, image_path: Path) -> tuple[boo
     image_bytes = image_path.read_bytes()
     filename = image_path.name
     body = b"".join([
-        f"--{boundary}\r\n".encode("utf-8"),
-        f'Content-Disposition: form-data; name="image"; filename="{filename}"\r\n'.encode("utf-8"),
+        f"--{boundary}\r\n".encode(),
+        f'Content-Disposition: form-data; name="image"; filename="{filename}"\r\n'.encode(),
         b"Content-Type: image/png\r\n\r\n",
         image_bytes,
         b"\r\n",
-        f"--{boundary}--\r\n".encode("utf-8"),
+        f"--{boundary}--\r\n".encode(),
     ])
     headers = {
         "Accept": "application/json",
@@ -252,7 +252,7 @@ def _parse_iso_ts(value: Any) -> float | None:
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        return dt.datetime.fromisoformat(value).timestamp()
     except Exception:
         return None
 

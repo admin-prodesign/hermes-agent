@@ -297,7 +297,7 @@ def _load_write_spec(spec_path: Path) -> dict[str, Any]:
     if spec_file.stat().st_size > OFFICE_FILE_OPS_SPEC_MAX_BYTES:
         raise ValueError(f'spec exceeds {OFFICE_FILE_OPS_SPEC_MAX_BYTES} bytes')
     try:
-        spec = json.loads(spec_file.read_text(encoding='utf-8'))
+        spec = json.loads(spec_file.read_text(encoding='utf-8-sig'))
     except json.JSONDecodeError as exc:
         raise ValueError(f'invalid JSON spec: {exc}') from exc
     if not isinstance(spec, dict):

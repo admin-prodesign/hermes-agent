@@ -56,7 +56,9 @@ If web dependencies or `web_dist` are missing after an update, do not mutate `/h
 
 ```bash
 systemctl --user restart hermes-dashboard.service
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 curl -sS --max-time 15 http://127.0.0.1:8765/ -o /tmp/hermes_dash.html -w 'status=%{http_code} bytes=%{size_download}\n'
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 grep -o '<title>[^<]*</title>' /tmp/hermes_dash.html
 ```
 

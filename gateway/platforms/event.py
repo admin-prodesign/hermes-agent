@@ -142,7 +142,7 @@ class MessageEvent:
     # back to ``channel_context``. An empty list: the adapter split that evidence out and there
     # are no recall posts. Keyword-only in practice; appended after ``media_filenames`` so
     # positional callers of that field stay stable.
-    recall_posts: Optional[List[str]] = None
+    recall_posts: Optional[list[str]] = None
 
     # Process-local admission receipt, never routing metadata or execution acknowledgement.
     _gateway_accepted: bool = field(default=False, init=False, repr=False, compare=False)

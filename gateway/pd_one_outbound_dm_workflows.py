@@ -13,7 +13,7 @@ import json
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -82,7 +82,7 @@ SAFE_WRITEBACK_KEYS = {"type", "worksheet", "columns", "status_column", "row_key
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def parse_utc(value: str | None) -> Optional[datetime]:
@@ -98,13 +98,13 @@ def parse_utc(value: str | None) -> Optional[datetime]:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def is_after(deadline: str | None, now: str | None) -> bool:
     deadline_dt = parse_utc(deadline)
-    now_dt = parse_utc(now) or datetime.now(timezone.utc)
+    now_dt = parse_utc(now) or datetime.now(UTC)
     return bool(deadline_dt and now_dt > deadline_dt)
 
 
@@ -496,7 +496,6 @@ def route_inbound_message(
 
     public_candidates = tuple(_candidate_public_view(c) for c in candidates)
     if len(candidates) == 1:
-        c = candidates[0]
         return RouteDecision("ask_confirmation", candidates=public_candidates, reason="probable_single_candidate_requires_confirmation")
     return RouteDecision("ask_user_to_choose", candidates=public_candidates, reason="multiple_candidate_workflows")
 

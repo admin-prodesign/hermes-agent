@@ -74,7 +74,7 @@ def _rel_targets(xml_bytes: bytes, rel_type: str) -> list[str]:
     return out
 
 def _slide_count(path: Path) -> int:
-    return sum((1 for name in _zip_names(path) if re.fullmatch('ppt/slides/slide\\d+\\.xml', name)))
+    return sum(1 for name in _zip_names(path) if re.fullmatch('ppt/slides/slide\\d+\\.xml', name))
 
 def _require_template(path: str | Path) -> Path:
     template = _require_path(path, INPUT_ROOTS + (Path(resolve_configured_path('~/.hermes/profiles/pdone/templates')),), 'template')
@@ -84,7 +84,7 @@ def _require_template(path: str | Path) -> Path:
 
 def _require_output(path: str | Path, *, overwrite: bool) -> Path:
     output = Path(path).expanduser().resolve(strict=False)
-    if not any((_is_within(output, root) for root in OUTPUT_ROOTS)):
+    if not any(_is_within(output, root) for root in OUTPUT_ROOTS):
         raise ValueError(f'output is outside approved staged artifact roots: {output}')
     if output.suffix.lower() != '.pptx':
         raise ValueError('output must be a .pptx')
@@ -99,7 +99,7 @@ def inspect_template(template: Path) -> dict[str, Any]:
     layouts = sorted((n for n in names if re.fullmatch('ppt/slideLayouts/slideLayout\\d+\\.xml', n)), key=lambda name: int(re.search('(\\d+)', name).group(1)))
     layout_names = [_layout_name(_zip_read(template, name)) for name in layouts]
     pres = _zip_read(template, 'ppt/presentation.xml')
-    return {'path': str(template), 'name': template.name, 'suffix': template.suffix.lower(), 'size_bytes': template.stat().st_size, 'sha256': _sha256(template), 'slide_count': _slide_count(template), 'slide_size': _sldsz(pres), 'layout_count': len(layouts), 'layout_names': layout_names[:MAX_SLIDES], 'master_count': sum((1 for n in names if n.startswith('ppt/slideMasters/slideMaster') and n.endswith('.xml')))}
+    return {'path': str(template), 'name': template.name, 'suffix': template.suffix.lower(), 'size_bytes': template.stat().st_size, 'sha256': _sha256(template), 'slide_count': _slide_count(template), 'slide_size': _sldsz(pres), 'layout_count': len(layouts), 'layout_names': layout_names[:MAX_SLIDES], 'master_count': sum(1 for n in names if n.startswith('ppt/slideMasters/slideMaster') and n.endswith('.xml'))}
 
 def inspect_source(source: Path) -> dict[str, Any]:
     names = _zip_names(source)
@@ -112,7 +112,7 @@ def inspect_source(source: Path) -> dict[str, Any]:
             targets = _rel_targets(_zip_read(source, rel_name), REL_LAYOUT)
             layout = Path(targets[0]).name if targets else ''
         mapping.append({'slide': f'slide{index}.xml', 'source_layout': layout})
-    return {'path': str(source), 'name': source.name, 'size_bytes': source.stat().st_size, 'sha256': _sha256(source), 'slide_count': _slide_count(source), 'slide_size': _sldsz(pres), 'embedding_count': sum((1 for n in names if n.startswith('ppt/embeddings/'))), 'media_count': sum((1 for n in names if n.startswith('ppt/media/'))), 'slide_layouts': mapping}
+    return {'path': str(source), 'name': source.name, 'size_bytes': source.stat().st_size, 'sha256': _sha256(source), 'slide_count': _slide_count(source), 'slide_size': _sldsz(pres), 'embedding_count': sum(1 for n in names if n.startswith('ppt/embeddings/')), 'media_count': sum(1 for n in names if n.startswith('ppt/media/')), 'slide_layouts': mapping}
 
 def _choose_layout_target(source_layout: str, template_layout_names: list[str], *, slide_index: int | None=None, title: str='', is_last: bool=False) -> str:
     names = {f'slideLayout{i + 1}.xml': name for i, name in enumerate(template_layout_names)}
@@ -135,7 +135,7 @@ def _choose_layout_target(source_layout: str, template_layout_names: list[str], 
         return title_layout
     if is_last:
         return closing or content
-    if re.search('KPI|管理指標', label, flags=re.I):
+    if re.search('KPI|管理指標', label, flags=re.IGNORECASE):
         return kpi or content
     if '稽核' in label:
         return score or content
@@ -152,7 +152,7 @@ def _rewrite_content_types(xml_bytes: bytes, *, drop_prefixes: tuple[str, ...], 
         return (el.get('PartName') or '').lstrip('/')
     for child in list(root):
         name = part_name(child)
-        if any((name.startswith(prefix) for prefix in drop_prefixes)):
+        if any(name.startswith(prefix) for prefix in drop_prefixes):
             root.remove(child)
     existing = {part_name(child) for child in list(root)}
     overrides = {'ppt/slideMasters/': 'application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml', 'ppt/slideLayouts/': 'application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml', 'ppt/theme/': 'application/vnd.openxmlformats-officedocument.theme+xml'}
@@ -199,10 +199,10 @@ def _graft_apply(source: Path, template: Path, dest: Path) -> dict[str, Any]:
         extra = reflow_mod.reflow_apply(source, template, tmp_path)
         sanitize = _sanitize_for_template(tmp_path, template)
         if sanitize['status'] != 'ok':
-            raise RuntimeError(f'pptx sanitize failed: {sanitize.get('detail', 'unknown')}')
+            raise RuntimeError(f"pptx sanitize failed: {sanitize.get('detail', 'unknown')}")
         gate = _maybe_gate(tmp_path, template)
         if gate['status'] != 'ok':
-            raise RuntimeError(f'Office no-corruption gate failed: {gate.get('detail', 'unknown')}')
+            raise RuntimeError(f"Office no-corruption gate failed: {gate.get('detail', 'unknown')}")
         os.replace(tmp_path, dest)
         tmp_path = None
     finally:
@@ -225,10 +225,10 @@ def _clone_template(template: Path, dest: Path) -> dict[str, Any]:
                 zout.writestr(info, payload)
         sanitize = _sanitize_for_template(tmp_path, template)
         if sanitize['status'] != 'ok':
-            raise RuntimeError(f'pptx sanitize failed: {sanitize.get('detail', 'unknown')}')
+            raise RuntimeError(f"pptx sanitize failed: {sanitize.get('detail', 'unknown')}")
         gate = _maybe_gate(tmp_path, template)
         if gate['status'] != 'ok':
-            raise RuntimeError(f'Office no-corruption gate failed: {gate.get('detail', 'unknown')}')
+            raise RuntimeError(f"Office no-corruption gate failed: {gate.get('detail', 'unknown')}")
         os.replace(tmp_path, dest)
         tmp_path = None
     finally:

@@ -1,9 +1,12 @@
 from __future__ import annotations
-__all__ = ['cmd_scan_interactions', '_scan_interactions_locked', 'cmd_scan_attachments', '_scan_attachments_locked', 'load_state', 'save_state', 'is_closed_record', 'needs_follow_up_record', 'is_andy_record', 'top_counts_text', 'record_person', 'record_actor', 'normalized_record_summary', 'parse_utc_timestamp', 'records_in_time_window', 'summarize_closed_records', 'summarize_request_highlights', 'cmd_digest', 'cmd_ensure_review_log_headers', 'cmd_ensure_quality_headers', 'cmd_backfill_response_quality', 'cmd_backfill_mattermost_user_post_links', 'main', 'build_parser']
+__all__ = ['_scan_attachments_locked', '_scan_interactions_locked', 'build_parser', 'cmd_backfill_mattermost_user_post_links', 'cmd_backfill_response_quality', 'cmd_digest', 'cmd_ensure_quality_headers', 'cmd_ensure_review_log_headers', 'cmd_scan_attachments', 'cmd_scan_interactions', 'is_andy_record', 'is_closed_record', 'load_state', 'main', 'needs_follow_up_record', 'normalized_record_summary', 'parse_utc_timestamp', 'record_actor', 'record_person', 'records_in_time_window', 'save_state', 'summarize_closed_records', 'summarize_request_highlights', 'top_counts_text']
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import argparse
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # Linux file locks; this host is nemo
 import hashlib
 import json
 import os
@@ -11,7 +14,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from pathlib import Path
 from typing import Any
 import mattermost_policy_lookup
@@ -47,7 +50,7 @@ def _scan_interactions_locked(args: argparse.Namespace) -> None:
         scan_state: dict[str, Any] = {}
         if INTERACTION_SCAN_STATE_PATH().exists():
             try:
-                scan_state = json.loads(INTERACTION_SCAN_STATE_PATH().read_text(encoding='utf-8'))
+                scan_state = json.loads(INTERACTION_SCAN_STATE_PATH().read_text(encoding='utf-8-sig'))
             except Exception:
                 logging.getLogger('pd_one_ops').exception('pd one command failed')
                 scan_state = {}
@@ -61,7 +64,7 @@ def _scan_interactions_locked(args: argparse.Namespace) -> None:
         for channel in channels_resp.json():
             if channel.get('type') == 'D':
                 continue
-            posts_resp = requests.get(f'{base}/api/v4/channels/{channel['id']}/posts', headers=headers, params={'per_page': args.per_page}, timeout=30)
+            posts_resp = requests.get(f"{base}/api/v4/channels/{channel['id']}/posts", headers=headers, params={'per_page': args.per_page}, timeout=30)
             posts_resp.raise_for_status()
             posts_body = posts_resp.json()
             posts = posts_body.get('posts', {})
@@ -87,7 +90,7 @@ def _scan_interactions_locked(args: argparse.Namespace) -> None:
                 in_pd_one_thread = bool(root and root in interaction_roots)
                 if not (is_dm or mentioned or in_pd_one_thread):
                     continue
-                ts = datetime.fromtimestamp(create_at / 1000, timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+                ts = datetime.fromtimestamp(create_at / 1000, UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
                 if (ts, user_id, channel.get('id', '')) in existing_events:
                     continue
                 if user_id not in seen_users:
@@ -124,7 +127,7 @@ def _scan_interactions_locked(args: argparse.Namespace) -> None:
             return _PdReturn(None)
         result = append_rows(rows)
         INTERACTION_SCAN_STATE_PATH().parent.mkdir(parents=True, exist_ok=True)
-        INTERACTION_SCAN_STATE_PATH().write_text(json.dumps({'lastScannedAtMs': max_seen_ms, 'lastScannedAtUtc': datetime.fromtimestamp(max_seen_ms / 1000, timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z') if max_seen_ms else '', 'lastRunAtUtc': datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z'), 'lastAppended': len(rows)}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        INTERACTION_SCAN_STATE_PATH().write_text(json.dumps({'lastScannedAtMs': max_seen_ms, 'lastScannedAtUtc': datetime.fromtimestamp(max_seen_ms / 1000, UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z') if max_seen_ms else '', 'lastRunAtUtc': datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z'), 'lastAppended': len(rows)}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         print(json.dumps({'scanned': True, 'appended': len(rows), 'sheet': result}, ensure_ascii=False, indent=2))
     _pd_result = _pd_phase_1()
     if isinstance(_pd_result, _PdReturn):
@@ -156,7 +159,7 @@ def _scan_attachments_locked(args: argparse.Namespace) -> None:
     scan_state: dict[str, Any] = {}
     if ATTACHMENT_SCAN_STATE_PATH().exists():
         try:
-            scan_state = json.loads(ATTACHMENT_SCAN_STATE_PATH().read_text(encoding='utf-8'))
+            scan_state = json.loads(ATTACHMENT_SCAN_STATE_PATH().read_text(encoding='utf-8-sig'))
         except Exception:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             scan_state = {}
@@ -168,7 +171,7 @@ def _scan_attachments_locked(args: argparse.Namespace) -> None:
     rows: list[list[str]] = []
     seen_users: dict[str, dict[str, Any]] = {}
     for channel in channels_resp.json():
-        posts_resp = requests.get(f'{base}/api/v4/channels/{channel['id']}/posts', headers=headers, params={'per_page': args.per_page}, timeout=30)
+        posts_resp = requests.get(f"{base}/api/v4/channels/{channel['id']}/posts", headers=headers, params={'per_page': args.per_page}, timeout=30)
         posts_resp.raise_for_status()
         posts_body = posts_resp.json()
         posts = posts_body.get('posts', {})
@@ -217,16 +220,16 @@ def _scan_attachments_locked(args: argparse.Namespace) -> None:
         return
     result = append_rows(rows)
     ATTACHMENT_SCAN_STATE_PATH().parent.mkdir(parents=True, exist_ok=True)
-    ATTACHMENT_SCAN_STATE_PATH().write_text(json.dumps({'lastScannedAtMs': max_seen_ms, 'lastScannedAtUtc': datetime.fromtimestamp(max_seen_ms / 1000, timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z') if max_seen_ms else '', 'lastRunAtUtc': datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z'), 'lastAppended': len(rows)}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    ATTACHMENT_SCAN_STATE_PATH().write_text(json.dumps({'lastScannedAtMs': max_seen_ms, 'lastScannedAtUtc': datetime.fromtimestamp(max_seen_ms / 1000, UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z') if max_seen_ms else '', 'lastRunAtUtc': datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z'), 'lastAppended': len(rows)}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(json.dumps({'scanned': True, 'appended': len(rows), 'sheet': result}, ensure_ascii=False, indent=2))
 
 def load_state() -> dict[str, Any]:
     if STATE_PATH().exists():
         try:
-            return json.loads(STATE_PATH().read_text(encoding='utf-8'))
+            return json.loads(STATE_PATH().read_text(encoding='utf-8-sig'))
         except Exception:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
-    return {'lastProcessedRow': 1, 'lastDigestAtUtc': datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')}
+    return {'lastProcessedRow': 1, 'lastDigestAtUtc': datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')}
 
 def save_state(state: dict[str, Any]) -> None:
     STATE_PATH().parent.mkdir(parents=True, exist_ok=True)
@@ -259,13 +262,13 @@ def top_counts_text(counts: dict[str, int], limit: int=5) -> str:
     return ', '.join((f'**{name}** ({count})' for name, count in ordered)) or 'none'
 
 def record_person(record: dict[str, str]) -> str:
-    person = ' / '.join((x for x in [record.get('name_zh_tw', ''), record.get('name_en', '')] if x))
+    person = ' / '.join(x for x in [record.get('name_zh_tw', ''), record.get('name_en', '')] if x)
     return person or record.get('user_label') or record.get('user_id') or 'unknown user'
 
 def record_actor(record: dict[str, str]) -> str:
     """Return an audit-friendly user label including Mattermost identity plus resolved names when available."""
     who = record.get('user_label') or record.get('user_id') or 'unknown user'
-    person = ' / '.join((x for x in [record.get('name_zh_tw', ''), record.get('name_en', '')] if x))
+    person = ' / '.join(x for x in [record.get('name_zh_tw', ''), record.get('name_en', '')] if x)
     if person and person not in who:
         return f'{who} ({person})'
     return who
@@ -279,7 +282,7 @@ def parse_utc_timestamp(value: str) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(timezone.utc)
+        return datetime.fromisoformat(value).astimezone(UTC)
     except ValueError:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return None
@@ -359,7 +362,7 @@ def cmd_digest(args: argparse.Namespace) -> None:
     headers = values[0]
     rows = values[1:]
     current_count = len(values)
-    now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+    now_dt = datetime.now(UTC).replace(microsecond=0)
     now = now_dt.isoformat().replace('+00:00', 'Z')
     if args.repeat_last:
         start_dt = parse_utc_timestamp(str(state.get('lastWindowStartAtUtc') or ''))
@@ -382,13 +385,13 @@ def cmd_digest(args: argparse.Namespace) -> None:
     needs = [r for r in records if needs_follow_up_record(r)]
     closed = [r for r in records if is_closed_record(r)]
     non_closed = [r for r in records if not is_closed_record(r)]
-    lines = ['## 📋 Mattermost review_log Digest', '', f'- **Window:** `{state.get('lastDigestAtUtc', 'previous digest')}` → `{now}` UTC', f'- **New entries:** **{len(records)}**', '- **Generation:** deterministic Python aggregation (no AI/summarizer agent used)']
+    lines = ['## 📋 Mattermost review_log Digest', '', f"- **Window:** `{state.get('lastDigestAtUtc', 'previous digest')}` → `{now}` UTC", f'- **New entries:** **{len(records)}**', '- **Generation:** deterministic Python aggregation (no AI/summarizer agent used)']
     if needs:
         lines.append('')
         lines.append('### ⚠️ Needs Follow-up First')
         for r in needs:
             who = record_actor(r)
-            lines.append(f'- `{r.get('timestamp_utc', '')}` — **{who}** — **{r.get('category', '')}**: {r.get('request_summary', '')} _[{r.get('assistant_response_type', '')}; {r.get('review_status', '')}]_')
+            lines.append(f"- `{r.get('timestamp_utc', '')}` — **{who}** — **{r.get('category', '')}**: {r.get('request_summary', '')} _[{r.get('assistant_response_type', '')}; {r.get('review_status', '')}]_")
     lines.append('')
     if closed:
         lines.append('### ✅ Closed-entry Synthesis')
@@ -404,7 +407,7 @@ def cmd_digest(args: argparse.Namespace) -> None:
         for r in risky_records[:8]:
             who = r.get('user_label') or r.get('user_id') or 'unknown user'
             channel = r.get('channel_name') or r.get('channel_id') or 'unknown channel'
-            lines.append(f'- `{r.get('timestamp_utc', '')}` — **{r.get('category', '')}** — **{channel}** — **{who}**: {r.get('request_summary', '')}')
+            lines.append(f"- `{r.get('timestamp_utc', '')}` — **{r.get('category', '')}** — **{channel}** — **{who}**: {r.get('request_summary', '')}")
         if len(risky_records) > 8:
             lines.append(f'- …and {len(risky_records) - 8} more risky/blocked employee capability item(s).')
     else:
@@ -420,8 +423,8 @@ def cmd_digest(args: argparse.Namespace) -> None:
     for r in non_closed:
         who = record_actor(r)
         channel = r.get('channel_name') or r.get('channel_id') or 'unknown channel'
-        lines.append(f'- `{r.get('timestamp_utc', '')}` — **{channel}** — **{who}**: {r.get('request_summary', '')}  ')
-        lines.append(f'  - **Reason:** {r.get('reason', '')}')
+        lines.append(f"- `{r.get('timestamp_utc', '')}` — **{channel}** — **{who}**: {r.get('request_summary', '')}  ")
+        lines.append(f"  - **Reason:** {r.get('reason', '')}")
     if not args.dry_run and (not args.repeat_last):
         state.update({'lastProcessedRow': current_count, 'lastWindowStartAtUtc': start_dt.isoformat().replace('+00:00', 'Z') if start_dt else '', 'lastDigestAtUtc': now, 'lastRunStatus': 'ok', 'lastNewEntryCount': len(records), 'lastFilteredAndyEntryCount': len(all_records) - len(records)})
         save_state(state)

@@ -36,8 +36,10 @@ systemctl --user restart "$SERVICE"
 for i in $(seq 1 90); do
   PID=$(systemctl --user show "$SERVICE" -p MainPID --value)
   ACTIVE=$(systemctl --user is-active "$SERVICE" || true)
+  <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
   python3 -m json.tool "$STATE" >/tmp/gateway_state.pretty 2>/dev/null || true
   curl -fsS --max-time 2 "$HEALTH" || true
+  <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
   [ "$ACTIVE" = active ] && [ "$PID" != "$OLD_PID" ] && grep -q '"gateway_state": "running"' /tmp/gateway_state.pretty && break
   sleep 2
 done

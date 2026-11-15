@@ -112,7 +112,7 @@ def test_fetch_timeout_uses_a_commit_already_in_the_mirror(tmp_path: Path) -> No
         sha=SHA, dest=dest, mirror=mirror, tarball=None, timeout=1, run=run,
     )
     assert result.method == "mirror-local"
-    assert (dest / "pyproject.toml").read_text(encoding="utf-8").startswith("[project]")
+    assert (dest / "pyproject.toml").read_text(encoding="utf-8-sig").startswith("[project]")
 
 
 def test_unsafe_tar_member_is_rejected(tmp_path: Path) -> None:
@@ -193,7 +193,7 @@ def test_health_plan_reads_config_yaml_and_env(tmp_path: Path, monkeypatch) -> N
 def test_record_build_manifest_writes_sha_time_and_release_name(tmp_path: Path) -> None:
     path = tmp_path / "manifest.json"
     record_build_manifest(path, sha="a" * 40, release_name="hermes-agent-aaaaaaaaaa-x")
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
     assert data["sha"] == "a" * 40
     assert data["release_name"] == "hermes-agent-aaaaaaaaaa-x"
     assert "T" in data["build_time"] and data["build_time"].endswith("Z")
@@ -466,9 +466,9 @@ def test_cutover_rewrites_units_and_rollback_restores_them(tmp_path: Path) -> No
         releases=releases, build="new", unit_dirs=[unit_dir], configs=[config], audit=audit,
     )
     assert os.readlink(releases / "current") == "new"
-    assert new_path in unit.read_text(encoding="utf-8")
-    assert "# keep" in config.read_text(encoding="utf-8")
-    assert new_path in config.read_text(encoding="utf-8")
+    assert new_path in unit.read_text(encoding="utf-8-sig")
+    assert "# keep" in config.read_text(encoding="utf-8-sig")
+    assert new_path in config.read_text(encoding="utf-8-sig")
     restored = apply_rollback({
         "units": result["units"],
         "configs": result["configs"],
@@ -476,8 +476,8 @@ def test_cutover_rewrites_units_and_rollback_restores_them(tmp_path: Path) -> No
         "releases": result["releases"],
     })
     assert os.readlink(releases / "current") == "old"
-    assert old_path in unit.read_text(encoding="utf-8")
-    assert old_path in config.read_text(encoding="utf-8")
+    assert old_path in unit.read_text(encoding="utf-8-sig")
+    assert old_path in config.read_text(encoding="utf-8-sig")
     assert unit in [Path(path) for path in restored["units"]] or str(unit) in restored["units"]
 
 
@@ -498,8 +498,8 @@ def test_unit_rewrite_round_trip(tmp_path: Path) -> None:
     unit.write_text(original, encoding="utf-8")
     plans = plan_units(unit_files([unit_dir]), target_for(releases, "new"))
     changes = write_plans(plans, tmp_path / "audit")
-    assert str((releases / "new").resolve()) in unit.read_text(encoding="utf-8")
-    assert Path(changes[0].backup).read_text(encoding="utf-8") == original
+    assert str((releases / "new").resolve()) in unit.read_text(encoding="utf-8-sig")
+    assert Path(changes[0].backup).read_text(encoding="utf-8-sig") == original
 
 
 def test_pin_uv_cache_exports_the_given_directory(tmp_path: Path, monkeypatch) -> None:
@@ -518,7 +518,7 @@ def test_dry_run_flag_must_be_an_argparse_declaration() -> None:
 def test_syntax_check_valid_python_compiles(tmp_path: Path) -> None:
     script = tmp_path / "job.py"
     script.write_text("print('ok')\n", encoding="utf-8")
-    source = script.read_text(encoding="utf-8")
+    source = script.read_text(encoding="utf-8-sig")
     assert classify_script(script, source) == "python"
     plan = syntax_check_plan(script, source, sys.executable)
     assert plan.action == "compile"
@@ -529,8 +529,8 @@ def test_syntax_check_valid_python_compiles(tmp_path: Path) -> None:
 def test_syntax_check_shell_wrapper_uses_bash_n(tmp_path: Path) -> None:
     bash = _bash()
     script = tmp_path / "wrap.sh"
-    script.write_text("#!/bin/bash\necho ok\n", encoding="utf-8")
-    source = script.read_text(encoding="utf-8")
+    script.write_text("#!/usr/bin/env bash\necho ok\n", encoding="utf-8")
+    source = script.read_text(encoding="utf-8-sig")
     assert classify_script(script, source) == "shell"
     plan = syntax_check_plan(script, source, sys.executable)
     assert plan.action == "compile"
@@ -542,7 +542,7 @@ def test_exec_readonly_shell_uses_bash_syntax_check_not_python(tmp_path: Path) -
     bash = _bash()
     script = tmp_path / "run_pd_one_typhoon_automation.sh"
     script.write_text("#!/usr/bin/env bash\nset -uo pipefail\ntrue\n", encoding="utf-8")
-    source = script.read_text(encoding="utf-8")
+    source = script.read_text(encoding="utf-8-sig")
     typhoon = next(policy for policy in POLICIES if policy.job_id == TYPHOON)
     planned = plan_policy(typhoon, script, source, sys.executable)
     assert planned.action == "compile"
@@ -554,7 +554,7 @@ def test_syntax_check_shebang_shell_without_extension(tmp_path: Path) -> None:
     bash = _bash()
     script = tmp_path / "cron-runner"
     script.write_text("#!/usr/bin/env bash\ntrue\n", encoding="utf-8")
-    source = script.read_text(encoding="utf-8")
+    source = script.read_text(encoding="utf-8-sig")
     assert classify_script(script, source) == "shell"
     plan = syntax_check_plan(script, source, sys.executable)
     assert plan.argv == (bash, "-n", str(script))
@@ -564,7 +564,7 @@ def test_syntax_check_shebang_shell_without_extension(tmp_path: Path) -> None:
 def test_syntax_check_python_syntax_error_fails(tmp_path: Path) -> None:
     script = tmp_path / "broken.py"
     script.write_text("def broken(\n", encoding="utf-8")
-    source = script.read_text(encoding="utf-8")
+    source = script.read_text(encoding="utf-8-sig")
     plan = syntax_check_plan(script, source, sys.executable)
     assert plan.action == "compile"
     assert subprocess.run(plan.argv, check=False).returncode != 0
@@ -576,7 +576,7 @@ def test_hr_sync_and_reaper_are_not_executed_live(tmp_path: Path) -> None:
     script = tmp_path / "hr.py"
     script.write_text("import requests\nrequests.post('https://appsheet.example')\n", encoding="utf-8")
     hr = next(policy for policy in POLICIES if policy.job_id == HR_SYNC)
-    planned = plan_policy(hr, script, script.read_text(encoding="utf-8"), sys.executable)
+    planned = plan_policy(hr, script, script.read_text(encoding="utf-8-sig"), sys.executable)
     assert planned.action == "compile"
     commands = command_list(planned, hr, sys.executable)
     assert any("py_compile" in argv for argv in commands)
@@ -689,7 +689,7 @@ def _resolve_uv_bin_dir() -> str | None:
         [sys.executable, "-c",
          "from pm.install import uv_launcher\n"
          "p = uv_launcher('uv')\n"
-         "print(p.parent if p else '')"],
+         "print(p.parent if p else '')"], check=False,
         cwd=ROOT, capture_output=True, text=True, timeout=60,
         env={**os.environ, "HERMES_HOME": pm_home},
     )
@@ -723,7 +723,7 @@ def _run_build(tmp_path: Path, *extra: str, timeout: float = 60) -> subprocess.C
         "--uv-cache", str(tmp_path / "uv"),
         *extra,
     ]
-    return subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, text=True, timeout=timeout)
+    return subprocess.run(command, check=False, cwd=tmp_path, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
 
 
 def _chmod_read_only(path: Path) -> None:
@@ -784,7 +784,7 @@ def test_build_refuses_a_non_empty_release(tmp_path: Path) -> None:
     (release / "keep.txt").write_text("safe", encoding="utf-8")
     proc = _run_build(tmp_path, "--tarball", str(tmp_path / "missing.tar"))
     assert proc.returncode != 0
-    assert (release / "keep.txt").read_text(encoding="utf-8") == "safe"
+    assert (release / "keep.txt").read_text(encoding="utf-8-sig") == "safe"
 
 
 @pytest.mark.platforms("linux", "macos")
@@ -865,13 +865,13 @@ def test_build_frontend_web_step_runs_from_staging_root(tmp_path: Path) -> None:
          f'if [[ "${{web_fresh}}" != "true" ]]; then node "scripts/build/web.mjs"; fi )'],
         check=True, timeout=10,
     )
-    assert Path(record.read_text().strip()).resolve() == staging.resolve()
+    assert Path(record.read_text(encoding="utf-8-sig").strip()).resolve() == staging.resolve()
 
 
 def test_probe_cli_missing_mirror_exits_nonzero(tmp_path: Path) -> None:
     proc = subprocess.run(
         [sys.executable, "-m", "scripts.deploy.nemo.probe",
-         "--mirror", str(tmp_path / "missing"), "--sha", SHA, "--timeout", "1"],
+         "--mirror", str(tmp_path / "missing"), "--sha", SHA, "--timeout", "1"], check=False,
         cwd=ROOT, capture_output=True, text=True, timeout=20,
     )
     assert proc.returncode == 1

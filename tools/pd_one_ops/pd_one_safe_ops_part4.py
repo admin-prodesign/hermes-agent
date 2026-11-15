@@ -1,5 +1,5 @@
 from __future__ import annotations
-__all__ = ['cmd_docx_exact_text_patch', '_load_pptx_exact_text_patch_module', 'cmd_pptx_exact_text_patch', '_load_pptx_from_template_module', 'cmd_pptx_from_template', '_load_sip_thread_index_module', 'cmd_sip_thread_index_build', '_sip_thread_index_input_paths', '_sip_thread_index_noise_marker', 'cmd_sip_thread_index_audit', '_load_typhoon_automation_module', '_summarize_typhoon_plan', '_run_typhoon_sweep_case', 'cmd_typhoon_automation', '_load_docs_api_module', 'cmd_drive_acl_authorize', 'cmd_portal_module_change_authorize', 'cmd_work_manual_change_authorize', 'cmd_google_docs_metadata_inspect', 'cmd_yammer_archive_search', 'main', 'build_parser']
+__all__ = ['_load_docs_api_module', '_load_pptx_exact_text_patch_module', '_load_pptx_from_template_module', '_load_sip_thread_index_module', '_load_typhoon_automation_module', '_run_typhoon_sweep_case', '_sip_thread_index_input_paths', '_sip_thread_index_noise_marker', '_summarize_typhoon_plan', 'build_parser', 'cmd_docx_exact_text_patch', 'cmd_drive_acl_authorize', 'cmd_google_docs_metadata_inspect', 'cmd_portal_module_change_authorize', 'cmd_pptx_exact_text_patch', 'cmd_pptx_from_template', 'cmd_sip_thread_index_audit', 'cmd_sip_thread_index_build', 'cmd_typhoon_automation', 'cmd_work_manual_change_authorize', 'cmd_yammer_archive_search', 'main']
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import argparse
@@ -186,7 +186,7 @@ def cmd_sip_thread_index_audit(args: argparse.Namespace) -> None:
         nonlocal conflict_count, malformed_count, noisy_count, row_count
         for path in paths:
             try:
-                data = json.loads(path.read_text(encoding='utf-8'))
+                data = json.loads(path.read_text(encoding='utf-8-sig'))
             except Exception as exc:
                 logging.getLogger('pd_one_ops').exception('pd one command failed')
                 file_errors.append({'file': path.name, 'error': f'{type(exc).__name__}: {exc}'})
@@ -205,7 +205,7 @@ def cmd_sip_thread_index_audit(args: argparse.Namespace) -> None:
                 oid = str(item.get('originalPostId') or item.get('postId') or item.get('post_id') or '').strip()
                 topic = str(item.get('topic') or item.get('title') or item.get('excerpt') or '').strip()
                 link = str(item.get('original_post_url') or item.get('link') or '').strip()
-                pd_matches = [m.upper() for m in re.findall('PD-\\d{3}', topic, re.I)]
+                pd_matches = [m.upper() for m in re.findall('PD-\\d{3}', topic, re.IGNORECASE)]
                 reasons = []
                 if not oid:
                     reasons.append('missing_post_id')
@@ -361,7 +361,6 @@ def cmd_drive_acl_authorize(args: argparse.Namespace) -> None:
         raise SystemExit(2)
     result = authorize(args.file_id, mattermost_user_id=getattr(args, 'requester_user_id', '') or '', mattermost_username=getattr(args, 'username', '') or '', account=getattr(args, 'account', DEFAULT_ACCOUNT()))
     emit(public_view(result, redact=True))
-    return
 
 def cmd_portal_module_change_authorize(args: argparse.Namespace) -> None:
     tools_dir = str(ROOT() / 'tools')
@@ -370,7 +369,6 @@ def cmd_portal_module_change_authorize(args: argparse.Namespace) -> None:
     from portal_module_change_authorize import authorize, public_view
     result = authorize(mattermost_user_id=getattr(args, 'requester_user_id', '') or '', channel_id=getattr(args, 'channel_id', '') or '', module_id=getattr(args, 'module_id', '') or '', path=getattr(args, 'path', '') or '', change_class=getattr(args, 'change_class', '') or 'in_scope_module_product')
     emit(public_view(result))
-    return
 
 def cmd_work_manual_change_authorize(args: argparse.Namespace) -> None:
     tools_dir = str(ROOT() / 'tools')
@@ -379,7 +377,6 @@ def cmd_work_manual_change_authorize(args: argparse.Namespace) -> None:
     from work_manual_change_authorize import authorize, public_view
     result = authorize(mattermost_user_id=getattr(args, 'requester_user_id', '') or '', channel_id=getattr(args, 'channel_id', '') or '', chat_type=getattr(args, 'chat_type', '') or '', document_key=getattr(args, 'document_key', '') or 'it_manual', document_id=getattr(args, 'document_id', '') or '', change_class=getattr(args, 'change_class', '') or 'secret_free_content_add')
     emit(public_view(result))
-    return
 
 def cmd_google_docs_metadata_inspect(args: argparse.Namespace) -> None:
     """Inspect Google Docs header metadata and recent changelog entries.
@@ -675,6 +672,7 @@ def build_parser():
         p.add_argument('--confirm-live-write')
         p.set_defaults(func=cmd_python_docx_dependency_repair)
         p = sub.add_parser('hermes-result-messages-summary')
+        # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
         p.add_argument('--input', required=True, help='JSON result artifact under /tmp/hermes-results')
         p.add_argument('--max-messages', type=int, default=HERMES_RESULT_SUMMARY_MAX_MESSAGES)
         p.set_defaults(func=cmd_hermes_result_messages_summary)

@@ -9,7 +9,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +36,7 @@ class EmployeeMatch:
 
 def load_env(path: str) -> dict[str, str]:
     data: dict[str, str] = {}
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    for line in Path(path).read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -80,7 +80,7 @@ def clean(value: Any) -> str:
 
 
 def month_bounds(month: str) -> tuple[str, str]:
-    start = datetime.strptime(month, "%Y-%m").replace(tzinfo=timezone.utc)
+    start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
     if start.month == 12:
         end = start.replace(year=start.year + 1, month=1)
     else:
@@ -301,7 +301,7 @@ def main() -> int:
         ("Selector", selector),
         ("Row Count", str(len(rows))),
         ("Reads Only", "Y" if args.reads_only else "N"),
-        ("Generated At", datetime.now(timezone.utc).isoformat()),
+        ("Generated At", datetime.now(UTC).isoformat()),
     ]
     paths = export_rows(rows, out_prefix, summary_rows)
 

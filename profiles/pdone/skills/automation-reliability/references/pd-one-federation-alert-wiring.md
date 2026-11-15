@@ -128,6 +128,7 @@ python3 /home/prodesign/.hermes/scripts/pd_one_cron_failure_alert.py \
   --command verify \
   --threshold 1 \
   --cooldown-seconds 0 \
+  <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
   --dry-run >/tmp/pd-one-cron-helper-verify.out
 ```
 

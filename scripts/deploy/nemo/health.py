@@ -47,7 +47,7 @@ def gateway_socket_healthy(profile_home: Path, timeout: float) -> HealthCheck:
         return HealthCheck(label, False, str(exc))
     try:
         payload = identify_gateway(profile_home, timeout=timeout)
-    except Exception as exc:  # noqa: BLE001 — health probe must not abort cutover polling
+    except Exception as exc:
         return HealthCheck(label, False, str(exc))
     ok = isinstance(payload, dict) and payload.get("protocol") is not None
     detail = "identify ok" if ok else "no gateway identify response"

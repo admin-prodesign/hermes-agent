@@ -120,7 +120,7 @@ def _folder_excluded_note(perms: list[dict[str, Any]]) -> str:
     for item in perms:
         email = str(item.get('email') or '').casefold()
         if email in {value.casefold() for value in EXCLUDED_GROUPS()}:
-            hits.append(f'{item.get('email')} {item.get('type')} {item.get('role')}')
+            hits.append(f"{item.get('email')} {item.get('type')} {item.get('role')}")
     if not hits:
         return 'Parent folder permission list has none of the excluded groups.'
     return 'Parent folder already grants excluded groups: ' + '; '.join(hits) + '. Folder ACL was not changed.'
@@ -150,7 +150,7 @@ def _molding_left(doc: dict[str, Any]) -> bool:
         if para:
             body_bits.append(_paragraph_text(para))
     text = headings + '\n' + '\n'.join(body_bits)
-    return any((marker in text for marker in MOLDING_MARKERS))
+    return any(marker in text for marker in MOLDING_MARKERS)
 
 def _source_outline(doc: dict[str, Any]) -> list[dict[str, Any]]:
     content, _tab_id = _body(doc)
@@ -265,17 +265,17 @@ def _register(doc_id: str) -> dict[str, Any]:
                     continue
             except OSError:
                 logging.getLogger('pd_one_ops').exception('pd one command failed')
-        data = json.loads(path.read_text(encoding='utf-8'))
+        data = json.loads(path.read_text(encoding='utf-8-sig'))
         docs = data.setdefault('docs', [])
-        if not any((item.get('id') == doc_id for item in docs)):
+        if not any(item.get('id') == doc_id for item in docs):
             docs.append(manifest_entry)
             path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         updated.append(str(path))
-    routing = json.loads(ROUTING_PATH().read_text(encoding='utf-8'))
+    routing = json.loads(ROUTING_PATH().read_text(encoding='utf-8-sig'))
     sibling = routing['documents'].get(site_text('PDONE_GDOC_3')) or next(iter(routing['documents'].values()))
     routing['documents'][doc_id] = {'name': DOC_TITLE, 'channel': sibling.get('channel', 'n8n'), 'enabled': True, 'note': 'Cross-department ERP manual. Notices go to the Work Manual channel until a dedicated ERP channel exists.', 'targets': [f'channel:{WORK_MANUAL_CHANNEL()}'], 'delivery': sibling.get('delivery', 'n8n_webhook'), 'webhookUrl': sibling.get('webhookUrl'), 'n8nWorkflowId': sibling.get('n8nWorkflowId')}
     ROUTING_PATH().write_text(json.dumps(routing, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    registry = json.loads(REGISTRY_PATH().read_text(encoding='utf-8'))
+    registry = json.loads(REGISTRY_PATH().read_text(encoding='utf-8-sig'))
     registry['documents']['erp_manual'] = {'document_id': doc_id, 'title': DOC_TITLE, 'scope': 'work-manual', 'live_enabled': True, 'allowed_actions': ['inspect', 'verify_readback', 'unique_text_patch', 'insert_section_before_heading', 'set_header_text', 'append_changelog']}
     REGISTRY_PATH().write_text(json.dumps(registry, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return {'manifest_paths_updated': updated, 'routing_updated': True, 'registry_updated': True}
@@ -283,7 +283,7 @@ def _register(doc_id: str) -> dict[str, Any]:
 def _watcher_dry_run(doc_id: str) -> str:
     if not WATCHER().is_file():
         return 'watcher_script_missing'
-    proc = subprocess.run([sys.executable, str(WATCHER()), '--dry-run', '--doc-id', doc_id], text=True, capture_output=True, timeout=180, check=False)
+    proc = subprocess.run([sys.executable, str(WATCHER()), '--dry-run', '--doc-id', doc_id], text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=180, check=False)
     text = (proc.stdout or '') + (proc.stderr or '')
     if 'unchanged' in text.casefold():
         return 'unchanged'
@@ -323,7 +323,7 @@ def bootstrap_erp_work_manual(*, requester_user_id: str, dry_run: bool, confirm_
         doc_id = copied['id']
         created = True
     doc = docs_client.get_document(doc_id, 'PREVIEW_WITHOUT_SUGGESTIONS')
-    content, tab_id = _body(doc)
+    _content, tab_id = _body(doc)
     cut = _cut_index(doc)
     end = _body_end(doc)
     requests: list[dict[str, Any]] = []

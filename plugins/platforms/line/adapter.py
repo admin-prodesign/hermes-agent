@@ -32,7 +32,7 @@ import tempfile
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from urllib.parse import quote as _urlquote
@@ -629,11 +629,11 @@ class LineAdapter(BasePlatformAdapter):
         """Persist an allowed read-only group event as JSONL plus durable media copies."""
         if not self.capture_log_dir:
             return
-        now = datetime.now(timezone.utc).astimezone()
+        now = datetime.now(UTC).astimezone()
         root = self.capture_log_dir / chat_id
-        media_records: List[Dict[str, Any]] = []
+        media_records: list[dict[str, Any]] = []
         media_month = now.strftime("%Y-%m")
-        transcription: Optional[Dict[str, Any]] = None
+        transcription: Optional[dict[str, Any]] = None
         for idx, media_path in enumerate(event_obj.media_urls or []):
             src = Path(str(media_path)).expanduser()
             media_type = (
@@ -641,7 +641,7 @@ class LineAdapter(BasePlatformAdapter):
                 if idx < len(event_obj.media_types or [])
                 else msg_type
             )
-            record: Dict[str, Any] = {"type": media_type, "cache_path": str(src)}
+            record: dict[str, Any] = {"type": media_type, "cache_path": str(src)}
             try:
                 if src.exists():
                     media_dir = root / "media" / media_month

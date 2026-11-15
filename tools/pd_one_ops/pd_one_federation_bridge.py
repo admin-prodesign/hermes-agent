@@ -36,7 +36,7 @@ def emit_pd_one_event(*, source: str, summary: str, detail: str='', event_type: 
     if dry_run:
         cmd.append('--dry-run')
     try:
-        cp = subprocess.run(cmd, cwd=str(WORKSPACE()), text=True, capture_output=True, timeout=timeout, check=False)
+        cp = subprocess.run(cmd, cwd=str(WORKSPACE()), text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=timeout, check=False)
     except Exception as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         print(f'PD One federation bridge invocation failed: {exc}', file=sys.stderr)

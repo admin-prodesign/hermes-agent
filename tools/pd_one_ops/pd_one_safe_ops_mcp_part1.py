@@ -1,5 +1,5 @@
 from __future__ import annotations
-__all__ = ['worker_scheduling_setup_rules', '_push_apps_script_content', '_apps_script_project', '_apps_script_file', '_apps_script_syntax_check', '_apps_script_registered_projects', '_safe_staged_source_path', '_apps_script_patch_plan', '_apps_script_stage_file_plan', '_apps_script_verify', 'apps_script_project_ops', 'worker_scheduling_apps_script_patch', '_load_appsheet_record_ops_module', '_appsheet_quote', '_appsheet_hr_employee_compare_value', '_case_payload', '_validate_bulk_case_payload', '_plan_bulk_create_cases', '_find_case_by_id', '_find_case_by_parent_and_title', '_execute_bulk_create_cases', 'appsheet_record_ops', '_appsheet_hr_employee_subset', '_appsheet_hr_employee_plan', 'pd_one_appsheet_hr_employee_patch', 'pd_one_appsheet_table_probe', 'pd_one_appsheet_incident_morning_briefing_qa', 'pd_one_appsheet_definition_inspect', 'pd_one_appsheet_definition_apply_approved', 'pd_one_legacy_xls_inspect', 'pd_one_xlsx_workbook_inspect', 'pd_one_equipment_workbook_build', 'pd_one_item_number_xlsx_compiler', 'pd_one_item_number_render_qa_status', 'pd_one_item_number_historical_sample_summary', 'pd_one_item_number_local_fixture_copy', 'pd_one_doc_extract', 'pd_one_office_file_ops', 'pd_one_pptx_inspect', 'pd_one_pptx_ooxml_text_inspect', 'pd_one_artifact_base64_encode', 'pd_one_video_frame_sample', 'pd_one_local_video_compose', 'pd_one_origin_thread_media_deliver', 'pd_one_artifact_identity_inventory', 'pd_one_3mf_slicer_inspect', 'pd_one_svg_artifact_inspect', 'pd_one_svg_embed_image', 'pd_one_docx_inspect', 'pd_one_docx_body_xml_inspect', 'pd_one_docx_table_structure', 'pd_one_docx_layout_patch', 'pd_one_docx_table_search', 'pd_one_doc_detect_format', 'pd_one_sip_thread_index_build', 'pd_one_sip_thread_index_audit', 'pd_one_doc_build_artifact', 'pd_one_local_artifact_copy', 'pd_one_json_html_artifact_build', 'pd_one_office_html_to_docx', 'pd_one_ecrn_docx_unique_text_patch', 'pd_one_docx_exact_text_patch', 'pd_one_pptx_exact_text_patch', 'pd_one_pptx_from_template', 'pd_one_office_docprops_inspect', 'pd_one_office_visual_qa', 'pd_one_office_toolchain_status', 'pd_one_office_deb_contents', 'pd_one_item_number_workflow_check', 'pd_one_item_number_windows_excel_qa', 'pd_one_employee_watch', 'pd_one_office_convert_to_pdf', 'pd_one_drive_acl_authorize', 'pd_one_portal_module_change_authorize', 'pd_one_work_manual_change_authorize', 'pd_one_typhoon_automation', 'call_function_twin']
+__all__ = ['_apps_script_file', '_apps_script_patch_plan', '_apps_script_project', '_apps_script_registered_projects', '_apps_script_stage_file_plan', '_apps_script_syntax_check', '_apps_script_verify', '_appsheet_hr_employee_compare_value', '_appsheet_hr_employee_plan', '_appsheet_hr_employee_subset', '_appsheet_quote', '_case_payload', '_execute_bulk_create_cases', '_find_case_by_id', '_find_case_by_parent_and_title', '_load_appsheet_record_ops_module', '_plan_bulk_create_cases', '_push_apps_script_content', '_safe_staged_source_path', '_validate_bulk_case_payload', 'apps_script_project_ops', 'appsheet_record_ops', 'call_function_twin', 'pd_one_3mf_slicer_inspect', 'pd_one_appsheet_definition_apply_approved', 'pd_one_appsheet_definition_inspect', 'pd_one_appsheet_hr_employee_patch', 'pd_one_appsheet_incident_morning_briefing_qa', 'pd_one_appsheet_table_probe', 'pd_one_artifact_base64_encode', 'pd_one_artifact_identity_inventory', 'pd_one_doc_build_artifact', 'pd_one_doc_detect_format', 'pd_one_doc_extract', 'pd_one_docx_body_xml_inspect', 'pd_one_docx_exact_text_patch', 'pd_one_docx_inspect', 'pd_one_docx_layout_patch', 'pd_one_docx_table_search', 'pd_one_docx_table_structure', 'pd_one_drive_acl_authorize', 'pd_one_ecrn_docx_unique_text_patch', 'pd_one_employee_watch', 'pd_one_equipment_workbook_build', 'pd_one_item_number_historical_sample_summary', 'pd_one_item_number_local_fixture_copy', 'pd_one_item_number_render_qa_status', 'pd_one_item_number_windows_excel_qa', 'pd_one_item_number_workflow_check', 'pd_one_item_number_xlsx_compiler', 'pd_one_json_html_artifact_build', 'pd_one_legacy_xls_inspect', 'pd_one_local_artifact_copy', 'pd_one_local_video_compose', 'pd_one_office_convert_to_pdf', 'pd_one_office_deb_contents', 'pd_one_office_docprops_inspect', 'pd_one_office_file_ops', 'pd_one_office_html_to_docx', 'pd_one_office_toolchain_status', 'pd_one_office_visual_qa', 'pd_one_origin_thread_media_deliver', 'pd_one_portal_module_change_authorize', 'pd_one_pptx_exact_text_patch', 'pd_one_pptx_from_template', 'pd_one_pptx_inspect', 'pd_one_pptx_ooxml_text_inspect', 'pd_one_sip_thread_index_audit', 'pd_one_sip_thread_index_build', 'pd_one_svg_artifact_inspect', 'pd_one_svg_embed_image', 'pd_one_typhoon_automation', 'pd_one_video_frame_sample', 'pd_one_work_manual_change_authorize', 'pd_one_xlsx_workbook_inspect', 'worker_scheduling_apps_script_patch', 'worker_scheduling_setup_rules']
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import hashlib
@@ -79,7 +79,7 @@ def worker_scheduling_setup_rules(*, dry_run: bool=True, confirm_live_write: Opt
 
 def _push_apps_script_content(project: dict[str, str], files: list[dict[str, Any]]) -> dict[str, Any]:
     token = _google_access_token(project['account'])
-    req = urllib.request.Request(f'https://script.googleapis.com/v1/projects/{project['script_id']}/content', data=json.dumps({'files': files}).encode('utf-8'), headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'Accept': 'application/json'}, method='PUT')
+    req = urllib.request.Request(f"https://script.googleapis.com/v1/projects/{project['script_id']}/content", data=json.dumps({'files': files}).encode('utf-8'), headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'Accept': 'application/json'}, method='PUT')
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             return json.loads(resp.read().decode('utf-8'))
@@ -115,7 +115,7 @@ def _apps_script_syntax_check(file_name: str, source: str, file_type: str | None
     APPS_SCRIPT_RECEIPTS().mkdir(parents=True, exist_ok=True)
     check_path = APPS_SCRIPT_RECEIPTS() / f'syntax-check-{_utc_stamp()}.js'
     check_path.write_text(source, encoding='utf-8')
-    proc = subprocess.run(['node', '--check', str(check_path)], text=True, capture_output=True, timeout=60, shell=False)
+    proc = subprocess.run(['node', '--check', str(check_path)], check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=60, shell=False)
     result = {'skipped': False, 'returncode': proc.returncode, 'stderr_tail': proc.stderr[-1000:], 'path': str(check_path), 'file_type': ftype or None}
     if proc.returncode != 0:
         raise ValueError(f'patched Apps Script file failed syntax check: {proc.stderr[-1000:]}')
@@ -140,7 +140,7 @@ def _safe_staged_source_path(path: str) -> Path:
         raise ValueError('staged_source_path is required for staged_file_replace')
     p = Path(path).expanduser().resolve()
     allowed_roots = [Path(resolve_configured_path('~/.hermes/profiles/pdone/tmp')), Path(resolve_configured_path('~/.hermes/profiles/pdone/legacy-openclaw/workspace/tmp')), Path(resolve_configured_path('~/.hermes/profiles/pdone/legacy-openclaw/workspace/projects')), Path(resolve_configured_path('~/.hermes/profiles/pdone/legacy-openclaw/workspace/integrations'))]
-    if not any((str(p).startswith(str(root.resolve()) + os.sep) or p == root.resolve() for root in allowed_roots)):
+    if not any(str(p).startswith(str(root.resolve()) + os.sep) or p == root.resolve() for root in allowed_roots):
         raise ValueError('staged_source_path must be under an approved PD One tmp/project/integration root')
     if not p.is_file():
         raise FileNotFoundError(str(p))
@@ -174,7 +174,7 @@ def _apps_script_stage_file_plan(project_key: str, file_name: str, staged_source
     target = _apps_script_file(content, file_name)
     old_source = target.get('source') or ''
     source_path = _safe_staged_source_path(staged_source_path)
-    new_source = source_path.read_text(encoding='utf-8')
+    new_source = source_path.read_text(encoding='utf-8-sig')
     syntax = _apps_script_syntax_check(file_name, new_source, target.get('type'))
     plan = {'project_key': key, 'script_id': project['script_id'], 'title': project['title'], 'file_name': file_name, 'patch_mode': 'staged_file_replace', 'staged_source_path': str(source_path), 'old_length': len(old_source), 'new_length': len(new_source), 'old_sha256': hashlib.sha256(old_source.encode('utf-8')).hexdigest(), 'new_sha256': hashlib.sha256(new_source.encode('utf-8')).hexdigest(), 'syntax_check': syntax}
     target['source'] = new_source
@@ -409,7 +409,7 @@ def _execute_bulk_create_cases(payload: dict[str, Any], env_key: str) -> dict[st
                 return {'status': 'error', 'error': 'parent_created_without_caseid', 'created_parent_rows': added, 'plan': plan}
             created.append({'role': 'parent', 'rows': added})
             rb = _find_case_by_id(client, str(parent_case_id))
-            readback.extend(({'role': 'parent', 'row': row} for row in rb))
+            readback.extend({'role': 'parent', 'row': row} for row in rb)
     for row_plan in [r for r in plan['rows'] if r['role'] == 'child']:
         row = dict(row_plan['row_payload'])
         row['Parent Case ID'] = parent_case_id
@@ -424,7 +424,7 @@ def _execute_bulk_create_cases(payload: dict[str, Any], env_key: str) -> dict[st
         for added_row in added:
             cid = added_row.get('CaseID')
             if cid:
-                readback.extend(({'role': 'child', 'row': rb} for rb in _find_case_by_id(client, str(cid))))
+                readback.extend({'role': 'child', 'row': rb} for rb in _find_case_by_id(client, str(cid)))
     return {'status': 'ok', 'plan': plan, 'parent_case_id': parent_case_id, 'created': created, 'skipped': skipped, 'readback': readback}
 
 def appsheet_record_ops(request: str='', dry_run: bool=True, live_lookup: bool=True, env: str='deployed', confirm_live_write: Optional[str]=None, timeout_seconds: int=300, action: str='nl_request', payload: Optional[dict[str, Any]]=None, requester_person_id: Optional[str]=None, requester_email: Optional[str]=None) -> str:
@@ -502,7 +502,7 @@ def _appsheet_hr_employee_plan(client: Any, person_id: str, updates: dict[str, A
         raise ValueError('updates must be a non-empty object')
     if len(updates) > len(APPSHEET_HR_EMPLOYEE_ALLOWED_FIELDS):
         raise ValueError(f'updates has too many fields; allowed at most {len(APPSHEET_HR_EMPLOYEE_ALLOWED_FIELDS)}')
-    invalid = sorted((key for key in updates if key not in APPSHEET_HR_EMPLOYEE_ALLOWED_FIELDS or key == 'PersonID'))
+    invalid = sorted(key for key in updates if key not in APPSHEET_HR_EMPLOYEE_ALLOWED_FIELDS or key == 'PersonID')
     if invalid:
         raise ValueError(f'unsupported HR_Employees fields: {invalid}. Allowed: {sorted(APPSHEET_HR_EMPLOYEE_ALLOWED_FIELDS)}')
     normalized_updates: dict[str, Any] = {}
@@ -523,11 +523,11 @@ def _appsheet_hr_employee_plan(client: Any, person_id: str, updates: dict[str, A
     if expected_name_zh is not None and str(expected_name_zh).strip():
         expected_checks['Name_ZH'] = expected_name_zh
         if str(current.get('Name_ZH', '')).strip() != str(expected_name_zh).strip():
-            raise ValueError(f'Name_ZH mismatch for PersonID={person_id}: expected {expected_name_zh!r}, got {current.get('Name_ZH')!r}')
+            raise ValueError(f"Name_ZH mismatch for PersonID={person_id}: expected {expected_name_zh!r}, got {current.get('Name_ZH')!r}")
     if expected_company_email is not None and str(expected_company_email).strip():
         expected_checks['Company Email'] = expected_company_email
         if _appsheet_hr_employee_compare_value('Company Email', current.get('Company Email', '')) != _appsheet_hr_employee_compare_value('Company Email', expected_company_email):
-            raise ValueError(f'Company Email mismatch for PersonID={person_id}: expected {expected_company_email!r}, got {current.get('Company Email')!r}')
+            raise ValueError(f"Company Email mismatch for PersonID={person_id}: expected {expected_company_email!r}, got {current.get('Company Email')!r}")
     changed_fields = [key for key, value in normalized_updates.items() if _appsheet_hr_employee_compare_value(key, current.get(key, '')) != _appsheet_hr_employee_compare_value(key, value)]
     plan = {'table': 'HR_Employees', 'person_id': person_id, 'selector': selector, 'matched_rows': len(rows), 'expected_checks': expected_checks, 'current_row': _appsheet_hr_employee_subset(current), 'requested_updates': normalized_updates, 'changed_fields': changed_fields, 'no_op': not changed_fields}
     return (plan, current, normalized_updates, changed_fields)
@@ -805,7 +805,7 @@ def pd_one_docx_body_xml_inspect(input_path: str, paragraph_indices: list[int]) 
     """Inspect bounded XML/text/run receipts for selected body-wide DOCX paragraphs in admin scope."""
     if not paragraph_indices or len(paragraph_indices) > 20:
         raise ValueError('paragraph_indices must contain 1-20 values')
-    if any((isinstance(index, bool) or not isinstance(index, int) or index < 0 or (index > 5000) for index in paragraph_indices)):
+    if any(isinstance(index, bool) or not isinstance(index, int) or index < 0 or (index > 5000) for index in paragraph_indices):
         raise ValueError('paragraph_indices must be integers from 0 through 5000')
     if len(set(paragraph_indices)) != len(paragraph_indices):
         raise ValueError('paragraph_indices must be unique')
@@ -839,7 +839,7 @@ def pd_one_docx_table_search(input_path: str, terms: list[str]) -> str:
     if not isinstance(terms, list) or not terms:
         raise ValueError('terms must be a non-empty list')
     cleaned = [str(term).strip() for term in terms if str(term).strip()]
-    if not cleaned or len(cleaned) > 8 or any((len(term) > 128 for term in cleaned)):
+    if not cleaned or len(cleaned) > 8 or any(len(term) > 128 for term in cleaned):
         raise ValueError('terms must contain 1-8 non-empty values of at most 128 characters')
     cmd = [sys.executable, str(SAFE_OPS()), 'docx-table-search', '--input', input_path]
     for term in cleaned:
@@ -923,7 +923,7 @@ def pd_one_docx_exact_text_patch(input_path: str, replacements: list[list[str]],
         raise ValueError('replacements must contain 1-8 old/new pairs')
     cmd = [sys.executable, str(SAFE_OPS()), 'docx-exact-text-patch', '--action', action, '--input', input_path]
     for pair in replacements:
-        if not isinstance(pair, list) or len(pair) != 2 or (not all((isinstance(value, str) for value in pair))):
+        if not isinstance(pair, list) or len(pair) != 2 or (not all(isinstance(value, str) for value in pair)):
             raise ValueError('each replacement must be a two-string [old_text, new_text] pair')
         cmd += ['--replace', pair[0], pair[1]]
     if output_path:
@@ -949,7 +949,7 @@ def pd_one_pptx_exact_text_patch(input_path: str, replacements: list[list[str]],
         raise ValueError('replacements must contain 1-8 old/new pairs')
     cmd = [sys.executable, str(SAFE_OPS()), 'pptx-exact-text-patch', '--action', action, '--input', input_path]
     for pair in replacements:
-        if not isinstance(pair, list) or len(pair) != 2 or (not all((isinstance(value, str) for value in pair))):
+        if not isinstance(pair, list) or len(pair) != 2 or (not all(isinstance(value, str) for value in pair)):
             raise ValueError('each replacement must be a two-string [old_text, new_text] pair')
         cmd += ['--replace', pair[0], pair[1]]
     if output_path:
@@ -1085,8 +1085,7 @@ def pd_one_typhoon_automation(action: str='preview', fixture: Optional[str]=None
 def call_function_twin(twin: str, requester_user_id: str, task: str, excerpts: str='') -> str:
     """Consult one internal PD One function twin. Employees never talk to twins. Fail closed without exact Mattermost requester id. Write class none. One twin per question."""
     name = str(twin or '').strip().lower()
-    if name.startswith('pd-'):
-        name = name[3:]
+    name = name.removeprefix('pd-')
     if name not in FUNCTION_TWIN_NAMES:
         raise ValueError('unknown twin; pd-marketing is parked and is not a twin')
     requester = str(requester_user_id or '').strip()

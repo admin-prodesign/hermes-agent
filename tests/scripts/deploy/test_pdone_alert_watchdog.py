@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from pathlib import Path
 from unittest.mock import patch
 
@@ -100,7 +100,7 @@ def test_dedupe_and_six_hour_cooldown(home: Path, monkeypatch) -> None:
     _supervisor(home, [{"id": "x", "severity": "critical", "subject": "fire"}])
     posts: list[dict] = []
     monkeypatch.setattr(watch, "post_webhook", lambda payload, dry_run=False: posts.append(payload) or True)
-    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     watch.run_watchdog(home, now=t0)
     watch.run_watchdog(home, now=t0 + timedelta(minutes=5))
     assert len(posts) == 1
@@ -112,7 +112,7 @@ def test_resolve_after_three_clean_runs(home: Path, monkeypatch) -> None:
     _supervisor(home, [{"id": "x", "severity": "critical", "subject": "fire"}])
     posts: list[dict] = []
     monkeypatch.setattr(watch, "post_webhook", lambda payload, dry_run=False: posts.append(payload) or True)
-    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     watch.run_watchdog(home, now=t0)
     _supervisor(home, [])
     for i in range(1, 4):
@@ -145,7 +145,7 @@ def test_deadman_after_forty_five_minutes(home: Path, monkeypatch) -> None:
     fallbacks: list[str] = []
     monkeypatch.setenv("NEO_WATCH_FALLBACK_TARGET", "mattermost:@owner")
     monkeypatch.setattr(watch, "send_mattermost_fallback", lambda msg, dry_run=False: fallbacks.append(msg) or True)
-    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     watch.run_watchdog(home, now=t0)
     watch.run_watchdog(home, now=t0 + timedelta(minutes=50))
     assert len(fallbacks) == 1
@@ -157,7 +157,7 @@ def test_ack_suppresses_deadman(home: Path, monkeypatch) -> None:
     fallbacks: list[str] = []
     monkeypatch.setenv("NEO_WATCH_FALLBACK_TARGET", "mattermost:@owner")
     monkeypatch.setattr(watch, "send_mattermost_fallback", lambda msg, dry_run=False: fallbacks.append(msg) or True)
-    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     watch.run_watchdog(home, now=t0)
     assert watch.main(["--hermes-home", str(home), "ack", "finding:x", "--note", "on it"]) == 0
     watch.run_watchdog(home, now=t0 + timedelta(minutes=50))

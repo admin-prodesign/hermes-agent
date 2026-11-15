@@ -30,6 +30,10 @@ from gateway.platforms._shared import (
     extra_or_secret as _extra_or_secret, get_scoped_secret as _get_scoped_secret,
     send_error
 )
+from plugins.platforms.mattermost.pd_one_data_access import (
+    _pd_one_drive_writer_in_place_edits,
+    _pd_one_summarize_data_access,
+)
 from plugins.platforms.mattermost.hr_private_output import (
     guard_adapter_outbound as _guard_hr_outbound,
     guard_standalone_outbound as _guard_hr_standalone,
@@ -92,7 +96,7 @@ def _build_file_upload_form(
     safe_filename = _mattermost_upload_filename(filename)
     form = aiohttp.FormData(quote_fields=False)
     form.add_field("channel_id", channel_id)
-    file_kwargs: Dict[str, Any] = {"filename": safe_filename}
+    file_kwargs: dict[str, Any] = {"filename": safe_filename}
     if content_type:
         file_kwargs["content_type"] = content_type
     form.add_field("files", file_data, **file_kwargs)
@@ -126,65 +130,6 @@ def validate_mattermost_config(config: PlatformConfig) -> bool:
         logger.warning("Mattermost: MATTERMOST_URL not set")
         return False
     return True
-
-
-_PD_ONE_DRIVE_WRITER_MARKERS = (
-    "without andy/admin approval",
-    "writer/owner grants",
-    "drive-group-authorized",
-    "in-place edits without",
-)
-
-
-def _pd_one_summarize_data_access(data_access: Any) -> Dict[str, Any]:
-    """Keep Drive-group writer grants visible instead of collapsing them to read_limited."""
-    if not isinstance(data_access, dict):
-        return {}
-    denied, full, read_limited, planned = [], [], [], []
-    other: Dict[str, str] = {}
-    for key, value in sorted(data_access.items()):
-        text = str(value).strip()
-        lower = text.lower()
-        if lower == "deny":
-            denied.append(key)
-        elif "planned" in lower:
-            planned.append(key)
-        elif "full" in lower:
-            full.append(key)
-        elif key == "googleDocsGroupDerivedAccess" or any(
-            marker in lower for marker in _PD_ONE_DRIVE_WRITER_MARKERS
-        ):
-            other[key] = text[:180]
-        elif "read" in lower or "summar" in lower or "limited" in lower or "draft" in lower:
-            read_limited.append(key)
-        else:
-            other[key] = text[:120]
-    summary: Dict[str, Any] = {}
-    if full:
-        summary["full"] = full
-    if read_limited:
-        summary["read_limited"] = read_limited
-    if planned:
-        summary["planned"] = planned
-    if denied:
-        summary["denied"] = denied
-    if other:
-        summary["other"] = other
-    return summary
-
-
-def _pd_one_drive_writer_in_place_edits(data_access: Any) -> Optional[Dict[str, Any]]:
-    if not isinstance(data_access, dict):
-        return None
-    text = str(data_access.get("googleDocsGroupDerivedAccess") or "").lower()
-    if not any(marker in text for marker in _PD_ONE_DRIVE_WRITER_MARKERS):
-        return None
-    return {
-        "withoutAdminTicket": True,
-        "basis": "live Drive ACL + Google Group writer/owner on the exact file",
-        "doNotCreatePdappTicket": True,
-        "redLines": "deletes, sharing, Drive moves, unrelated files, credentials/config/gateway/policy",
-    }
 
 
 class MattermostAdapter(BasePlatformAdapter):
@@ -229,7 +174,7 @@ class MattermostAdapter(BasePlatformAdapter):
             config.extra.get("pd_one_quality_queue_path", "")
             or _get_scoped_secret("MATTERMOST_PD_ONE_QUALITY_QUEUE", "")
         ).strip()
-        self._thread_rehydration_cache: Dict[str, Dict[str, set[str]]] = {}
+        self._thread_rehydration_cache: dict[str, dict[str, set[str]]] = {}
         self._auto_heading_roots_inflight: set[str] = set()
         self._backfill_enabled = True
         self._backfill_task = None
@@ -240,7 +185,7 @@ class MattermostAdapter(BasePlatformAdapter):
         self._backfill_seen_ttl_seconds = 3600.0
         self._backfill_unreplied_lookback_seconds = 21600.0
         self._backfill_watermark_ms = 0
-        self._backfill_seen_post_ids: Dict[str, float] = {}
+        self._backfill_seen_post_ids: dict[str, float] = {}
 
     def _is_configured_bot_user(self, user_id: str) -> bool:
         """Whether an inbound Mattermost sender is an explicitly configured peer bot.
@@ -727,9 +672,9 @@ class MattermostAdapter(BasePlatformAdapter):
     def _enqueue_pd_one_quality_event(
         self,
         chat_id: str,
-        payload: Dict[str, Any],
-        data: Dict[str, Any],
-        metadata: Optional[Dict[str, Any]],
+        payload: dict[str, Any],
+        data: dict[str, Any],
+        metadata: Optional[dict[str, Any]],
     ) -> None:
         """Best-effort queue signal for PD One reply-quality review.
 
@@ -763,7 +708,7 @@ class MattermostAdapter(BasePlatformAdapter):
         except Exception as exc:
             logger.warning("Mattermost: failed to enqueue PD One quality event for %s: %s", post_id, exc)
 
-    async def _download_file_bytes(self, file_id: str) -> Tuple[Optional[bytes], Optional[int], Optional[str]]:
+    async def _download_file_bytes(self, file_id: str) -> tuple[Optional[bytes], Optional[int], Optional[str]]:
         """Download a Mattermost file using the attachment-specific timeout."""
         if not self._session:
             return None, None, "Mattermost session is not connected"
@@ -822,7 +767,7 @@ class MattermostAdapter(BasePlatformAdapter):
 
         last_delete_error: list[BaseException | None] = [None]
 
-        async def _delete_with_session(session: Any, *, request_kwargs: Optional[Dict[str, Any]] = None) -> bool:
+        async def _delete_with_session(session: Any, *, request_kwargs: Optional[dict[str, Any]] = None) -> bool:
             try:
                 last_delete_error[0] = None
                 async with session.delete(
@@ -886,8 +831,8 @@ class MattermostAdapter(BasePlatformAdapter):
             return False
 
     async def _api_put(
-        self, path: str, payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, path: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         """PUT /api/v4/{path} with JSON body."""
         import aiohttp
         if ".." in path:
@@ -907,7 +852,7 @@ class MattermostAdapter(BasePlatformAdapter):
             logger.error("MM API PUT %s network error: %s", path, exc)
             return {}
 
-    def _format_thread_context_post(self, post: Dict[str, Any]) -> Optional[str]:
+    def _format_thread_context_post(self, post: dict[str, Any]) -> Optional[str]:
         """Format a Mattermost thread post for channel_context injection."""
         if not post or post.get("delete_at"):
             return None
@@ -928,7 +873,7 @@ class MattermostAdapter(BasePlatformAdapter):
         root_id: Optional[str],
         triggering_post_id: Optional[str],
         session_key: Optional[str] = None,
-    ) -> Tuple[Optional[str], List[str], List[str]]:
+    ) -> tuple[Optional[str], list[str], list[str]]:
         """Fetch and format Mattermost thread history before the triggering post.
 
         Hermes already uses Mattermost root_id as thread_id for session keys.
@@ -969,8 +914,8 @@ class MattermostAdapter(BasePlatformAdapter):
             loaded_posts = cached.setdefault("posts", set())
             loaded_files = cached.setdefault("files", set())
 
-        candidates: List[Tuple[str, str]] = []
-        candidate_file_ids: List[str] = []
+        candidates: list[tuple[str, str]] = []
+        candidate_file_ids: list[str] = []
         for post_id in order:
             post_id_str = str(post_id)
             if post_id_str == triggering_post_id:
@@ -1014,7 +959,7 @@ class MattermostAdapter(BasePlatformAdapter):
         header += "]"
         return f"{header}\n{body}", thread_file_ids, recall_posts
 
-    def _load_pd_one_user_policy(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def _load_pd_one_user_policy(self, user_id: str) -> Optional[dict[str, Any]]:
         """Load an OpenClaw/PD One effective Mattermost policy cache entry."""
         if not user_id:
             return None
@@ -1055,7 +1000,7 @@ class MattermostAdapter(BasePlatformAdapter):
             or str(pdone_profile_home())
         )
         policy = self._load_pd_one_user_policy(user_id) or {"found": False, "mattermostUserId": user_id}
-        def _compact_identity(identity: Any) -> Dict[str, Any]:
+        def _compact_identity(identity: Any) -> dict[str, Any]:
             if not isinstance(identity, dict):
                 return {}
             result = {key: identity.get(key) for key in ("nameZh", "nameEn", "appsheetPersonId") if identity.get(key)}
@@ -1139,7 +1084,7 @@ class MattermostAdapter(BasePlatformAdapter):
             f"Policy JSON ({mode}): {payload}"
         )
 
-    def _build_pd_one_outbound_dm_workflow_context(self, user_id: str, channel_id: str, chat_type: str, message_text: str, post: Dict[str, Any]) -> Optional[str]:
+    def _build_pd_one_outbound_dm_workflow_context(self, user_id: str, channel_id: str, chat_type: str, message_text: str, post: dict[str, Any]) -> Optional[str]:
         """Build outbound-DM workflow context only after conservative routing.
 
         Open workflow rows are candidates only.  The deterministic router injects
@@ -1215,7 +1160,7 @@ class MattermostAdapter(BasePlatformAdapter):
         return channel_id in disabled
 
     @staticmethod
-    def _first_markdown_heading(message: str) -> Optional[Dict[str, Any]]:
+    def _first_markdown_heading(message: str) -> Optional[dict[str, Any]]:
         """Return details for the first non-blank line if it is a Markdown heading."""
         text = str(message or "")
         position = 0
@@ -1352,7 +1297,7 @@ class MattermostAdapter(BasePlatformAdapter):
 
     async def _maybe_append_mention_translation(
         self,
-        post: Dict[str, Any],
+        post: dict[str, Any],
         *,
         has_mention: bool,
         channel_type_raw: str,
@@ -1476,7 +1421,7 @@ class MattermostAdapter(BasePlatformAdapter):
         logger.info("Mattermost: skipped auto-heading after empty/invalid utility response")
         return None
 
-    async def _maybe_auto_heading_thread_root(self, post: Dict[str, Any], channel_type_raw: str) -> None:
+    async def _maybe_auto_heading_thread_root(self, post: dict[str, Any], channel_type_raw: str) -> None:
         """Best-effort: when a Mattermost thread gets a reply, title its root post.
 
         Skips roots whose first Markdown heading is already bilingual. If the root
@@ -1541,7 +1486,7 @@ class MattermostAdapter(BasePlatformAdapter):
     async def _resolve_effective_thread_root(
         self,
         reply_to: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> Optional[str]:
         """Return the Mattermost root_id for a send, honoring metadata.
 
@@ -1647,8 +1592,8 @@ class MattermostAdapter(BasePlatformAdapter):
         since_ms = max(0, self._backfill_watermark_ms - int(self._backfill_overlap_seconds * 1000))
         unreplied_since_ms = max(0, int(time.time() * 1000) - int(self._backfill_unreplied_lookback_seconds * 1000))
         terms = f"@{self._bot_username}"
-        posts_by_id: Dict[str, Dict[str, Any]] = {}
-        order: List[str] = []
+        posts_by_id: dict[str, dict[str, Any]] = {}
+        order: list[str] = []
 
         teams = await self._api_get("users/me/teams")
         if not isinstance(teams, list):
@@ -1718,13 +1663,12 @@ class MattermostAdapter(BasePlatformAdapter):
             })
             replayed += 1
 
-        if newest_ms > self._backfill_watermark_ms:
-            self._backfill_watermark_ms = newest_ms
+        self._backfill_watermark_ms = max(self._backfill_watermark_ms, newest_ms)
         if replayed:
             logger.info("Mattermost: replayed %d missed mention candidate(s) via REST backfill", replayed)
         return replayed
 
-    async def _thread_has_bot_reply_after(self, post: Dict[str, Any]) -> bool:
+    async def _thread_has_bot_reply_after(self, post: dict[str, Any]) -> bool:
         """Return True if the bot has already replied after this post in its thread."""
         root_id = str(post.get("root_id") or post.get("id") or "")
         if not root_id or not self._bot_user_id:
@@ -1757,7 +1701,7 @@ class MattermostAdapter(BasePlatformAdapter):
             if seen_at >= cutoff
         }
 
-    async def _channel_type_for_post(self, post: Dict[str, Any]) -> str:
+    async def _channel_type_for_post(self, post: dict[str, Any]) -> str:
         channel_id = str(post.get("channel_id") or "")
         if not channel_id:
             return "O"
@@ -1767,7 +1711,7 @@ class MattermostAdapter(BasePlatformAdapter):
     async def _thread_root_for_send(
         self,
         reply_to: Optional[str],
-        metadata: Optional[Dict[str, Any]],
+        metadata: Optional[dict[str, Any]],
     ) -> Optional[str]:
         """Resolve the Mattermost root_id from reply_to or metadata."""
         if self._reply_mode != "thread":
@@ -1779,7 +1723,7 @@ class MattermostAdapter(BasePlatformAdapter):
             return None
         return await self._resolve_root_id(str(candidate))
 
-    async def _handle_ws_event(self, event: Dict[str, Any]) -> None:
+    async def _handle_ws_event(self, event: dict[str, Any]) -> None:
         if event.get("event") != "posted":
             return
         data = event.get("data", {})
@@ -1833,7 +1777,7 @@ class MattermostAdapter(BasePlatformAdapter):
         from gateway.platforms.base import resolve_channel_prompt
         session_key = build_session_key(source)
         thread_context = None
-        thread_posts: List[str] = []
+        thread_posts: list[str] = []
         if thread_id:
             thread_context, thread_file_ids, thread_posts = await self._fetch_thread_context(
                 thread_id, post_id, session_key=session_key,

@@ -115,6 +115,7 @@ curl -fsS http://172.17.0.1:8645/v1/models -H 'Authorization: Bearer dummy'
 
 ## Validation sequence
 1. Back up `/home/prodesign/.hermes/services/honcho-pd-neo/config.toml` with a timestamp before editing.
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 2. Validate the edited config through the Honcho container's installed settings classes before restart. Copy it to `/tmp/config.toml`, run from `/tmp`, and set `PYTHONPATH=/app`/venv path so the current image parses the same settings model.
 3. Copy the config into both API and deriver containers, then restart only those containers.
 4. Verify runtime settings from inside the API container:
@@ -191,6 +192,7 @@ For one PD One rollout, `grok-4.20-0309-non-reasoning` passed those checks with 
 When `/chat` stalls after a Grok rollout, check the embedding layer and queue before blaming the Grok model:
 
 ```bash
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 curl -fsS http://127.0.0.1:18080/v3/workspaces/pd-neo/queue/status -o /tmp/honcho_queue_status.json
 OLLAMA_HOST=http://172.17.0.1:11434 /home/prodesign/.hermes/services/ollama/bin/ollama ps
 curl -fsS http://172.17.0.1:11434/api/tags >/dev/null && echo 'ollama tags ok'

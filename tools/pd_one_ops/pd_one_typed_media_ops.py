@@ -70,7 +70,7 @@ def probe_duration(path: Path) -> float:
     ffprobe = shutil.which('ffprobe')
     if not ffprobe:
         fail('ffprobe is required')
-    proc = subprocess.run([ffprobe, '-v', 'error', '-show_entries', 'format=duration', '-of', 'json', str(path)], text=True, capture_output=True, shell=False, timeout=30, check=False)
+    proc = subprocess.run([ffprobe, '-v', 'error', '-show_entries', 'format=duration', '-of', 'json', str(path)], text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=30, check=False)
     if proc.returncode != 0:
         fail(f'ffprobe failed for {path}: {proc.stderr[-400:]}')
     try:
@@ -108,14 +108,14 @@ def compose(inputs: list[str], output: str) -> dict[str, Any]:
                 command = [ffmpeg, '-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-loop', '1', '-t', f'{STILL_SECONDS:.3f}', '-i', str(source), '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', '30', '-an', str(clip)]
             else:
                 command = [ffmpeg, '-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(source), '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', str(clip)]
-            proc = subprocess.run(command, text=True, capture_output=True, shell=False, timeout=180, check=False)
+            proc = subprocess.run(command, text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=180, check=False)
             if proc.returncode != 0 or not clip.is_file():
                 fail(f'ffmpeg failed normalizing {source.name}: {proc.stderr[-500:]}')
             clips.append(clip)
         list_file = work / 'concat.txt'
-        list_file.write_text(''.join((f"file '{clip}'\n" for clip in clips)), encoding='utf-8')
+        list_file.write_text(''.join(f"file '{clip}'\n" for clip in clips), encoding='utf-8')
         staged = work / 'output.mp4'
-        concat = subprocess.run([ffmpeg, '-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', str(list_file), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(staged)], text=True, capture_output=True, shell=False, timeout=180, check=False)
+        concat = subprocess.run([ffmpeg, '-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', str(list_file), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(staged)], text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=180, check=False)
         if concat.returncode != 0 or not staged.is_file():
             fail(f'ffmpeg concat failed: {concat.stderr[-500:]}')
         duration = probe_duration(staged)
@@ -165,7 +165,7 @@ def deliver_origin_thread(*, ticket_id: str, file_path: str, channel_id: str, ro
     grant = ticket.get('approval_grant') or {}
     caps = set(grant.get('allowed_capabilities') or [])
     if ticket.get('status') not in {'approved', 'queued', 'in_progress'}:
-        fail(f'ticket {ticket_id} is not executable: {ticket.get('status')}')
+        fail(f"ticket {ticket_id} is not executable: {ticket.get('status')}")
     if grant.get('status') != 'active' or 'origin_thread_media_deliver' not in caps:
         fail(f'ticket {ticket_id} grant does not include origin_thread_media_deliver')
     if str(ticket.get('origin_channel_id') or '') != channel_id:
@@ -178,7 +178,7 @@ def deliver_origin_thread(*, ticket_id: str, file_path: str, channel_id: str, ro
     base, token = _mattermost_env()
     boundary = '----pdoneMedia' + hashlib.sha256(os.urandom(12)).hexdigest()[:12]
     filename = source.name
-    body = f'--{boundary}\r\nContent-Disposition: form-data; name="files"; filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode('utf-8') + source.read_bytes() + f'\r\n--{boundary}--\r\n'.encode('utf-8')
+    body = f'--{boundary}\r\nContent-Disposition: form-data; name="files"; filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode() + source.read_bytes() + f'\r\n--{boundary}--\r\n'.encode()
     upload = _mm_request(base, token, 'POST', f'/api/v4/files?channel_id={channel_id}', data=body, content_type=f'multipart/form-data; boundary={boundary}')
     file_infos = upload.get('file_infos') or []
     if not file_infos:

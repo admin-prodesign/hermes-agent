@@ -263,6 +263,7 @@ docs/superpowers/*
 !/profiles/pdone/
 /profiles/pdone/*
 !/profiles/pdone/AGENTS.md
+!/profiles/pdone/execution-discipline.md
 !/profiles/pdone/skills/
 !/profiles/pdone/skills/**
 # Summary-job packet only. The rest of the pdone profile stays host state.

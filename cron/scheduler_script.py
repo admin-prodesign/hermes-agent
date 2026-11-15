@@ -24,6 +24,7 @@ from cron.jobs import _ensure_cron_dir
 from pathlib import Path
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
+from hermes_cli._startup_fast import project_root_str
 from hermes_cli._subprocess_compat import windows_hide_flags
 
 if TYPE_CHECKING:
@@ -270,7 +271,7 @@ def _apply_cron_script_runtime_env(
     if user_python and argv:
         _prepend_python_bin(env, Path(argv[0]))
     else:
-        _prepend_python_bin(env, _resolve_release_python(Path(__file__).resolve().parents[1]))
+        _prepend_python_bin(env, _resolve_release_python(Path(project_root_str())))
     if _script_wants_cwa_tls(path):
         _apply_cwa_tls_env(env)
 

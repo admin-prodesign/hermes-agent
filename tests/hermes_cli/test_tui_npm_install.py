@@ -13,12 +13,12 @@ from tests.hermes_cli.test_source_build import source_checkout, source_products,
 def _touch_tui_entry(root: Path) -> None:
     entry = root / "dist" / "entry.js"
     entry.parent.mkdir(parents=True, exist_ok=True)
-    entry.write_text("console.log('tui')")
+    entry.write_text("console.log('tui')", encoding="utf-8")
 
 
 def test_need_rebuild_when_tui_bundle_missing(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "entry.tsx").write_text("console.log('src')")
+    (tmp_path / "src" / "entry.tsx").write_text("console.log('src')", encoding="utf-8")
 
     assert main_tui_launch._tui_need_rebuild(tmp_path) is True
 
@@ -27,7 +27,7 @@ def test_unreceipted_bundle_is_stale_even_when_newer(tmp_path: Path) -> None:
     _touch_tui_entry(tmp_path)
     src = tmp_path / "src"
     src.mkdir()
-    (src / "entry.tsx").write_text("console.log('src')")
+    (src / "entry.tsx").write_text("console.log('src')", encoding="utf-8")
     os.utime(src / "entry.tsx", (100, 100))
     os.utime(tmp_path / "dist" / "entry.js", (200, 200))
 
@@ -52,7 +52,7 @@ def test_source_launch_prepares_base_union_but_compiles_only_tui(tui_source):
     argv, cwd = main_tui_launch._make_tui_argv(root / "ui-tui", tui_dev=False)
     assert cwd == root / "ui-tui"
     assert argv[-1] == str(cwd / "dist/entry.js")
-    assert (cwd / "dist/entry.js").read_text() == "tui"
+    assert (cwd / "dist/entry.js").read_text(encoding="utf-8-sig") == "tui"
     assert [event["step"] for event in _events(root)] == ["deps", "tui"]
     assert acquired == ["pnpm"]
     assert (root / "ui-tui/node_modules").exists()
@@ -75,7 +75,7 @@ def test_source_launch_keeps_the_users_download_retries(tui_source, tmp_path, mo
         (tmp_path / "xdg/pnpm/config.yaml").write_text("fetchRetries: 5\n", encoding="utf-8")
     else:
         workspace = root / "pnpm-workspace.yaml"
-        workspace.write_text("fetchRetries: 5\n" + workspace.read_text(encoding="utf-8"), encoding="utf-8")
+        workspace.write_text("fetchRetries: 5\n" + workspace.read_text(encoding="utf-8-sig"), encoding="utf-8")
     main_tui_launch._make_tui_argv(root / "ui-tui", tui_dev=False)
     assert _events(root)[0].get("retries") == ("5" if where == "environment" else None)
 
@@ -88,7 +88,7 @@ def test_source_launch_ignores_an_npm_retry_count_pnpm_ignores(tui_source, monke
 
     root, _ = tui_source
     npmrc = Path(os.environ["HERMES_HOME"]) / "npmrc"
-    npmrc.write_text(npmrc.read_text(encoding="utf-8") + "fetch-retries=5\n", encoding="utf-8")
+    npmrc.write_text(npmrc.read_text(encoding="utf-8-sig") + "fetch-retries=5\n", encoding="utf-8")
     monkeypatch.setenv("npm_config_fetch_retries", "5")
     main_tui_launch._make_tui_argv(root / "ui-tui", tui_dev=False)
     assert _events(root)[0]["retries"] == "1"
@@ -117,7 +117,7 @@ def test_failed_dependency_preparation_launches_the_previous_build(tui_source, m
     notices = []
     argv, cwd = main_tui_launch._make_tui_argv(root / "ui-tui", tui_dev=False, notices=notices)
     assert argv[-1] == str(root / "ui-tui/dist/entry.js")
-    assert subprocess.run(argv, cwd=cwd, check=True, capture_output=True, text=True).stdout.strip() == "tui"
+    assert subprocess.run(argv, cwd=cwd, check=True, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip() == "tui"
     assert "previous TUI build was started" in capsys.readouterr().err
     assert len(notices) == 1 and "hermes update" in notices[0]
     assert _events(root) == []
@@ -284,12 +284,12 @@ def test_fresh_bundle_does_not_prepare_or_compile(tui_source, monkeypatch, termu
 def test_prebuilt_bundle_launch_does_not_touch_missing_source(tmp_path, monkeypatch):
     bundled = tmp_path / "bundle/entry.js"
     bundled.parent.mkdir()
-    bundled.write_text("console.log('prebuilt')")
+    bundled.write_text("console.log('prebuilt')", encoding="utf-8")
     monkeypatch.delenv("HERMES_TUI_DIR", raising=False)
     monkeypatch.setenv("HERMES_NODE", shutil.which("node"))
     monkeypatch.setattr(main_tui_launch, "_find_bundled_tui", lambda: bundled)
     argv, cwd = main_tui_launch._make_tui_argv(tmp_path / "missing-source", tui_dev=False)
-    result = subprocess.run(argv, cwd=cwd, check=True, capture_output=True, text=True)
+    result = subprocess.run(argv, cwd=cwd, check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert result.stdout.strip() == "prebuilt"
     assert not (tmp_path / "missing-source").exists()
 
@@ -303,9 +303,9 @@ def test_dev_launch_builds_ink_before_running_source(tui_source, local_tsx):
     (ink / "package.json").write_text(json.dumps({
         "name": "fixture-ink", "version": "1.0.0", "scripts": {"build": "node build.mjs"},
     }))
-    (ink / "build.mjs").write_text("import { writeFileSync } from 'node:fs'; writeFileSync('built', 'ink');")
+    (ink / "build.mjs").write_text("import { writeFileSync } from 'node:fs'; writeFileSync('built', 'ink');", encoding="utf-8")
     workspace = root / "pnpm-workspace.yaml"
-    workspace.write_text(workspace.read_text() + "  - ui-tui/packages/hermes-ink\n")
+    workspace.write_text(workspace.read_text(encoding="utf-8-sig") + "  - ui-tui/packages/hermes-ink\n")
     subprocess.run([shutil.which("pnpm"), "install", "--lockfile-only", "--ignore-scripts", "--offline"], cwd=root, check=True,
                    env={**os.environ, **{f"pnpm_config_{name}_dir": str(root.parent / "pnpm" / name)
                                          for name in ("store", "cache", "state")}})
@@ -316,7 +316,7 @@ def test_dev_launch_builds_ink_before_running_source(tui_source, local_tsx):
                         "mkdirSync('ui-tui/node_modules/.bin', {recursive: true}); "
                         "writeFileSync('ui-tui/node_modules/.bin/tsx', 'fixture tsx');\n")
     argv, cwd = main_tui_launch._make_tui_argv(root / "ui-tui", tui_dev=True)
-    assert (ink / "built").read_text() == "ink"
+    assert (ink / "built").read_text(encoding="utf-8-sig") == "ink"
     assert argv == ([str(tsx), "src/entry.tsx"] if local_tsx else [shutil.which("pnpm"), "start"])
     assert cwd == root / "ui-tui"
     assert acquired == ["pnpm"]
@@ -332,7 +332,7 @@ def test_runtime_node_comes_from_pm_without_legacy_repair(tmp_path, monkeypatch)
     managed.parent.mkdir()
     # A real executable, not a symlink onto PM's node under the Hermes home.
     # shutil.which resolves that link and the home I/O guard refuses it.
-    managed.write_text("#!/bin/sh\n")
+    managed.write_text("#!/bin/sh\n", encoding="utf-8")
     managed.chmod(0o755)
     monkeypatch.delenv("HERMES_NODE", raising=False)
     acquired = []
@@ -357,7 +357,7 @@ def test_tui_rebuild_preserves_the_prepared_desktop_and_web_union(tui_source):
     assert _events(root) == before, "fresh launch must not prepare or rebuild"
     src = root / "ui-tui/src/entry.tsx"
     src.parent.mkdir()
-    src.write_text("changed tui source")
+    src.write_text("changed tui source", encoding="utf-8")
     os.utime(root / "ui-tui/dist/entry.js", (1, 1))
     main_tui_launch._make_tui_argv(root / "ui-tui", tui_dev=False)
     assert _events(root) == [*before, {"step": "tui"}]

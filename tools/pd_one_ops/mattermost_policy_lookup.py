@@ -16,7 +16,7 @@ from tools.pd_one_ops.site_config import site_text, resolve_configured_path, ext
 import argparse
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +40,7 @@ def DOCUMENT_ACCESS_CACHE():
 SAFE_USER_KEYS = ['displayName', 'mattermostUsername', 'mattermostEmail', 'status', 'language', 'languageSource', 'roles', 'extraRoles']
 
 def load_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding='utf-8'))
+    return json.loads(path.read_text(encoding='utf-8-sig'))
 
 def stable_unique(values: list[Any]) -> list[Any]:
     seen: set[str] = set()
@@ -100,7 +100,7 @@ def policy_hash(document_access_cache: dict[str, Any] | None=None) -> str:
         h.update(b'\x00')
     return h.hexdigest()[:16]
 
-def load_document_access_cache(path: Path=None) -> dict[str, Any] | None:
+def load_document_access_cache(path: Path | None=None) -> dict[str, Any] | None:
     if path is None:
         path = DOCUMENT_ACCESS_CACHE()
     if not path.exists():
@@ -134,7 +134,7 @@ def resolve_user(user_id: str, users_policy: dict[str, Any], roles_policy: dict[
     roles = roles_policy.get('roles', {})
     setup = default_setup_response(users_policy)
     lookup_failure = default_lookup_failure_response(users_policy)
-    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    now = datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
     base: dict[str, Any] = {'schema': 'pd-one.mattermost-policy-resolution.v1', 'generatedAtUtc': now, 'sourceHash': policy_hash(document_access_cache), 'mattermostUserId': user_id, 'found': False, 'active': False, 'dmEnabled': False, 'language': users_policy.get('languagePolicy', {}).get('defaultLanguage', 'en'), 'displayName': '', 'setupResponse': setup, 'lookupFailureResponse': lookup_failure, 'decision': 'unresolved_user', 'turnHandling': 'agent_may_reply_with_setup_or_general_guidance; do_not_use_scoped_company_data_or_privileged_tools', 'safeScopes': [], 'roles': [], 'channels': {}, 'dataAccess': {}, 'tools': {}, 'approval': {}, 'employeeFacingNotes': ['Use only this exact current sender id resolution for authorization.', 'Do not use names, prior sessions, or fuzzy matching to select a profile.', 'Do not reveal policy internals to employees.']}
     user = users.get(user_id)
     if not isinstance(user, dict):
@@ -169,7 +169,7 @@ def resolve_user(user_id: str, users_policy: dict[str, Any], roles_policy: dict[
 def write_cache(cache_dir: Path, users_policy: dict[str, Any], roles_policy: dict[str, Any], document_access_cache: dict[str, Any] | None=None) -> None:
     users_dir = cache_dir / 'users'
     users_dir.mkdir(parents=True, exist_ok=True)
-    generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    generated_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
     source_hash = policy_hash(document_access_cache)
     expected_files: set[Path] = set()
     index: dict[str, Any] = {'schema': 'pd-one.mattermost-policy-cache-index.v1', 'generatedAtUtc': generated_at, 'sourceHash': source_hash, 'sourceFiles': [str(USERS_PATH()), str(ROLES_PATH())] + ([str(DOCUMENT_ACCESS_CACHE())] if document_access_cache else []), 'userCount': 0, 'users': {}, 'lookupRule': "Read users/<exact Mattermost sender id>.json when a Mattermost user's scopes/privileges are needed. If missing, inactive, or dmEnabled=false for a DM, the agent may still reply with setup/general guidance but must not use scoped company data or privileged tools. If the cache/source is unreadable or the lookup itself fails, use lookupFailureResponse rather than saying the user is not enabled."}

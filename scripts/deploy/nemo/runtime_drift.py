@@ -23,7 +23,7 @@ import sys
 import tarfile
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -124,7 +124,6 @@ def _release_root_at(path: Path, releases: Path | None) -> Path | None:
 def _git(mirror: Path, *args: str, check: bool = True, capture: bool = True,
          timeout: float = 600.0, run: GitRun | None = None) -> subprocess.CompletedProcess:
     runner = run or run_cmd
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     argv = ["git", "--git-dir", str(mirror), *args]
     completed = runner(argv, timeout)
     if check and completed.returncode != 0:
@@ -176,7 +175,7 @@ def unit_runtime(unit: str, releases: Path) -> GatewayRuntime | None:
     root = release_root_from_interpreter(exe, pythonpath=env.get("PYTHONPATH"), releases=releases)
     file_sha = None
     if root is not None and (root / ".hermes-runtime-sha").is_file():
-        file_sha = (root / ".hermes-runtime-sha").read_text(encoding="utf-8").strip()
+        file_sha = (root / ".hermes-runtime-sha").read_text(encoding="utf-8-sig").strip()
     return GatewayRuntime(
         unit=unit, pid=pid, exe=str(exe),
         root=root, env_sha=env.get("HERMES_RUNTIME_SHA"), file_sha=file_sha,
@@ -240,7 +239,7 @@ def writes_after_build(root: Path) -> dict:
             except OSError:
                 pass
     build_time = (
-        datetime.fromtimestamp(built - 120, timezone.utc).isoformat()
+        datetime.fromtimestamp(built - 120, UTC).isoformat()
         if marker.is_file() else None
     )
     return {
@@ -270,7 +269,7 @@ def run_check(
     notify_dir = home / "state" / "runtime_drift_notify"
     drift_problems: list[str] = []
     fatal_problems: list[str] = []
-    report: dict = {"checked_at": datetime.now(timezone.utc).isoformat(), "gateways": []}
+    report: dict = {"checked_at": datetime.now(UTC).isoformat(), "gateways": []}
 
     main_commit = main_sha(mirror, remote, run=run)
     report["origin_main"] = main_commit

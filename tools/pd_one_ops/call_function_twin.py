@@ -25,8 +25,7 @@ def _resolve(twin: str) -> tuple[str, dict[str, str]] | None:
     raw = (twin or '').strip().lower()
     if not raw:
         return None
-    if raw.startswith('pd-'):
-        raw = raw[3:]
+    raw = raw.removeprefix('pd-')
     if raw in TWINS():
         return (raw, TWINS()[raw])
     return None
@@ -73,7 +72,7 @@ def main(argv: list[str] | None=None) -> int:
     env = os.environ.copy()
     env['PATH'] = resolve_configured_path('~/.local/bin:') + env.get('PATH', '')
     try:
-        proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=max(30, int(args.timeout) + 30), env=env)
+        proc = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=max(30, int(args.timeout) + 30), env=env)
     except subprocess.TimeoutExpired:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         print(f'PD_{short.upper()}_TIMEOUT', file=sys.stderr)

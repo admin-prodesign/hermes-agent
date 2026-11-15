@@ -12,7 +12,7 @@ import logging
 import os
 import re
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any
 
@@ -372,7 +372,7 @@ def audit_apps_script(action_key: str, *, script_id: str, outcome: str) -> None:
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _audit_text(value: Any) -> str:
@@ -505,7 +505,7 @@ def _read_document() -> dict[str, Any]:
     if not path.is_file():
         return {"schema": REGISTRY_SCHEMA, "projects": {}}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise RegistryUnreadable("registry_unreadable") from exc
     if not isinstance(data, dict):
@@ -718,7 +718,7 @@ def _collect_scopes(root: Path) -> set[str]:
         try:
             if path.stat().st_size > 1_000_000:
                 continue
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, UnicodeError, json.JSONDecodeError):
             continue
         _collect_scope_values(data, found)

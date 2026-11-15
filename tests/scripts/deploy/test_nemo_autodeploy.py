@@ -47,7 +47,7 @@ SHA_A = "a" * 40
 def _git(cwd: Path, *args: str) -> str:
     env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"}
-    done = subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=30, check=True)
+    done = subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=True)
     return done.stdout.strip()
 
 
@@ -121,7 +121,7 @@ def _cutover(home: Path, build: str, *extra: str) -> subprocess.CompletedProcess
     argv = ["bash", str(NEMO / "cutover.sh"), "--hermes-home", str(home), "--build", build,
             "--sha", "b" * 40, "--unit-dir", str(home / "units"), "--skip-preflight", "--skip-selftest",
             "--skip-postcheck", "--skip-adapter-gate", *extra]
-    return subprocess.run(argv, env=env, capture_output=True, text=True, timeout=120, check=False)
+    return subprocess.run(argv, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, check=False)
 
 
 class _Health(BaseHTTPRequestHandler):
@@ -182,7 +182,7 @@ def test_poll_queues_a_new_main_once_and_goes_quiet_after_the_deploy(tmp_path: P
     assert outcome.result == "deployed" and outcome.sha == new, outcome
     assert _poll(home, releases, mirror).action == "live"
     assert not queued_shas(queue)
-    recorded = json.loads((home / "deploy" / "poll.json").read_text(encoding="utf-8"))
+    recorded = json.loads((home / "deploy" / "poll.json").read_text(encoding="utf-8-sig"))
     assert recorded["action"] == "live" and recorded["live"] == new
 
 
@@ -362,7 +362,7 @@ def test_worker_keeps_failed_build_dir_and_does_not_prune_on_cutover_failure(tmp
     assert os.readlink(releases / "current") == "old"
     assert running_build(releases) == "old"
     assert (releases / build_name(new)).exists()
-    status = json.loads((home / "deploy" / "status.json").read_text(encoding="utf-8"))
+    status = json.loads((home / "deploy" / "status.json").read_text(encoding="utf-8-sig"))
     assert status["result"] == "failed"
     assert new in refused_shas(home)
     assert _poll(home, releases, mirror).action == "refused"
@@ -399,7 +399,7 @@ def test_skills_only_merge_swaps_without_restarting(tmp_path: Path, origin) -> N
 
 @pytest.mark.platforms("linux", "macos")
 def test_worker_rejects_using_full_sha_when_live_is_a_short_prefix(tmp_path: Path, origin) -> None:
-    work, mirror, base = origin
+    _work, mirror, base = origin
     home = tmp_path / "hermes"
     releases = home / "releases"
     build = "hermes-agent-" + base[:10] + "-live"
@@ -602,7 +602,7 @@ def test_live_sha_infers_hermes_agent_release_names_and_matches_main_prefix() ->
 
 
 def test_poll_treats_inferred_live_sha_as_current(tmp_path: Path, origin) -> None:
-    work, mirror, base = origin
+    _work, mirror, base = origin
     home = tmp_path / "hermes"
     releases = home / "releases"
     build = "hermes-agent-" + base[:10] + "-manual"

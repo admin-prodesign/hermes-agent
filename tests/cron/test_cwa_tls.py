@@ -4,7 +4,7 @@ import socket
 import ssl
 import threading
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from pathlib import Path
 
 import pytest
@@ -80,7 +80,7 @@ def _ca_without_subject_key_identifier(tmp_path: Path):
 
     ca_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     leaf_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "cwa-test-ca")])
     key_usage = x509.KeyUsage(
         digital_signature=False, content_commitment=False, key_encipherment=False,
@@ -153,7 +153,7 @@ def _serve_tls(cert_pem: Path, key_pem: Path):
         while not stop.is_set():
             try:
                 conn, _addr = raw.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             try:
                 tls = server.wrap_socket(conn, server_side=True)

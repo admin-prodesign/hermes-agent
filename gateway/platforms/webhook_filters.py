@@ -243,7 +243,7 @@ class WebhookRouteProcessor:
             from tools.environments.local import build_subprocess_env
             popen_kwargs = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
             result = subprocess.run(
-                [interpreter, str(path)],
+                [interpreter, str(path)], check=False,
                 input=json.dumps(envelope if isinstance(envelope, dict) else {}),
                 capture_output=True,
                 text=True,

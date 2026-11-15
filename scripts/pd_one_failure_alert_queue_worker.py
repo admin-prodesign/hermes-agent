@@ -8,7 +8,10 @@ can run frequently without chat noise.
 from __future__ import annotations
 
 import datetime as dt
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # Linux file locks; this host is nemo
 import hashlib
 import json
 import os
@@ -30,6 +33,7 @@ QUEUE_DIR = QUEUE.parent / "queue.d"
 PROCESSING_DIR = QUEUE.parent / "processing.d"
 QUEUE_IO_LOCK = QUEUE.parent / "queue-io.lock"
 FAILED_DIR = Path("/home/prodesign/.hermes/pd-one-failure-alerts/failed")
+# no-tmp: ok — documented nemo host path or an existing PD One artifact contract
 LOCK = Path("/tmp/pd-one-failure-alert-queue-worker.lock")
 HERMES = "/home/prodesign/.local/bin/hermes"
 WORKSPACE = Path("/home/prodesign/.hermes/profiles/pdone/legacy-openclaw/workspace")
@@ -289,7 +293,7 @@ def _migrate_legacy_queue() -> None:
     # idempotent and no-clobber.
     for legacy in sorted(QUEUE.parent.glob("queue.legacy-*.jsonl")):
         bad_lines: list[str] = []
-        for line in legacy.read_text(encoding="utf-8", errors="replace").splitlines():
+        for line in legacy.read_text(encoding="utf-8-sig", errors="replace").splitlines():
             if not line.strip():
                 continue
             try:
@@ -344,7 +348,7 @@ def drain_queue() -> list[dict]:
     alerts: list[dict[str, Any]] = []
     for claim in sorted(PROCESSING_DIR.glob("*.json")):
         try:
-            item = json.loads(claim.read_text(encoding="utf-8"))
+            item = json.loads(claim.read_text(encoding="utf-8-sig"))
             if not isinstance(item, dict):
                 raise ValueError("queue event must be a JSON object")
             item[CLAIM_PATH_KEY] = str(claim)
@@ -406,21 +410,21 @@ def requeue_alert(alert: dict[str, Any]) -> Path:
 
 
 def _utc_now_iso() -> str:
-    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    return dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
 
 
 def _parse_epoch(value: str) -> float | None:
     if not value:
         return None
     try:
-        return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        return dt.datetime.fromisoformat(value).timestamp()
     except Exception:
         return None
 
 
 def _retryable_supervisor_error(error: str) -> bool:
     text = error or ""
-    return bool(re.search(r"TimeoutExpired|timed out|timeout=|hermes chat failed", text, re.I))
+    return bool(re.search(r"TimeoutExpired|timed out|timeout=|hermes chat failed", text, re.IGNORECASE))
 
 
 def _defer_supervisor_error(alert: dict[str, Any], error: str) -> tuple[bool, dict[str, Any]]:
@@ -447,7 +451,7 @@ def _defer_supervisor_error(alert: dict[str, Any], error: str) -> tuple[bool, di
     deferred["last_supervisor_error"] = error[-1200:]
     retry_delay = min(SUPERVISOR_RETRY_BASE_SECONDS * (2 ** (attempts - 1)), SUPERVISOR_RETRY_MAX_SECONDS)
     deferred["next_supervisor_attempt_at"] = dt.datetime.fromtimestamp(
-        time.time() + retry_delay, tz=dt.timezone.utc
+        time.time() + retry_delay, tz=dt.UTC
     ).isoformat(timespec="seconds")
     return True, deferred
 
@@ -543,14 +547,14 @@ def _clean_triage_text(text: str) -> str:
 
 
 def _is_supervisor_timeout(error: str) -> bool:
-    return bool(re.search(r"TimeoutExpired|timed out after|timeout=|hermes chat failed", error or "", re.I))
+    return bool(re.search(r"TimeoutExpired|timed out after|timeout=|hermes chat failed", error or "", re.IGNORECASE))
 
 
 def _extract_timeout_seconds(error: str) -> str:
-    m = re.search(r"timed out after\s+([0-9.]+)\s+seconds", error or "", re.I)
+    m = re.search(r"timed out after\s+([0-9.]+)\s+seconds", error or "", re.IGNORECASE)
     if m:
         return f"{m.group(1)} seconds"
-    m = re.search(r"timeout=([0-9.]+)", error or "", re.I)
+    m = re.search(r"timeout=([0-9.]+)", error or "", re.IGNORECASE)
     if m:
         return f"{m.group(1)} seconds"
     return f"{HERMES_TRIAGE_TIMEOUT_SECONDS} seconds"
@@ -564,7 +568,7 @@ def _summarize_original_event(alert: dict[str, Any]) -> list[str]:
         bullets.append(f"- Command: `{command[:220]}`")
     detail = str(alert.get("detail") or "")
     if detail:
-        timeout_match = re.search(r"timed out after\s+[0-9.]+\s+seconds", detail, re.I)
+        timeout_match = re.search(r"timed out after\s+[0-9.]+\s+seconds", detail, re.IGNORECASE)
         if timeout_match:
             bullets.append(f"- Original error: `{timeout_match.group(0)}`")
         elif "Connection refused" in detail:
@@ -722,7 +726,7 @@ def default_subject(outcome: dict[str, Any], alert: dict[str, Any]) -> str:
 def record_outcome(alert: dict[str, Any], outcome: dict[str, Any], *, notification_result: dict[str, Any] | None = None) -> None:
     _private_dir(OUTCOME_LEDGER.parent)
     record = _redact_sensitive({
-        "ts": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "ts": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
         "event_ref": _alert_ref(alert),
         "event_type": alert.get("event_type"),
         "source": alert.get("source"),
@@ -777,7 +781,7 @@ def notification_route_has_pending(route: str) -> bool:
     if not path.exists():
         return False
     try:
-        state = json.loads(path.read_text(encoding="utf-8"))
+        state = json.loads(path.read_text(encoding="utf-8-sig"))
         return bool(state.get("pending")) if isinstance(state, dict) else True
     except Exception:
         # Let the router surface malformed durable state instead of hiding it.
@@ -808,7 +812,7 @@ def deliver_route_notification(outcome: dict[str, Any], alert: dict[str, Any], *
         "--title", title,
         "--body", body,
     ]
-    proc = subprocess.run(cmd, cwd=str(HERMES_AGENT), text=True, capture_output=True, timeout=SUPERVISOR_DELIVERY_TIMEOUT_SECONDS, check=False)
+    proc = subprocess.run(cmd, cwd=str(HERMES_AGENT), text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=SUPERVISOR_DELIVERY_TIMEOUT_SECONDS, check=False)
     result_text = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
     try:
         payload = json.loads((proc.stdout or "{}").strip() or "{}")
@@ -938,7 +942,7 @@ def main() -> int:
             try:
                 maybe_notify(outcome, alert, log_path=failed_path)
                 ack_alert(alert)
-            except Exception as exc:  # noqa: BLE001 - surface notification rail failure to cron/supervisor
+            except Exception as exc:
                 had_delivery_failure = True
                 print(
                     "PD One Supervisor notification delivery failed; preserved outcome locally.\n"

@@ -54,7 +54,7 @@ class ApprovalLease:
     def complete(self, receipt: dict[str, Any]) -> None:
         if self.finished:
             return
-        self.ledger.complete(self.ticket_id, employee_visible_summary='Google Groups owner enforcement completed and verified.', admin_private_details=f'groups_scanned={receipt.get('groups_scanned', 0)}; verified_owner_slots={receipt.get('verified_owner_slots', 0)}; actions_failed={receipt.get('actions_failed', 0)}')
+        self.ledger.complete(self.ticket_id, employee_visible_summary='Google Groups owner enforcement completed and verified.', admin_private_details=f"groups_scanned={receipt.get('groups_scanned', 0)}; verified_owner_slots={receipt.get('verified_owner_slots', 0)}; actions_failed={receipt.get('actions_failed', 0)}")
         self.finished = True
 
     def fail(self, reason: str) -> None:
@@ -125,7 +125,7 @@ def load_gog_access_token(gog: str, account: str, *, runner: Any=subprocess.run)
         if proc.returncode != 0:
             raise RuntimeError(f'gog token bridge failed with exit {proc.returncode}')
         try:
-            payload = json.loads(token_path.read_text(encoding='utf-8'))
+            payload = json.loads(token_path.read_text(encoding='utf-8-sig'))
             token = str(payload.get('access_token') or '')
             if not token:
                 raise RuntimeError('gog token bridge returned no short-lived access token')
@@ -267,7 +267,7 @@ def execute_owner_enforcement(client: Any, *, dry_run: bool=True, confirm_live_w
                     verification.append({'group': row['group'], 'member': row['member'], 'role': None, 'ok': False, 'error': str(exc)[:500]})
         action_failures = [row for row in action_results if not row['ok']]
         verification_failures = [row for row in verification if not row['ok']]
-        receipt = {'status': 'error' if action_failures or verification_failures else 'ok', 'capability': 'pd_one_google_group_owner_enforcement', 'mode': 'dry-run' if dry_run else 'live', 'approval_ticket_id': approval_ticket_id if not dry_run else None, 'domain': ALLOWED_DOMAIN, 'owner_allowlist': list(ALLOWED_OWNER_EMAILS()), 'groups_scanned': len(groups), 'target_slots': len(plan), 'already_owner': len(plan) - len(changes), 'planned_changes': len(changes), 'adds': sum((row['action'] == 'add' for row in changes)), 'promotions': sum((row['action'] == 'promote' for row in changes)), 'actions_succeeded': len(action_results) - len(action_failures), 'actions_failed': len(action_failures), 'verified_owner_slots': sum((row['ok'] for row in verification)), 'verification_failures': len(verification_failures), 'plan': plan, 'action_failures': action_failures, 'verification_failure_details': verification_failures, 'safety': {'dry_run_default': True, 'live_requires_bound_approval_ticket': True, 'remove_or_demote_supported': False, 'arbitrary_members_supported': False, 'arbitrary_domains_supported': False, 'credentials_returned': False}}
+        receipt = {'status': 'error' if action_failures or verification_failures else 'ok', 'capability': 'pd_one_google_group_owner_enforcement', 'mode': 'dry-run' if dry_run else 'live', 'approval_ticket_id': approval_ticket_id if not dry_run else None, 'domain': ALLOWED_DOMAIN, 'owner_allowlist': list(ALLOWED_OWNER_EMAILS()), 'groups_scanned': len(groups), 'target_slots': len(plan), 'already_owner': len(plan) - len(changes), 'planned_changes': len(changes), 'adds': sum(row['action'] == 'add' for row in changes), 'promotions': sum(row['action'] == 'promote' for row in changes), 'actions_succeeded': len(action_results) - len(action_failures), 'actions_failed': len(action_failures), 'verified_owner_slots': sum(row['ok'] for row in verification), 'verification_failures': len(verification_failures), 'plan': plan, 'action_failures': action_failures, 'verification_failure_details': verification_failures, 'safety': {'dry_run_default': True, 'live_requires_bound_approval_ticket': True, 'remove_or_demote_supported': False, 'arbitrary_members_supported': False, 'arbitrary_domains_supported': False, 'credentials_returned': False}}
         if lease is not None:
             if receipt['status'] == 'ok':
                 lease.complete(receipt)
@@ -300,10 +300,10 @@ def execute_admin_removal_except_it(client: Any, *, dry_run: bool=True, confirm_
     continuity_failures = []
     for row in removals:
         roles = {member: client.get_role(row['group'], member) for member in ALLOWED_OWNER_EMAILS()}
-        if any((role != 'OWNER' for role in roles.values())):
+        if any(role != 'OWNER' for role in roles.values()):
             continuity_failures.append({'group': row['group'], 'roles': roles})
     if not dry_run and continuity_failures:
-        raise ValueError('refusing admin removal because both continuity owners are not OWNER in: ' + ', '.join((row['group'] for row in continuity_failures)))
+        raise ValueError('refusing admin removal because both continuity owners are not OWNER in: ' + ', '.join(row['group'] for row in continuity_failures))
     action_results: list[dict[str, Any]] = []
     if not dry_run:
         for row in removals:
@@ -326,8 +326,8 @@ def execute_admin_removal_except_it(client: Any, *, dry_run: bool=True, confirm_
                 verification.append({'group': row['group'], 'role': None, 'expected': admin_roles[row['group']] if row['group'] == PRESERVED_IT_GROUP() else None, 'ok': False, 'error': str(exc)[:500]})
     action_failures = [row for row in action_results if not row['ok']]
     verification_failures = [row for row in verification if not row['ok']]
-    remaining = sorted((row['group'] for row in verification if row['role'] is not None)) if not dry_run else sorted((group for group, role in admin_roles.items() if role is not None))
-    return {'status': 'blocked' if continuity_failures else 'error' if action_failures or verification_failures else 'ok', 'capability': 'pd_one_google_group_admin_removal_except_it', 'mode': 'dry-run' if dry_run else 'live', 'domain': ALLOWED_DOMAIN, 'admin_account': FIXED_ACCOUNT(), 'preserved_it_group': PRESERVED_IT_GROUP(), 'continuity_owners': list(ALLOWED_OWNER_EMAILS()), 'groups_scanned': len(groups), 'planned_removals': len(removals), 'already_absent': sum((row['action'] == 'none' for row in plan)), 'actions_succeeded': len(action_results) - len(action_failures), 'actions_failed': len(action_failures), 'verification_failures': len(verification_failures), 'admin_memberships_remaining': remaining, 'continuity_failures': continuity_failures, 'plan': plan, 'action_failures': action_failures, 'verification_failure_details': verification_failures, 'safety': {'dry_run_default': True, 'fixed_admin_only': True, 'fixed_it_exception_only': True, 'requires_two_verified_continuity_owners': True, 'arbitrary_removals_supported': False, 'credentials_returned': False}}
+    remaining = sorted(row['group'] for row in verification if row['role'] is not None) if not dry_run else sorted((group for group, role in admin_roles.items() if role is not None))
+    return {'status': 'blocked' if continuity_failures else 'error' if action_failures or verification_failures else 'ok', 'capability': 'pd_one_google_group_admin_removal_except_it', 'mode': 'dry-run' if dry_run else 'live', 'domain': ALLOWED_DOMAIN, 'admin_account': FIXED_ACCOUNT(), 'preserved_it_group': PRESERVED_IT_GROUP(), 'continuity_owners': list(ALLOWED_OWNER_EMAILS()), 'groups_scanned': len(groups), 'planned_removals': len(removals), 'already_absent': sum(row['action'] == 'none' for row in plan), 'actions_succeeded': len(action_results) - len(action_failures), 'actions_failed': len(action_failures), 'verification_failures': len(verification_failures), 'admin_memberships_remaining': remaining, 'continuity_failures': continuity_failures, 'plan': plan, 'action_failures': action_failures, 'verification_failure_details': verification_failures, 'safety': {'dry_run_default': True, 'fixed_admin_only': True, 'fixed_it_exception_only': True, 'requires_two_verified_continuity_owners': True, 'arbitrary_removals_supported': False, 'credentials_returned': False}}
 
 def run_admin_removal_except_it(*, dry_run: bool=True, confirm_live_write: str | None=None, token_loader: Any=load_gog_access_token, client_factory: Any=DirectoryApiClient, refresh_token: bool=True) -> dict[str, Any]:
     gog = find_gog()

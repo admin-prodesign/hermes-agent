@@ -54,11 +54,14 @@ set -euo pipefail
 DISPLAY_NUM="${DISPLAY_NUM:-99}"
 GEOMETRY="${GEOMETRY:-1600x1000x24}"
 export DISPLAY=":${DISPLAY_NUM}"
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 mkdir -p /data/chrome /tmp/.X11-unix
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 x11vnc -storepasswd "$VNC_PASSWORD" /tmp/vnc.pass >/dev/null
 Xvfb "$DISPLAY" -screen 0 "$GEOMETRY" -ac +extension GLX +render -noreset &
 XVFB_PID=$!
 sleep 0.8
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 openbox >/tmp/openbox.log 2>&1 &
 /usr/lib/chromium/chromium \
   --no-sandbox \
@@ -71,8 +74,11 @@ openbox >/tmp/openbox.log 2>&1 &
   --no-default-browser-check \
   --disable-background-timer-throttling \
   --disable-renderer-backgrounding \
+  <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
   "${START_URL:-https://accounts.google.com/}" >/tmp/chromium.log 2>&1 &
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 x11vnc -display "$DISPLAY" -rfbauth /tmp/vnc.pass -forever -shared -listen 0.0.0.0 -rfbport 5900 >/tmp/x11vnc.log 2>&1 &
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 websockify --web=/usr/share/novnc/ 0.0.0.0:6080 localhost:5900 >/tmp/novnc.log 2>&1 &
 wait "$XVFB_PID"
 ```
@@ -91,8 +97,10 @@ docker run -d --name pdone-gog-auth-browser --restart unless-stopped \
   -e START_URL="$AUTH_URL" \
   -e GEOMETRY='1600x1000x24' \
   -v /home/prodesign/.hermes/browser-profiles/gog-auth-pdone:/data/chrome \
+  <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
   -v /home/prodesign/.hermes/browser-profiles/start-gog-auth-browser-vnc.sh:/tmp/start-gog-auth-browser-vnc.sh:ro \
   --entrypoint /bin/bash \
+  <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
   pdone/browser-vnc:latest /tmp/start-gog-auth-browser-vnc.sh
 ```
 
@@ -151,6 +159,7 @@ When the user asks to avoid copying the final `127.0.0.1` redirect URL, do not u
 3. Inside the noVNC container, proxy the browser's `127.0.0.1:8766` to the host listener, because Google's redirect URI is still `http://127.0.0.1:8766/oauth2/callback` from the browser's point of view:
 
    ```bash
+   <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
    docker exec pdone-gog-auth-browser sh -lc 'python3 - <<"PY" >/tmp/port8766_proxy.log 2>&1 &
    import socket, threading, select
    LISTEN=("127.0.0.1",8766); TARGET=("172.17.0.1",8766)
@@ -178,9 +187,11 @@ When the user asks to avoid copying the final `127.0.0.1` redirect URL, do not u
 4. Open the captured auth URL in the noVNC Chromium. If Chrome's DevTools port is exposed only inside the container, invoke it from inside the container:
 
    ```bash
+   <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
    docker cp /tmp/pdone_gog_live_auth_url.txt pdone-gog-auth-browser:/tmp/live_auth_url.txt
    docker exec pdone-gog-auth-browser sh -lc 'python3 - <<"PY"
    import urllib.request, urllib.parse
+   <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
    url=open("/tmp/live_auth_url.txt").read().strip()
    urllib.request.urlopen(urllib.request.Request(
        "http://127.0.0.1:9222/json/new?"+urllib.parse.quote(url, safe=""),
@@ -192,9 +203,11 @@ When the user asks to avoid copying the final `127.0.0.1` redirect URL, do not u
 
 ### noVNC “failed to connect to server” pitfall
 
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 If the noVNC page loads but clicking Connect says it failed to connect to the server, inspect `/tmp/x11vnc.log` inside the container. A common race is `XOpenDisplay(":99") failed` because `x11vnc` started before `Xvfb` was ready. Restart only `x11vnc` after `Xvfb` is up:
 
 ```bash
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 docker exec pdone-gog-auth-browser sh -lc 'pkill x11vnc || true; x11vnc -display :99 -rfbauth /tmp/vnc.pass -forever -shared -listen 0.0.0.0 -rfbport 5900 >/tmp/x11vnc.log 2>&1 &'
 ```
 

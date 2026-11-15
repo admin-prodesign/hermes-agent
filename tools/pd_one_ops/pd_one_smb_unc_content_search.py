@@ -79,7 +79,7 @@ MAX_HITS = 40
 MAX_FILE_BYTES = 2000000
 TICKET_RE = re.compile('^PDAPP-\\d{8}-[A-F0-9]{8}$')
 USER_ID_RE = re.compile('^[a-z0-9]{26}$')
-RED_LINE_PATH_RE = re.compile('薪資|payroll|password|密碼|credential|\\.env|考核|evaluation|bonus|獎金|payslip', re.I)
+RED_LINE_PATH_RE = re.compile('薪資|payroll|password|密碼|credential|\\.env|考核|evaluation|bonus|獎金|payslip', re.IGNORECASE)
 
 def fail(message: str, code: int=2) -> None:
     print(json.dumps({'status': 'error', 'error': message}, ensure_ascii=False), file=sys.stderr)
@@ -102,9 +102,9 @@ def normalize_unc(raw: str) -> str:
         path = '\\\\' + server + '\\' + raw.lstrip('\\')
     rest = path[len('\\\\' + server + '\\'):]
     parts = [part for part in rest.split('\\') if part]
-    if any((part in ('.', '..') for part in parts)):
+    if any(part in ('.', '..') for part in parts):
         fail('Refusing path with . or .. components')
-    if any((':' in part for part in parts)):
+    if any(':' in part for part in parts):
         fail("Refusing path component containing ':'")
     return path
 
@@ -124,7 +124,7 @@ def standing_policy_allows(requester_user_id: str, root: str) -> bool:
         return False
     cache = POLICY_CACHE() / f'{requester_user_id}.json'
     try:
-        data = json.loads(cache.read_text(encoding='utf-8'))
+        data = json.loads(cache.read_text(encoding='utf-8-sig'))
     except Exception:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return False
@@ -138,7 +138,7 @@ def standing_policy_allows(requester_user_id: str, root: str) -> bool:
 def ntfs_authorize(requester_user_id: str, root: str) -> dict[str, Any]:
     # Same interpreter and environment: the parent already resolved config into the env.
     command = [sys.executable, str(ACL_TOOL()), '--requester-user-id', requester_user_id, '--path', root, '--action', 'authorize']
-    proc = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=False)
+    proc = subprocess.run(command, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=120, check=False)
     try:
         payload = json.loads(proc.stdout or '{}')
     except json.JSONDecodeError:
@@ -179,7 +179,7 @@ def authorize_ticket(ticket_id: str, root: str, terms: list[str]) -> dict[str, A
     grant = ticket.get('approval_grant') or {}
     caps = set(grant.get('allowed_capabilities') or [])
     if ticket.get('status') not in {'approved', 'queued', 'in_progress'}:
-        fail(f'ticket {ticket_id} is not executable: {ticket.get('status')}')
+        fail(f"ticket {ticket_id} is not executable: {ticket.get('status')}")
     if grant.get('status') != 'active' or 'smb_unc_content_search' not in caps:
         fail(f'ticket {ticket_id} grant does not include smb_unc_content_search')
     bound = ' '.join([json.dumps(ticket.get('implementation_plan') or {}, ensure_ascii=False), str(ticket.get('requested_action') or ''), json.dumps(ticket.get('bound_resources') or [], ensure_ascii=False)]).lower()
@@ -199,8 +199,8 @@ def search_payload(root: str, terms: list[str], match_mode: str, max_files: int,
 
     def ps_quote(value: str) -> str:
         return "'" + str(value).replace("'", "''") + "'"
-    term_ps = ','.join((ps_quote(term) for term in terms))
-    ext_ps = ','.join((ps_quote(ext) for ext in sorted(ALLOWED_EXTENSIONS)))
+    term_ps = ','.join(ps_quote(term) for term in terms)
+    ext_ps = ','.join(ps_quote(ext) for ext in sorted(ALLOWED_EXTENSIONS))
     return f"\n$ErrorActionPreference = 'Continue'\n$ProgressPreference = 'SilentlyContinue'\n$result = [ordered]@{{\n  ok = $true\n  command = 'search'\n  target = {ps_quote(root)}\n  match_mode = {ps_quote(match_mode)}\n  identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name\n  computer = $env:COMPUTERNAME\n  timestamp = (Get-Date).ToString('o')\n  items = @()\n  unscanned = @()\n  errors = @()\n  files_scanned = 0\n}}\nfunction Add-Err([string]$msg) {{ $result.errors += $msg; $result.ok = $false }}\n$terms = @({term_ps})\n$exts = @({ext_ps})\ntry {{\n  if (-not (Test-Path -LiteralPath {ps_quote(root)})) {{ Add-Err 'Path not found or access denied'; throw 'missing' }}\n  Add-Type -AssemblyName System.IO.Compression.FileSystem\n  $files = Get-ChildItem -LiteralPath {ps_quote(root)} -Recurse -File -Force -ErrorAction SilentlyContinue |\n    Where-Object {{ $exts -contains $_.Extension.ToLower() }} |\n    Select-Object -First {int(max_files)}\n  foreach ($f in @($files)) {{\n    $result.files_scanned++\n    $matched = @()\n    $unsearchable = $false\n    $hay = ''\n    if ($f.Length -gt {int(max_bytes)}) {{\n      $unsearchable = $true\n    }} else {{\n      try {{\n        $ext = $f.Extension.ToLower()\n        if ($ext -in @('.docx','.xlsx')) {{\n          $zip = [IO.Compression.ZipFile]::OpenRead($f.FullName)\n          try {{\n            foreach ($entry in $zip.Entries) {{\n              if ($entry.FullName -match '\\.(xml|rels)$') {{\n                $stream = $entry.Open()\n                $reader = New-Object IO.StreamReader($stream)\n                $hay += $reader.ReadToEnd()\n                $reader.Close()\n                $stream.Close()\n              }}\n            }}\n          }} finally {{ $zip.Dispose() }}\n        }} elseif ($ext -in @('.pdf','.doc','.xls')) {{\n          $unsearchable = $true\n        }} else {{\n          $hay = [IO.File]::ReadAllText($f.FullName)\n        }}\n      }} catch {{\n        $unsearchable = $true\n      }}\n      if (-not $unsearchable) {{\n        foreach ($t in $terms) {{\n          if ($hay.IndexOf($t, [StringComparison]::OrdinalIgnoreCase) -ge 0) {{ $matched += $t }}\n        }}\n      }}\n    }}\n    $hit = $false\n    if ($unsearchable) {{\n      $result.unscanned += [ordered]@{{ full_name=$f.FullName; length=$f.Length; reason='unsupported_or_too_large' }}\n    }} elseif ({ps_quote(match_mode)} -eq 'AND') {{\n      $hit = (@($matched).Count -eq @($terms).Count)\n    }} else {{\n      $hit = (@($matched).Count -gt 0)\n    }}\n    if ($hit) {{\n      $result.items += [ordered]@{{\n        full_name = $f.FullName\n        length = $f.Length\n        last_write_time = $f.LastWriteTime.ToString('o')\n        matched_terms = $matched\n      }}\n    }}\n    if (@($result.items).Count -ge {int(max_hits)}) {{ break }}\n  }}\n}} catch {{\n  if ($_.Exception.Message -ne 'missing') {{ Add-Err ($_.Exception.Message) }}\n}}\n$result.hit_count = @($result.items).Count\n$result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath '__OUT__' -Encoding UTF8\n"
 
 def search(*, root: str, terms: list[str], match_mode: str='OR', ticket_id: str | None=None, requester_user_id: str='', max_files: int=MAX_FILES, max_hits: int=MAX_HITS, runner: Any | None=None, ntfs_fn: Callable[[str, str], dict[str, Any]] | None=None) -> dict[str, Any]:
@@ -210,7 +210,7 @@ def search(*, root: str, terms: list[str], match_mode: str='OR', ticket_id: str 
     cleaned = [str(term).strip() for term in terms if str(term).strip()]
     if not cleaned or len(cleaned) > 8:
         fail('provide 1-8 search terms')
-    if any((len(term) > 80 for term in cleaned)):
+    if any(len(term) > 80 for term in cleaned):
         fail('search terms must be <= 80 characters')
     auth = authorize_named_root(root=root, requester_user_id=requester_user_id, ticket_id=ticket_id or '', terms=cleaned, ntfs_fn=ntfs_fn)
     root = auth['root']

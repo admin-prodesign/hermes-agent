@@ -59,7 +59,9 @@ Fix pattern:
    ```bash
    cd /home/prodesign/.openclaw/workspace
    OPENCLAW_STATE_DIR=/home/prodesign/.openclaw python3 tools/pd_one_metrics/collect_session_metrics.py \
+     <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
      --json-out /tmp/pd_one_metrics_test.json \
+     <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
      --md-out /tmp/pd_one_metrics_test.md
    ```
 

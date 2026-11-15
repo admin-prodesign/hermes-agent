@@ -10,7 +10,7 @@ import logging
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Callable
 
@@ -43,7 +43,7 @@ def emit(payload: dict[str, Any]) -> None:
 
 def _reexec_into_appsheet_venv() -> None:
     try:
-        import browser_cookie3  # noqa: F401
+        import browser_cookie3
         return
     except ImportError:
         pass
@@ -265,7 +265,7 @@ class EditorClient:
 
 def load_patch_envelope(path: Path) -> dict[str, Any]:
     try:
-        envelope = json.loads(path.read_text(encoding="utf-8"))
+        envelope = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         fail(f"patch envelope is not readable JSON: {exc}")
     if not isinstance(envelope, dict):
@@ -289,7 +289,7 @@ def load_patch_envelope(path: Path) -> dict[str, Any]:
 
 def load_proposed_app(path: Path) -> dict[str, Any]:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         fail(f"proposed app JSON is not readable: {exc}")
     if not isinstance(data, dict):
@@ -326,7 +326,7 @@ def authorize_ticket(ticket_id: str, *, patch_id: str, app_id: str) -> dict[str,
 
 
 def write_snapshot(app_id: str, patch_id: str, label: str, app: dict[str, Any]) -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = definitions_root(app_id) / f"{stamp}-{label}-{patch_id}.json"
     path.write_text(json.dumps(app, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     return str(path)
@@ -395,7 +395,7 @@ def apply_definition(
         )
     )
     client = factory()
-    before_payload, before_app = client.load_app("")
+    _before_payload, before_app = client.load_app("")
     before_sha = app_json_sha256(before_app)
     plan = {
         "patch_id": envelope["patch_id"],
@@ -462,7 +462,7 @@ def apply_definition(
         if not verified:
             rollback_path = write_snapshot(envelope["app_id"], envelope["patch_id"], "rollback-source", after_app)
             client.save_app(before_app)
-            rollback_payload, rollback_app = client.load_app("")
+            _rollback_payload, rollback_app = client.load_app("")
             execution["rollback"] = {
                 "attempted": True,
                 "restored_sha256": app_json_sha256(rollback_app),
@@ -484,7 +484,7 @@ def apply_definition(
             execution["latest_wrapper_after_promote"] = wrapper_flags(latest_payload)
         receipt["writes"] = True
         receipt["execution"] = execution
-        ops_receipt = receipts_root() / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-apply-{envelope['patch_id']}.json"
+        ops_receipt = receipts_root() / f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-apply-{envelope['patch_id']}.json"
         ops_receipt.write_text(json.dumps(receipt, ensure_ascii=False, indent=2), encoding="utf-8")
         receipt["receipt_path"] = str(ops_receipt)
         return receipt
@@ -492,7 +492,7 @@ def apply_definition(
         logging.getLogger("pd_one_ops").exception("appsheet definition apply failed")
         try:
             client.save_app(before_app)
-            rollback_payload, rollback_app = client.load_app("")
+            _rollback_payload, rollback_app = client.load_app("")
             receipt["rollback"] = {
                 "attempted": True,
                 "restored_sha256": app_json_sha256(rollback_app),

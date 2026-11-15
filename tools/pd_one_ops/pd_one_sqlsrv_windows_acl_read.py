@@ -90,8 +90,8 @@ def _sqlsrv():
     sqlsrv = load_external_module('sqlsrv_readonly', 'sqlsrv_readonly')
     return sqlsrv
 DOMAIN = 'JSPD'
-RED_LINE_PATH_RE = re.compile('薪資|payroll|password|密碼|credential|\\.env|考核|evaluation|bonus|獎金|payslip', re.I)
-READ_RIGHTS_RE = re.compile('Read|ReadAndExecute|Modify|FullControl|ListDirectory|GenericRead', re.I)
+RED_LINE_PATH_RE = re.compile('薪資|payroll|password|密碼|credential|\\.env|考核|evaluation|bonus|獎金|payslip', re.IGNORECASE)
+READ_RIGHTS_RE = re.compile('Read|ReadAndExecute|Modify|FullControl|ListDirectory|GenericRead', re.IGNORECASE)
 
 def fail(message: str, extra: dict[str, Any] | None=None, code: int=2) -> None:
     payload = {'ok': False, 'authorized': False, 'error': message}
@@ -101,7 +101,7 @@ def fail(message: str, extra: dict[str, Any] | None=None, code: int=2) -> None:
     raise SystemExit(code)
 
 def load_user(user_id: str) -> dict[str, Any]:
-    data = json.loads(USERS_PATH().read_text(encoding='utf-8'))
+    data = json.loads(USERS_PATH().read_text(encoding='utf-8-sig'))
     rec = (data.get('users') or {}).get(user_id)
     if not isinstance(rec, dict):
         fail('requester Mattermost id not in canonical policy', {'requester_user_id': user_id})
@@ -140,7 +140,7 @@ def ps_quote(s: str) -> str:
     return "'" + s.replace("'", "''") + "'"
 
 def authorize_payload(path: str, emails: list[str], display: str) -> str:
-    email_ps = ','.join((ps_quote(e) for e in emails)) or ps_quote('')
+    email_ps = ','.join(ps_quote(e) for e in emails) or ps_quote('')
     _display_ps = ps_quote(display)
     path_ps = ps_quote(path)
     return f"\n$ErrorActionPreference = 'Continue'\n$ProgressPreference = 'SilentlyContinue'\n$result = [ordered]@{{\n  ok = $true\n  path = {path_ps}\n  errors = @()\n  sam = $null\n  display = $null\n  mail = $null\n  identities = @()\n  matched_aces = @()\n  authorized = $false\n}}\nfunction Add-Err([string]$msg) {{ $result.errors += $msg; $result.ok = $false }}\n$emails = @({email_ps})\ntry {{\n  $root = New-Object DirectoryServices.DirectoryEntry\n  $or = ($emails | ForEach-Object {{ '(mail={{0}})' -f $_ }}) -join ''\n  if ($or) {{\n    $filter = '(|' + $or + ')'\n    $searcher = New-Object DirectoryServices.DirectorySearcher($root, $filter)\n    $searcher.PropertiesToLoad.AddRange(@('sAMAccountName','mail','displayName','memberOf','userAccountControl'))\n    $hits = @($searcher.FindAll())\n    if ($hits.Count -ne 1) {{\n      Add-Err ('AD mail lookup hit_count=' + $hits.Count)\n    }} else {{\n      $hit = $hits[0]\n      $uac = 0\n      if ($hit.Properties['useraccountcontrol'].Count -gt 0) {{ $uac = [int]$hit.Properties['useraccountcontrol'][0] }}\n      if ($uac -band 2) {{ Add-Err 'AD account disabled' }}\n      $result.sam = [string]$hit.Properties['samaccountname'][0]\n      $result.mail = $(if ($hit.Properties['mail'].Count) {{ [string]$hit.Properties['mail'][0] }} else {{ $null }})\n      $result.display = $(if ($hit.Properties['displayname'].Count) {{ [string]$hit.Properties['displayname'][0] }} else {{ $null }})\n      $idents = New-Object System.Collections.Generic.List[string]\n      [void]$idents.Add('JSPD\\' + $result.sam)\n      [void]$idents.Add('JSPD\\Domain Users')\n      [void]$idents.Add('NT AUTHORITY\\Authenticated Users')\n      [void]$idents.Add('Everyone')\n      foreach ($g in $hit.Properties['memberof']) {{\n        $dn = [string]$g\n        if ($dn -match '^CN=([^,]+)') {{ [void]$idents.Add('JSPD\\' + $Matches[1]) }}\n      }}\n      $result.identities = @($idents)\n    }}\n  }} else {{ Add-Err 'no company email for AD lookup' }}\n}} catch {{ Add-Err ('AD: ' + $_.Exception.Message) }}\n\ntry {{\n  $p = {path_ps}\n  if (-not (Test-Path -LiteralPath $p)) {{ Add-Err ('Path not found or helper cannot see it: ' + $p) }}\n  elseif ($result.identities.Count -gt 0) {{\n    $acl = Get-Acl -LiteralPath $p\n    $allow = $false\n    $deny = $false\n    $set = @{{}}\n    foreach ($id in $result.identities) {{ $set[$id.ToLower()] = $true }}\n    foreach ($ace in $acl.Access) {{\n      $id = $ace.IdentityReference.Value\n      if (-not $set.ContainsKey($id.ToLower())) {{ continue }}\n      $rights = $ace.FileSystemRights.ToString()\n      $row = [ordered]@{{ identity=$id; type=$ace.AccessControlType.ToString(); rights=$rights; inherited=[bool]$ace.IsInherited }}\n      $result.matched_aces += $row\n      $readish = $rights -match 'Read|ReadAndExecute|Modify|FullControl|ListDirectory|GenericRead'\n      if ($readish -and $ace.AccessControlType.ToString() -eq 'Deny') {{ $deny = $true }}\n      if ($readish -and $ace.AccessControlType.ToString() -eq 'Allow') {{ $allow = $true }}\n    }}\n    $result.authorized = [bool]($allow -and -not $deny)\n    $result.owner = $acl.Owner\n  }}\n}} catch {{ Add-Err ('ACL: ' + $_.Exception.Message) }}\n$result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath '__OUT__' -Encoding UTF8\n"

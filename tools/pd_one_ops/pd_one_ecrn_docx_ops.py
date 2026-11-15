@@ -62,7 +62,7 @@ def _is_within(path: Path, root: Path) -> bool:
 
 def _require_path(raw: str | Path, roots: tuple[Path, ...], label: str) -> Path:
     path = Path(raw).expanduser().resolve(strict=False)
-    if not any((_is_within(path, root) for root in roots)):
+    if not any(_is_within(path, root) for root in roots):
         raise ValueError(f'{label} is outside approved ECRN document roots: {path}')
     if not path.is_file():
         raise FileNotFoundError(f'{label} not found: {path}')
@@ -81,7 +81,7 @@ def _require_sha256(value: str | None) -> str | None:
     if value is None or not str(value).strip():
         return None
     digest = str(value).strip().lower()
-    if len(digest) != 64 or any((ch not in '0123456789abcdef' for ch in digest)):
+    if len(digest) != 64 or any(ch not in '0123456789abcdef' for ch in digest):
         raise ValueError('source_sha256 must be a 64-character hexadecimal SHA-256 digest')
     return digest
 
@@ -106,7 +106,7 @@ def _iter_paragraphs(doc: Any) -> Iterator[tuple[Any, dict[str, Any]]]:
 
     def already_seen(paragraph: Any) -> bool:
         element = paragraph._p
-        if any((element is previous for previous in seen)):
+        if any(element is previous for previous in seen):
             return True
         seen.append(element)
         return False
@@ -209,7 +209,7 @@ def _apply_minimal_run_patch(paragraph: Any, old_text: str, new_text: str, run_s
         _replace_global_span(paragraph, global_start + old_start, global_start + old_end, new_text[new_start:new_end])
 
 def _base_receipt(*, action: str, source: Path, source_sha256: str, old_text: str, new_text: str, matches: list[dict[str, Any]]) -> dict[str, Any]:
-    occurrence_count = sum((int(match['occurrences']) for match in matches))
+    occurrence_count = sum(int(match['occurrences']) for match in matches)
     patchable = len(matches) == 1 and occurrence_count == 1 and bool(matches[0].get('patchable_without_rebuilding_runs'))
     receipt: dict[str, Any] = {'status': 'ok' if patchable else 'blocked', 'capability': 'pd_one_ecrn_docx_unique_text_patch', 'action': action, 'input': str(source), 'source_sha256': source_sha256, 'requested_old_text_sha256': hashlib.sha256(old_text.encode('utf-8')).hexdigest(), 'requested_new_text_sha256': hashlib.sha256(new_text.encode('utf-8')).hexdigest(), 'match_count': len(matches), 'occurrence_count': occurrence_count, 'matches': matches, 'safety': {'admin_only': True, 'read_only': action == 'inspect', 'source_never_overwritten': True, 'source_system_writes_forbidden': True, 'external_delivery': False, 'arbitrary_shell_forbidden': True, 'unique_visible_match_required': True, 'run_formatting_rebuild_forbidden': True, 'source_approval_or_signature_preservation_not_claimed': True, 'reapproval_required_before_delivery': True}}
     if not matches:
@@ -252,7 +252,7 @@ def inspect_or_stage(*, action: str, input_path: str | Path, old_text: str, new_
         if output_path is None:
             raise ValueError('output_path is required for action=stage')
         output = Path(output_path).expanduser().resolve(strict=False)
-        if not any((_is_within(output, root) for root in OUTPUT_ROOTS())):
+        if not any(_is_within(output, root) for root in OUTPUT_ROOTS()):
             raise ValueError(f'output is outside approved ECRN artifact roots: {output}')
         if output.suffix.lower() != '.docx':
             raise ValueError('output must end with .docx')
@@ -272,7 +272,7 @@ def inspect_or_stage(*, action: str, input_path: str | Path, old_text: str, new_
             shutil.copy2(source, temp_path)
             staged_doc = _load_document(temp_path)
             staged_matches = _find_matches(staged_doc, old_text)
-            if len(staged_matches) != 1 or sum((int(match['occurrences']) for match in staged_matches)) != 1:
+            if len(staged_matches) != 1 or sum(int(match['occurrences']) for match in staged_matches) != 1:
                 raise RuntimeError('source changed between inspection and staging; unique match no longer holds')
             match = staged_matches[0]
             run_span = match.get('run_span') or {}
@@ -292,16 +292,16 @@ def inspect_or_stage(*, action: str, input_path: str | Path, old_text: str, new_
             staged_doc.save(str(temp_path))
             gate_result = _run_no_corruption_gate(temp_path)
             if gate_result['status'] != 'ok':
-                raise RuntimeError(f'Office no-corruption gate failed: {gate_result.get('detail', 'unknown error')}')
+                raise RuntimeError(f"Office no-corruption gate failed: {gate_result.get('detail', 'unknown error')}")
             os.replace(temp_path, output)
             temp_path = None
             readback_doc = _load_document(output)
             readback_matches_old = _find_matches(readback_doc, old_text)
             readback_matches_new = _find_matches(readback_doc, new_text)
             output_sha256 = _sha256(output)
-            if sum((int(match['occurrences']) for match in readback_matches_old)) != 0:
+            if sum(int(match['occurrences']) for match in readback_matches_old) != 0:
                 raise RuntimeError('readback still contains old text')
-            if sum((int(match['occurrences']) for match in readback_matches_new)) != 1:
+            if sum(int(match['occurrences']) for match in readback_matches_new) != 1:
                 raise RuntimeError('readback does not contain exactly one replacement text')
             receipt.update({'status': 'ok', 'output': str(output), 'output_sha256': output_sha256, 'changed': True, 'replacement': {'old_text_sha256': hashlib.sha256(old_text.encode('utf-8')).hexdigest(), 'new_text_sha256': hashlib.sha256(new_text.encode('utf-8')).hexdigest()}, 'readback': {'old_occurrence_count': 0, 'new_occurrence_count': 1, 'source_sha256_unchanged': _sha256(source) == actual_source_sha256}, 'office_no_corruption_gate': gate_result, 'approval_note': 'This is a staged revised artifact only; any electronic approval/signature is not carried forward as valid. Re-approval is required before any delivery or posting.'})
             return _PdReturn(receipt)
@@ -366,7 +366,7 @@ def inspect_or_stage_many(*, action: str, input_path: str | Path, replacements: 
         all_patchable = True
         for old_text, new_text in pairs:
             matches = _find_matches(doc, old_text)
-            occurrence_count = sum((int(match['occurrences']) for match in matches))
+            occurrence_count = sum(int(match['occurrences']) for match in matches)
             patchable = len(matches) == 1 and occurrence_count == 1 and bool(matches[0].get('patchable_without_rebuilding_runs'))
             all_patchable = all_patchable and patchable
             checks.append({'old_text_sha256': hashlib.sha256(old_text.encode('utf-8')).hexdigest(), 'new_text_sha256': hashlib.sha256(new_text.encode('utf-8')).hexdigest(), 'match_count': len(matches), 'occurrence_count': occurrence_count, 'patchable': patchable, 'locations': [match['location'] for match in matches[:2]]})
@@ -379,7 +379,7 @@ def inspect_or_stage_many(*, action: str, input_path: str | Path, replacements: 
         if output_path is None:
             raise ValueError('output_path is required for action=stage')
         output = Path(output_path).expanduser().resolve(strict=False)
-        if not any((_is_within(output, root) for root in OUTPUT_ROOTS())):
+        if not any(_is_within(output, root) for root in OUTPUT_ROOTS()):
             raise ValueError(f'output is outside approved staged artifact roots: {output}')
         if output.suffix.lower() != '.docx' or output == source:
             raise ValueError('output must be a separate .docx under an approved staged artifact root')
@@ -398,7 +398,7 @@ def inspect_or_stage_many(*, action: str, input_path: str | Path, replacements: 
             staged_doc = _load_document(temp_path)
             for old_text, new_text in pairs:
                 current_matches = _find_matches(staged_doc, old_text)
-                if len(current_matches) != 1 or sum((int(match['occurrences']) for match in current_matches)) != 1:
+                if len(current_matches) != 1 or sum(int(match['occurrences']) for match in current_matches) != 1:
                     raise RuntimeError('replacement set changed during staging; unique match no longer holds')
                 match = current_matches[0]
                 run_span = match.get('run_span')
@@ -411,14 +411,14 @@ def inspect_or_stage_many(*, action: str, input_path: str | Path, replacements: 
             staged_doc.save(str(temp_path))
             gate_result = _run_no_corruption_gate(temp_path)
             if gate_result['status'] != 'ok':
-                raise RuntimeError(f'Office no-corruption gate failed: {gate_result.get('detail', 'unknown error')}')
+                raise RuntimeError(f"Office no-corruption gate failed: {gate_result.get('detail', 'unknown error')}")
             os.replace(temp_path, output)
             temp_path = None
             readback_doc = _load_document(output)
             readback = []
             for old_text, new_text in pairs:
-                old_count = sum((int(match['occurrences']) for match in _find_matches(readback_doc, old_text)))
-                new_count = sum((int(match['occurrences']) for match in _find_matches(readback_doc, new_text)))
+                old_count = sum(int(match['occurrences']) for match in _find_matches(readback_doc, old_text))
+                new_count = sum(int(match['occurrences']) for match in _find_matches(readback_doc, new_text))
                 if old_count != 0 or new_count != 1:
                     raise RuntimeError('staged artifact replacement readback failed')
                 readback.append({'old_occurrence_count': old_count, 'new_occurrence_count': new_count})
@@ -437,7 +437,7 @@ def inspect_or_stage_many(*, action: str, input_path: str | Path, replacements: 
 def _run_no_corruption_gate(path: Path) -> dict[str, Any]:
     if not GATE_SCRIPT().is_file():
         return {'status': 'blocked', 'detail': f'gate script not found: {GATE_SCRIPT()}'}
-    proc = subprocess.run([sys.executable, str(GATE_SCRIPT()), str(path)], text=True, capture_output=True, shell=False, timeout=180)
+    proc = subprocess.run([sys.executable, str(GATE_SCRIPT()), str(path)], check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=180)
     detail = (proc.stderr.strip() or proc.stdout.strip())[-1600:]
     return {'status': 'ok' if proc.returncode == 0 else 'error', 'returncode': proc.returncode, 'detail': detail}
 __all__ = ['inspect_or_stage', 'inspect_or_stage_many']

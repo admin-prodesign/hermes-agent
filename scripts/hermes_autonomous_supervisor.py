@@ -21,7 +21,7 @@ import socket
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, UTC
 from pathlib import Path
 from typing import Any, Callable
 
@@ -60,8 +60,8 @@ YAMMER_SHARD_CACHE = YAMMER_ROOT / 'archive/search/shard-cache'
 YAMMER_ARCHIVE_ACTIVE_JOB_IDS = {'3a33a3e609f4', '3dc75ca135d1', '58681c72baff'}
 LOW_ROOT_FREE_GB_WARNING = 8.0
 LOW_ROOT_FREE_GB_CRITICAL = 4.0
-BRIDGE_RE = re.compile(r'(pd_neo_failure_to_hermes|pd_neo_cron_failure_alert|pd_one_failure_to_hermes|pd_one_cron_failure_alert|emit_pd_one_event|hermes_guarded_autorepair)', re.I)
-HUMAN_ALERT_RE = re.compile(r'(discord|telegram|mattermost|send_message|notify|alert|warning|WARN|failure|failed|error)', re.I)
+BRIDGE_RE = re.compile(r'(pd_neo_failure_to_hermes|pd_neo_cron_failure_alert|pd_one_failure_to_hermes|pd_one_cron_failure_alert|emit_pd_one_event|hermes_guarded_autorepair)', re.IGNORECASE)
+HUMAN_ALERT_RE = re.compile(r'(discord|telegram|mattermost|send_message|notify|alert|warning|WARN|failure|failed|error)', re.IGNORECASE)
 EXEMPT_SCRIPT_NAMES = {
     # Queue workers are the guarded-triage/fallback path itself; their source
     # naturally mentions alert/failure terms but they should not be wrapped by
@@ -98,7 +98,7 @@ class Finding:
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def iso_now() -> str:
@@ -109,7 +109,7 @@ def parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        return datetime.fromisoformat(str(value))
     except Exception:
         return None
 
@@ -118,7 +118,7 @@ def load_json(path: Path, default: Any) -> Any:
     try:
         if not path.exists():
             return default
-        return json.loads(path.read_text(encoding='utf-8'))
+        return json.loads(path.read_text(encoding='utf-8-sig'))
     except Exception as exc:
         return {'__error__': f'{path}: {exc}'}
 
@@ -173,7 +173,7 @@ TRANSIENT_ERROR_RE = re.compile(
     r'TimeoutExpired|timed out after \d+ seconds|timed out after \d+s|'
     r'UNAVAILABLE|DEADLINE_EXCEEDED'
     r')',
-    re.I,
+    re.IGNORECASE,
 )
 IMMEDIATE_ESCALATION_RE = re.compile(
     r'('
@@ -189,9 +189,9 @@ IMMEDIATE_ESCALATION_RE = re.compile(
     r'readback (failed|mismatch)|'
     r'integrity (error|fail)'
     r')',
-    re.I,
+    re.IGNORECASE,
 )
-SCRIPT_TIMEOUT_RE = re.compile(r'Script timed out after (\d+)s:\s+(.+)', re.I | re.S)
+SCRIPT_TIMEOUT_RE = re.compile(r'Script timed out after (\d+)s:\s+(.+)', re.IGNORECASE | re.DOTALL)
 WRAPPER_GATE_TIMEOUT_RE = re.compile(r'GATE_TIMEOUT_SECONDS="\$\{[^:}]+:-(?P<seconds>\d+)\}"')
 DIRECT_TIMEOUT_RE = re.compile(r'\btimeout\b[^\n]*(?P<seconds>\d+)s')
 
@@ -199,7 +199,7 @@ LEGACY_CRONTAB_RUNNER_JOB_ID = '31c67e36016b'
 LEGACY_CRONTAB_RUNNER_SCRIPT = 'pd_one_legacy_crontab_hermes_runner.py'
 LEGACY_CRONTAB_TIMEOUT_RE = re.compile(
     r'Script timed out after \d+s: .*pd_one_legacy_crontab_hermes_runner\.py',
-    re.I,
+    re.IGNORECASE,
 )
 
 
@@ -285,8 +285,8 @@ def parse_systemd_timestamp(value: str | None) -> datetime | None:
         try:
             dt = datetime.strptime(text, fmt)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.astimezone(timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
+            return dt.astimezone(UTC)
         except Exception:
             continue
     return parse_dt(text)
@@ -372,7 +372,7 @@ def config_path_for_scope(scope: str) -> Path:
 
 def cron_script_timeout_from_config(config_path: Path) -> int | None:
     try:
-        text = config_path.read_text(encoding='utf-8')
+        text = config_path.read_text(encoding='utf-8-sig')
     except Exception:
         return None
     in_cron = False
@@ -390,7 +390,7 @@ def cron_script_timeout_from_config(config_path: Path) -> int | None:
 
 
 def set_cron_script_timeout(config_path: Path, seconds: int) -> bool:
-    text = config_path.read_text(encoding='utf-8')
+    text = config_path.read_text(encoding='utf-8-sig')
     lines = text.splitlines()
     out: list[str] = []
     in_cron = False
@@ -426,7 +426,7 @@ def desired_timeout_for_script(path: Path | None, observed_timeout: int) -> int 
     if not path or not path.exists() or path.suffix.lower() not in {'.py', '.sh', '.bash'}:
         return None
     try:
-        text = path.read_text(errors='ignore')[:20000]
+        text = path.read_text(encoding="utf-8-sig", errors='ignore')[:20000]
     except Exception:
         return None
     candidates = [observed_timeout + 60]
@@ -482,7 +482,7 @@ def ensure_registry(path: Path) -> dict[str, Any]:
 
 def classify_job(job: dict[str, Any], script_text: str) -> tuple[str, str, bool]:
     blob = ' '.join(str(job.get(k) or '') for k in ('name', 'prompt', 'script', 'deliver')) + '\n' + script_text[:20000]
-    touches_external = bool(re.search(r'(gog|google|drive|sheet|appsheet|mattermost|discord|telegram|line|openclaw message|send_message|curl\s+https?://)', blob, re.I))
+    touches_external = bool(re.search(r'(gog|google|drive|sheet|appsheet|mattermost|discord|telegram|line|openclaw message|send_message|curl\s+https?://)', blob, re.IGNORECASE))
     if touches_external:
         return 'approval-required', 'Auto-registered conservative default: job appears to touch external systems or people; repairs/replays need approval until a narrow safe repair is defined.', True
     return 'do-not-autorepair', 'Advisory/local job or unclear side effects; alert/remediation-plan only until a narrow safe repair is defined.', False
@@ -503,7 +503,7 @@ def self_register_cron(scope: str, cron_path: Path, registry_path: Path, finding
         script_text = ''
         if script_path and script_path.exists() and script_path.suffix.lower() in {'.py', '.sh', '.bash'}:
             try:
-                script_text = script_path.read_text(errors='ignore')
+                script_text = script_path.read_text(encoding="utf-8-sig", errors='ignore')
             except Exception:
                 script_text = ''
         classification, reason, touches_external = classify_job(job, script_text)
@@ -609,7 +609,7 @@ def audit_cron_receipts(scope: str, cron_path: Path, findings: list[Finding], su
                 continue
             elif path and path.suffix.lower() in {'.py', '.sh', '.bash'}:
                 try:
-                    text = path.read_text(errors='ignore')
+                    text = path.read_text(encoding="utf-8-sig", errors='ignore')
                 except Exception:
                     text = ''
                 human_visible = str(job.get('deliver') or '') not in {'', 'local'} or bool(HUMAN_ALERT_RE.search(text))
@@ -794,6 +794,7 @@ def run_safe_temp_cleanup_if_needed(findings: list[Finding], summary: dict[str, 
     if not blocker or not apply:
         return 0
     commands = [
+        # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
         ['find', '/tmp', '-xdev', '-mindepth', '1', '-mtime', '+1', '!', '-name', '.X11-unix', '!', '-name', '.ICE-unix', '-exec', 'rm', '-rf', '--', '{}', '+'],
         ['find', '/var/tmp/openclaw-compile-cache', '-xdev', '-mindepth', '1', '-mtime', '+1', '-exec', 'rm', '-rf', '--', '{}', '+'],
     ]
@@ -801,7 +802,7 @@ def run_safe_temp_cleanup_if_needed(findings: list[Finding], summary: dict[str, 
     for cmd in commands:
         if cmd[1].startswith('/var/tmp') and not Path(cmd[1]).exists():
             continue
-        subprocess.run(cmd, text=True, capture_output=True, timeout=180, check=False)
+        subprocess.run(cmd, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=180, check=False)
         ran += 1
     summary['safe_temp_cleanup_commands_ran'] = ran
     return ran
@@ -821,19 +822,16 @@ def finding_signature(f: Finding) -> str:
 
 def filter_repeated_findings(findings: list[Finding], cooldown_hours: float, state_path: Path = SUPERVISOR_STATE) -> list[Finding]:
     """Return findings that are new or past cooldown; persist last-seen state."""
-    now = utcnow()
     state = load_json(state_path, {})
     if not isinstance(state, dict):
         state = {}
     seen = state.get('findings') if isinstance(state.get('findings'), dict) else {}
     current: dict[str, Any] = {}
     emit: list[Finding] = []
-    cooldown = timedelta(hours=cooldown_hours)
     for f in findings:
         sig = finding_signature(f)
         old = seen.get(sig) if isinstance(seen.get(sig), dict) else {}
         first_seen = old.get('first_seen_at') or iso_now()
-        last_emitted = parse_dt(old.get('last_emitted_at'))
         # Quiet mode (2026-10-24): emission decided below by findings-set fingerprint, not cooldown.
         should_emit = False
         emit.append(f)
@@ -1060,7 +1058,7 @@ def escalate_deadman(home: Path, *, correlation: str, summary: str, dry_run: boo
         print(json.dumps({'deadman_escalation': event, 'cmd': cmd}, indent=2))
         return True
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return False
     return proc.returncode == 0
@@ -1069,7 +1067,7 @@ def escalate_deadman(home: Path, *, correlation: str, summary: str, dry_run: boo
 def is_correlation_acked(home: Path, correlation: str) -> bool:
     cmd = _router_cmd(home, 'is-acked', '--correlation-key', correlation)
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return False
     if proc.returncode != 0:
@@ -1156,7 +1154,7 @@ def maybe_notify_neo(
             started = deadman.get('started_at') or pushed.get('last_post_at')
             if started:
                 try:
-                    start_dt = datetime.fromisoformat(str(started).replace('Z', '+00:00'))
+                    start_dt = datetime.fromisoformat(str(started))
                 except ValueError:
                     start_dt = now
                 if (now - start_dt).total_seconds() >= DEADMAN_SECONDS:

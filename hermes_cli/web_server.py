@@ -1463,7 +1463,7 @@ def _start_server_runtime(
         from hermes_cli.nous_auth_keepalive import start_nous_auth_keepalive
 
         start_nous_auth_keepalive()
-    except Exception as exc:
+    except Exception as exc:  # health: allow BLE001 -- optional keepalive must not block dashboard startup
         _log.debug("Nous auth keepalive did not start: %s", exc)
 
     _configure_auth_gate(host, allow_public, ssh_session_token, ssh_owner_nonce)
@@ -1485,7 +1485,7 @@ def _start_server_runtime(
         from tui_gateway.server import install_exit_flush_signal_handlers
 
         install_exit_flush_signal_handlers()
-    except Exception as exc:
+    except Exception as exc:  # health: allow BLE001 -- missing TUI flush handlers must not block the dashboard
         _log.debug("exit-flush signal handlers not installed: %s", exc)
 
     # #93608: uvicorn's bind_socket() would exit 1 with a bare ERROR line,
@@ -1509,7 +1509,7 @@ def _start_server_runtime(
         from tui_gateway.launch_profile_policy import activate_multi_profile_hosting_eagerly
 
         activate_multi_profile_hosting_eagerly()
-    except Exception:
+    except Exception:  # health: allow BLE001 -- activation failure is logged and the dashboard still serves
         _log.warning("eager multi-profile activation failed", exc_info=True)
 
     async def _serve():

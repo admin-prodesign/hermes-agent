@@ -22,22 +22,21 @@ _SEP_CELL_RE = re.compile(r":?-{3,}:?")
 HR_RE = re.compile(r"(?m)^\s*-{3,}\s*$")
 FENCE_LINE_RE = re.compile(r"^\s*```")
 
-Block = Tuple[int, int, str]  # start, end, kind
+Block = tuple[int, int, str]  # start, end, kind
 
 
-def split_mattermost_message(content: str, max_length: int = 4000) -> List[str]:
+def split_mattermost_message(content: str, max_length: int = 4000) -> list[str]:
     """Split ``content`` into Mattermost posts that stay within ``max_length``."""
     if content is None:
         return [""]
-    if max_length < 1:
-        max_length = 1
+    max_length = max(max_length, 1)
     content = _isolate_gfm_tables(content)
     if len(content) <= max_length:
         return [content]
 
     budget = max(1, max_length - INDICATOR_RESERVE)
     sections = _language_sections(content)
-    chunks: List[str] = []
+    chunks: list[str] = []
     if sections and (len(sections) > 1 or len(sections[0]) <= budget):
         for section in sections:
             chunks.extend(_pack_markdown(section, budget))
@@ -67,7 +66,7 @@ def _with_continuation_marker(chunk: str, index: int, total: int) -> str:
     return f"{body}\n({index}/{total})"
 
 
-def _language_sections(content: str) -> List[str] | None:
+def _language_sections(content: str) -> list[str] | None:
     """Return ordered language sections when a clean bilingual cut exists."""
     hr_parts = [part.strip("\n") for part in HR_RE.split(content)]
     hr_parts = [part for part in hr_parts if part.strip()]
@@ -78,7 +77,7 @@ def _language_sections(content: str) -> List[str] | None:
     if not blocks:
         return None
 
-    labels: List[str] = []
+    labels: list[str] = []
     for start, end, kind in blocks:
         labels.append(_classify_text(content[start:end], kind))
 
@@ -123,7 +122,7 @@ def _distinct_language_pair(left: str, right: str) -> bool:
 
 def _prose_for_classify(text: str) -> str:
     """Strip fenced code and GFM tables so samples do not flip language."""
-    pieces: List[str] = []
+    pieces: list[str] = []
     for start, end, kind in _parse_blocks(text):
         if kind in {"code", "table"}:
             continue
@@ -149,17 +148,17 @@ def _classify_text(text: str, kind: str) -> str:
     return "mixed"
 
 
-def _parse_blocks(text: str) -> List[Block]:
+def _parse_blocks(text: str) -> list[Block]:
     if not text:
         return []
     lines = text.splitlines(keepends=True)
-    offsets: List[int] = []
+    offsets: list[int] = []
     pos = 0
     for line in lines:
         offsets.append(pos)
         pos += len(line)
 
-    blocks: List[Block] = []
+    blocks: list[Block] = []
     index = 0
     while index < len(lines):
         line = lines[index]
@@ -258,7 +257,7 @@ def _isolate_gfm_tables(text: str) -> str:
     if not any(kind == "table" for _start, _end, kind in blocks):
         return text
 
-    pieces: List[str] = []
+    pieces: list[str] = []
     # The trailing blank line after a table is also the leading blank of the
     # next block. Drop that overlap so a second pass does not grow the text.
     pending_blank = False
@@ -290,9 +289,9 @@ def _isolate_gfm_tables(text: str) -> str:
     return isolated
 
 
-def _join_markdown_parts(parts: Sequence[Tuple[str, str]]) -> str:
+def _join_markdown_parts(parts: Sequence[tuple[str, str]]) -> str:
     """Join blocks. A GFM table keeps a blank line on either side."""
-    rendered: List[str] = []
+    rendered: list[str] = []
     prev_kind = ""
     for kind, text in parts:
         body = text.strip("\n")
@@ -307,7 +306,7 @@ def _join_markdown_parts(parts: Sequence[Tuple[str, str]]) -> str:
     return "".join(rendered)
 
 
-def _pack_markdown(text: str, budget: int) -> List[str]:
+def _pack_markdown(text: str, budget: int) -> list[str]:
     text = _isolate_gfm_tables(text.strip("\n"))
     if not text:
         return []
@@ -315,9 +314,9 @@ def _pack_markdown(text: str, budget: int) -> List[str]:
         return [text]
 
     blocks = _parse_blocks(text)
-    chunks: List[str] = []
+    chunks: list[str] = []
     cursor = 0
-    current_parts: List[Tuple[str, str]] = []
+    current_parts: list[tuple[str, str]] = []
     current_len = 0
 
     def flush() -> None:
@@ -353,7 +352,7 @@ def _pack_markdown(text: str, budget: int) -> List[str]:
     return [chunk for chunk in chunks if chunk]
 
 
-def _split_oversize(text: str, kind: str, budget: int) -> List[str]:
+def _split_oversize(text: str, kind: str, budget: int) -> list[str]:
     if kind == "code":
         return _split_code_block(text, budget)
     if kind == "table":
@@ -361,14 +360,14 @@ def _split_oversize(text: str, kind: str, budget: int) -> List[str]:
     return _split_prose(text, budget)
 
 
-def _split_code_block(text: str, budget: int) -> List[str]:
+def _split_code_block(text: str, budget: int) -> list[str]:
     lines = text.split("\n")
     open_fence = lines[0] if lines and FENCE_LINE_RE.match(lines[0]) else "```"
     body = list(lines[1:]) if lines and FENCE_LINE_RE.match(lines[0]) else list(lines)
     if body and FENCE_LINE_RE.match(body[-1]):
         body = body[:-1]
 
-    chunks: List[str] = []
+    chunks: list[str] = []
     current = [open_fence]
     for line in body:
         trial = "\n".join(current + [line]) + FENCE_CLOSE
@@ -389,7 +388,7 @@ def _split_code_block(text: str, budget: int) -> List[str]:
     return chunks
 
 
-def _split_table(text: str, budget: int) -> List[str]:
+def _split_table(text: str, budget: int) -> list[str]:
     lines = text.split("\n")
     if len(lines) < 2 or not _is_table_separator(lines[1]):
         return _split_prose(text, budget)
@@ -398,8 +397,8 @@ def _split_table(text: str, budget: int) -> List[str]:
     if len(prefix) > budget:
         return _hard_split(text, budget)
 
-    chunks: List[str] = []
-    current_rows: List[str] = []
+    chunks: list[str] = []
+    current_rows: list[str] = []
 
     def render(selected: Sequence[str]) -> str:
         if not selected:
@@ -425,9 +424,9 @@ def _split_table(text: str, budget: int) -> List[str]:
     return chunks
 
 
-def _split_prose(text: str, budget: int) -> List[str]:
+def _split_prose(text: str, budget: int) -> list[str]:
     remaining = text
-    chunks: List[str] = []
+    chunks: list[str] = []
     while remaining:
         if len(remaining) <= budget:
             chunks.append(remaining)
@@ -451,5 +450,5 @@ def _split_prose(text: str, budget: int) -> List[str]:
     return [chunk for chunk in chunks if chunk]
 
 
-def _hard_split(text: str, budget: int) -> List[str]:
+def _hard_split(text: str, budget: int) -> list[str]:
     return [text[index:index + budget] for index in range(0, len(text), budget)] or [text]

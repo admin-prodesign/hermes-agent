@@ -114,8 +114,8 @@ class TestMarkdownAtomicSplit(unittest.TestCase):
     def test_does_not_glue_continuation_onto_table_separator(self):
         header = "| Rank | Agency ID | Name | Bucket | One-line reason |\n|---|---|---|---|---|"
         rows = "\n".join(
-            "| **Primary** | PMC{0:09d} | NAME {0} | **Recommended** | "
-            "Only completed university graduate in the packet with extra padding. |".format(i)
+            f"| **Primary** | PMC{i:09d} | NAME {i} | **Recommended** | "
+            "Only completed university graduate in the packet with extra padding. |"
             for i in range(12)
         )
         chinese = _chinese(2200)

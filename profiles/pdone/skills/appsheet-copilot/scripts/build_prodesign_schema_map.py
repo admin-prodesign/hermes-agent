@@ -11,19 +11,19 @@ DEFINITION_JSON = Path('/home/prodesign/.openclaw/workspace/data/appsheet-defini
 OUT_JSON = Path('/home/prodesign/.openclaw/workspace/skills/appsheet-copilot/references/prodesign-schema-map.json')
 OUT_MD = Path('/home/prodesign/.openclaw/workspace/skills/appsheet-copilot/references/prodesign-schema-map.md')
 
-TABLE_RE = re.compile(r'^## Table: (?P<name>.+)$', re.M)
-SLICE_RE = re.compile(r'^## Slice: (?P<name>.+)$', re.M)
-COLUMN_RE = re.compile(r'^- \*\*(?P<name>.+?)\*\* \((?P<type>.+?)\) \[(?P<storage>.+?) Column\]$', re.M)
-PROP_RE = re.compile(r'^  - (?P<prop>[^:]+):\s*$', re.M)
+TABLE_RE = re.compile(r'^## Table: (?P<name>.+)$', re.MULTILINE)
+SLICE_RE = re.compile(r'^## Slice: (?P<name>.+)$', re.MULTILINE)
+COLUMN_RE = re.compile(r'^- \*\*(?P<name>.+?)\*\* \((?P<type>.+?)\) \[(?P<storage>.+?) Column\]$', re.MULTILINE)
+PROP_RE = re.compile(r'^  - (?P<prop>[^:]+):\s*$', re.MULTILINE)
 INLINE_CODE_RE = re.compile(r'`([^`]+)`')
 DEREF_RE = re.compile(r'\[(?P<local>[^\]]+)\]\.\[(?P<remote>[^\]]+)\]')
 SLICE_KEY_RE = re.compile(r'([A-Za-z0-9_]+)\[([A-Za-z0-9_ /().-]+)\]')
-LOOKUP_RE = re.compile(r'LOOKUP\(\s*[^,]+,\s*"(?P<table>[^"]+)"', re.I | re.S)
-SELECT_RE = re.compile(r'SELECT\((?P<table>[A-Za-z0-9_]+)\[', re.I)
+LOOKUP_RE = re.compile(r'LOOKUP\(\s*[^,]+,\s*"(?P<table>[^"]+)"', re.IGNORECASE | re.DOTALL)
+SELECT_RE = re.compile(r'SELECT\((?P<table>[A-Za-z0-9_]+)\[', re.IGNORECASE)
 
 
 def load_sections() -> dict[str, str]:
-    data = json.loads(DEFINITION_JSON.read_text(encoding='utf-8'))
+    data = json.loads(DEFINITION_JSON.read_text(encoding='utf-8-sig'))
     return data['sections']
 
 
@@ -75,8 +75,8 @@ def split_slices(text: str) -> dict[str, str]:
 def parse_slice_block(block: str) -> dict[str, Any]:
     lines = block.splitlines()
     header = lines[0].strip().replace('## Slice: ', '', 1)
-    source_match = re.search(r'^- \*\*Source Table\*\*: (.+)$', block, re.M)
-    row_filter_match = re.search(r'^- \*\*Row Filter\*\*: (.+)$', block, re.M | re.S)
+    source_match = re.search(r'^- \*\*Source Table\*\*: (.+)$', block, re.MULTILINE)
+    row_filter_match = re.search(r'^- \*\*Row Filter\*\*: (.+)$', block, re.MULTILINE | re.DOTALL)
     info: dict[str, Any] = {
         'slice': header,
         'source_table': source_match.group(1).strip().strip('`') if source_match else None,
