@@ -364,9 +364,6 @@ def test_tui_rebuild_preserves_the_prepared_desktop_and_web_union(tui_source):
     assert acquired == ["pnpm", "pnpm"]
     assert (root / "web/node_modules").exists()
     assert (root / "apps/desktop/node_modules").exists()
-    assert acquired == ["npm", "npm"]
-    assert (root / "node_modules/web").exists()
-    assert (root / "node_modules/apps-desktop").exists()
 
 
 def _seal(root: Path) -> None:
