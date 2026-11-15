@@ -185,6 +185,15 @@ That should print one `<sha>\trefs/heads/main` line.
   after the install `build.sh` checks that every requirement the extra declares at that
   SHA is installed (`extras.py`), so a release cannot publish without them. There is no
   separate manual-approval step.
+- **Frontend tools.** The dashboard install requires that SHA's pnpm pin
+  (`pm/lock.json`; 12.15.0 on v0.23.1) and Node `>=26` (`engineStrict` — Node 22
+  is refused). `build.sh` downloads those two pins into `<home>/tools/.build-pins/`,
+  checks the lock's SHA-256, and puts them on `PATH` only inside the frontend
+  step. A matching entry already recorded in `<home>/tools/facts.json` is used
+  instead of downloading. The cache directory is dotted so `hermes pm gc` leaves
+  it, and the script does not write `facts.json` or replace `~/.local/bin/pnpm`.
+  Gateway units keep their Python. The first deploy of this script still has to
+  be built by hand: the live worker runs the previous release's `build.sh`.
 
 ## Status
 

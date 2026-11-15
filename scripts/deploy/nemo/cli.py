@@ -19,6 +19,9 @@ from scripts.deploy.nemo.adapter_gate import ADAPTERS_FILE, PROBE_TIMEOUT_S, pla
 from scripts.deploy.nemo.cutover_steps import UnitProblems, apply_cutover, config_candidates, default_unit_dirs
 from scripts.deploy.nemo.freeze_diff import compare, constraint_drops, constraint_text, override_text
 from scripts.deploy.nemo.frontend import mark_preinstalled
+from scripts.deploy.nemo.frontend_tools import (
+    FrontendToolError, dry_run_report, provision_path,
+)
 from scripts.deploy.nemo.gate import MissingProfileDatabase, poll_until_quiet
 from scripts.deploy.nemo.health import http_healthy, poll_until_healthy
 from scripts.deploy.nemo.health_targets import load_deploy_section, resolve_health_plan, socket_profile_homes
@@ -132,6 +135,20 @@ def cmd_freeze_compare(args: argparse.Namespace) -> int:
 
 def cmd_mark_frontend(args: argparse.Namespace) -> int:
     print(mark_preinstalled(args.release))
+    return 0
+
+
+def cmd_frontend_tools(args: argparse.Namespace) -> int:
+    home = _home(args)
+    try:
+        if args.dry_run:
+            text = dry_run_report(args.source, home)
+        else:
+            text = provision_path(args.source, home)
+    except FrontendToolError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(text)
     return 0
 
 
@@ -412,9 +429,22 @@ def register(sub) -> None:
     diff.add_argument("--report", required=True, type=Path)
     diff.set_defaults(func=cmd_freeze_compare)
 
-    mark = sub.add_parser("mark-frontend", help="record that npm ci already ran")
+    mark = sub.add_parser("mark-frontend", help="record that the dashboard was preinstalled")
     mark.add_argument("--release", required=True, type=Path)
     mark.set_defaults(func=cmd_mark_frontend)
+
+    tools = sub.add_parser(
+        "frontend-tools",
+        help="provision the checkout's pinned node and pnpm and print a PATH prefix",
+    )
+    _add_home(tools)
+    tools.add_argument("--source", required=True, type=Path)
+    tools.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the pin (versions, urls, hashes, cache) without downloading",
+    )
+    tools.set_defaults(func=cmd_frontend_tools)
 
     setter = sub.add_parser("manifest-set", help="merge string fields into the audit manifest")
     setter.add_argument("--path", required=True, type=Path)
