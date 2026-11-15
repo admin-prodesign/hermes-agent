@@ -137,6 +137,12 @@ class MessageEvent:
     # unknown). For adapters whose ``media_urls`` are random cache names (relay); the name is
     # display data only, never a path. Appended for positional compat.
     media_filenames: list[str] = field(default_factory=list)
+    # Chronological thread/channel posts for memory recall. Authorization evidence stays in
+    # ``channel_context`` (the model prompt) and is not copied here. None: the gateway may fall
+    # back to ``channel_context``. An empty list: the adapter split that evidence out and there
+    # are no recall posts. Keyword-only in practice; appended after ``media_filenames`` so
+    # positional callers of that field stay stable.
+    recall_posts: Optional[List[str]] = None
 
     # Process-local admission receipt, never routing metadata or execution acknowledgement.
     _gateway_accepted: bool = field(default=False, init=False, repr=False, compare=False)

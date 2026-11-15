@@ -124,6 +124,7 @@ def test_lazy_installable_extras_excluded_from_all():
         "google-chat",
         "keychain",  # keyring — vault key in the OS keychain, installed by `hermes vault key migrate`
         "mistral",  # mistralai — Voxtral STT/TTS, lazy-installed (stt.mistral / tts.mistral)
+        "nemo",  # honcho-ai + PyYAML + requests + [mcp] + [messaging] for the production host; not part of [all]
     }
     all_extra_specs = optional_dependencies["all"]
     for extra in lazy_covered_extras:

@@ -136,8 +136,8 @@ from agent.auxiliary_health import (
     _custom_health_base_url, _unhealthy_cache_key, fallback_candidate_quarantine_ttl,
 )
 from agent.auxiliary_unavailable import (
-    AuxiliaryClientUnavailable, clear_nous_credential_failure, missing_provider_credentials_message,
-    nous_credential_failure_detail, record_nous_credential_failure)
+    AuxiliaryClientUnavailable, clear_nous_credential_failure, explicit_route_rescue,
+    missing_provider_credentials_message, nous_credential_failure_detail, record_nous_credential_failure)
 from hermes_constants import OPENROUTER_BASE_URL, hermes_home_key
 from utils import base_url_host_matches, base_url_hostname, base_url_origin, base_url_path, env_float, is_truthy_value, model_forces_max_completion_tokens, normalize_proxy_env_vars
 
@@ -7251,12 +7251,16 @@ def _resolve_call_client(
             model=resolved_model or model, base_url=resolved_base_url or base_url,
             api_key=resolved_api_key or api_key, async_mode=async_mode, main_runtime=main_runtime,
         )
-        if client is None and resolved_provider != "auto" and not resolved_base_url:
+        # Explicit provider with no client: its task fallback_chain or a raise, never auto + its model.
+        rescued = (explicit_route_rescue(task, resolved_provider, async_mode=async_mode)
+                   if client is None and not resolved_base_url else None)
+        if rescued is not None:
+            client, final_model, effective_provider = rescued
+        elif client is None and resolved_provider != "auto" and not resolved_base_url:
             logger.warning("Vision provider %s unavailable, falling back to auto vision backends",
                            resolved_provider)
             effective_provider, client, final_model = resolve_vision_provider_client(
-                provider="auto", model=resolved_model, async_mode=async_mode,
-                main_runtime=main_runtime)
+                provider="auto", async_mode=async_mode, main_runtime=main_runtime)
         if client is not None:
             resolved_provider = effective_provider or resolved_provider
     else:
@@ -7268,19 +7272,9 @@ def _resolve_call_client(
         if client is None:
             # Explicit provider with no credentials: honor the task fallback_chain before
             # raising (fallback entries may use OAuth / credential-pool auth).
-            _explicit = (resolved_provider or "").strip().lower()
-            if _explicit and _explicit not in {"auto", "openrouter", "custom"}:
-                fb_client, fb_model, fb_label = _try_configured_fallback_for_unavailable_client(
-                    task, _explicit)
-                if fb_client is None:
-                    nous_detail = nous_credential_failure_detail() if _explicit == "nous" else None
-                    raise AuxiliaryClientUnavailable(
-                        nous_detail or missing_provider_credentials_message(_explicit))
-                client, final_model = fb_client, fb_model
-                if async_mode:
-                    client, final_model = _to_async_client(
-                        fb_client, fb_model or "", is_vision=(task == "vision"))
-                resolved_provider = fb_label or resolved_provider
+            rescued = explicit_route_rescue(task, resolved_provider, async_mode=async_mode)
+            if rescued is not None:
+                client, final_model, resolved_provider = rescued
                 effective_provider = resolved_provider
             # Auto/custom with no credentials: walk the full auto chain (not just OpenRouter).
             # model=None so each provider uses its own default.
@@ -7677,6 +7671,11 @@ def _ladder_credential_rungs(
             if first_err is None:
                 return resp, None
         if _recover_failure_pool(route, first_err):
+            if _normalize_aux_provider(pool_provider) != _normalize_aux_provider(resolved_provider):
+                # Pool recovery evicts the backend key (e.g. xai-oauth). Auto-routed
+                # calls cache the stale client under "auto"; drop that too or the
+                # retry rebuilds from the dead bearer.
+                _evict_cached_clients(resolved_provider)
             logger.info("Auxiliary %s%s: recovered %s via credential-pool rotation after %s",
                         task or "call", tag, pool_provider, type(first_err.error).__name__)
             step = _LadderStep("retry_same_provider", (resolved_provider, route.resolved_model, repairs))
@@ -8011,8 +8010,16 @@ def _ladder_step_call(
         return "call", step.args, dict(provider=req.resolved_provider, api_mode=req.resolved_api_mode)
     if step.kind == "retry_same_provider":
         retry_provider, retry_model, repairs = step.args
-        return "retry", (), dict(retry_kwargs, resolved_provider=retry_provider, resolved_model=retry_model,
-                                 repairs=repairs)
+        # Auth recovery refreshes the store/pool, then this retry rebuilds a client.
+        # Drop the failed request's explicit bearer; otherwise `_get_cached_client`
+        # rebuilds with the dead token and 403s immediately (xAI mention translation /
+        # thread titles: refresh logged success, retry reused `resolved_api_key`).
+        retry_kw = dict(
+            retry_kwargs, resolved_provider=retry_provider, resolved_model=retry_model,
+            repairs=repairs,
+        )
+        retry_kw["resolved_api_key"] = None
+        return "retry", (), retry_kw
     return "fallback", step.args, candidate_kwargs
 
 

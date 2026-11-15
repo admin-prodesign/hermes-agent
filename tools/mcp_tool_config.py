@@ -220,9 +220,11 @@ def _build_safe_env(user_env: Optional[dict]) -> dict:
     # or a dashboard/desktop backend serving ``--open-profile`` resolves HERMES_HOME to the
     # LAUNCH profile's home (or the platform default) and writes to the wrong profile — and a
     # Python child that imports hermes_constants trips the ``_warn_profile_fallback_once``
-    # guard. Resolve at call time: ``get_hermes_home()`` honours the served-profile
-    # contextvar, which does not cross the process boundary, while ``os.environ`` holds only
-    # the launch profile's home. An explicit server ``env.HERMES_HOME`` still wins below.
+    # guard. The caller's scope is what ``get_hermes_home()`` reads: a multiplexed gateway's
+    # ``os.environ`` holds the launch profile, so a server that reads Hermes config would
+    # otherwise miss the profile's settings. Resolve at call time: the served-profile
+    # contextvar does not cross the process boundary. An explicit server ``env.HERMES_HOME``
+    # still wins below.
     from hermes_constants import get_hermes_home
     env["HERMES_HOME"] = str(get_hermes_home())
     if user_env:

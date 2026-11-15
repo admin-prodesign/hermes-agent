@@ -213,6 +213,22 @@ def _tui_node_bin(bin: str) -> str:
     return path
 
 
+def _use_preinstalled_tui(tui_dir: Path) -> tuple[list[str], Path]:
+    """Run the bundle shipped in a sealed release. Never npm-install."""
+    from hermes_cli.source_build import note_runtime_npm_skipped
+
+    entry = tui_dir / "dist" / "entry.js"
+    if not entry.is_file():
+        print(
+            "The sealed release has no ui-tui/dist/entry.js. Rebuild it with "
+            "scripts/deploy/nemo/build.sh; npm install is disabled at runtime.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    note_runtime_npm_skipped()
+    return [_tui_node_bin("node"), "--expose-gc", str(entry)], tui_dir
+
+
 def _make_tui_argv(tui_dir: Path, tui_dev: bool, notices: Optional[list] = None) -> tuple[list[str], Path]:
     """TUI: --dev → tsx src; else node dist (HERMES_TUI_DIR prebuilt or esbuild).
 
@@ -247,6 +263,11 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool, notices: Optional[list] = None)
         if bundled is not None:
             return [_tui_node_bin("node"), "--expose-gc", str(bundled)], bundled.parent
 
+        from hermes_cli.source_build import runtime_npm_install_allowed
+
+        if not runtime_npm_install_allowed(tui_dir.parent):
+            return _use_preinstalled_tui(tui_dir)
+
     # About to pnpm install/build from source, so the workspace must exist.
     if not ext_dir:
         _ensure_tui_workspace(tui_dir)
@@ -255,12 +276,26 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool, notices: Optional[list] = None)
         return [_tui_node_bin("node"), "--expose-gc", str(tui_dir / "dist/entry.js")], tui_dir
 
     from hermes_cli.source_build import build_source_tui, prepare_launch_dependencies, source_build_env
+    from hermes_cli.terminal_node_deps import (
+        TerminalDepsUnavailable, ensure_dashboard_terminal_deps, sealed_tui_entry,
+    )
 
     project_root = tui_dir.parent
+    prepared_env: dict | None = None
+
+    def _install() -> None:
+        nonlocal prepared_env
+        prepared_env = source_build_env()
+        prepare_launch_dependencies(project_root, env=prepared_env)
+
     try:
+        # Deps already in the release: do not npm ci. Missing deps in a read-only
+        # release: one warning, then stop — never a traceback on every reconnect.
         # Acquiring pnpm is part of preparation: offline, it fails like the install.
-        env = source_build_env()
-        prepare_launch_dependencies(project_root, env=env)
+        if not ensure_dashboard_terminal_deps(project_root, install=_install):
+            raise TerminalDepsUnavailable(project_root)
+    except TerminalDepsUnavailable:
+        raise
     except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
         previous = tui_dir / "dist/entry.js"
         if tui_dev or _tui_force_build() or not previous.is_file():
@@ -278,6 +313,12 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool, notices: Optional[list] = None)
         if notices is not None:
             notices.append(notice)
         return [_tui_node_bin("node"), "--expose-gc", str(previous)], tui_dir
+
+    entry = tui_dir / "dist" / "entry.js"
+    if not tui_dev and sealed_tui_entry(project_root, entry):
+        return [_tui_node_bin("node"), "--expose-gc", str(entry)], tui_dir
+
+    env = prepared_env or source_build_env()
     if tui_dev:
         # tsx imports @hermes/ink's built exports; the production bundle instead
         # compiles its source directly through scripts/build/tui.mjs.
@@ -636,11 +677,18 @@ def _launch_tui(
     if resume_session_id:
         env["HERMES_TUI_RESUME"] = resume_session_id
 
+    from hermes_cli.terminal_node_deps import TerminalDepsUnavailable
+
     notices: list[str] = []
-    argv, cwd = _make_tui_argv(tui_dir, tui_dev, notices)
     code: Optional[int] = None
     try:
-        code = _run_tui(argv, cwd, env, notices)
+        try:
+            argv, cwd = _make_tui_argv(tui_dir, tui_dev, notices)
+            code = _run_tui(argv, cwd, env, notices)
+        except TerminalDepsUnavailable as exc:
+            # The active-session file and any --worktree live until the finally.
+            print(exc.user_message, file=sys.stderr)
+            code = 1
 
         if code in {0, 130}:
             _print_tui_exit_summary(resume_session_id, active_session_file)

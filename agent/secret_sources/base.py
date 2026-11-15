@@ -72,6 +72,7 @@ class ErrorKind(str, Enum):
     AUTH_EXPIRED = "auth_expired"        # credentials were valid, aren't now
     REF_INVALID = "ref_invalid"          # a secret reference failed validation
     NETWORK = "network"                  # transport-level failure
+    RATE_LIMITED = "rate_limited"        # backend throttled us (HTTP 429); retry later
     EMPTY_VALUE = "empty_value"          # backend returned nothing for a ref
     TIMEOUT = "timeout"                  # fetch exceeded its wall-clock budget
     INTERNAL = "internal"                # anything else (bug, unexpected shape)
@@ -129,6 +130,8 @@ _GENERIC_REMEDIATION = {
     ErrorKind.AUTH_FAILED: "Credentials rejected — run `hermes secrets {name} setup` to re-authenticate.",
     ErrorKind.AUTH_EXPIRED: "Credentials expired — run `hermes secrets {name} setup` to re-authenticate.",
     ErrorKind.NETWORK: "Network problem reaching the secrets backend — check connectivity and retry.",
+    ErrorKind.RATE_LIMITED: "The secrets backend is rate-limiting requests — wait a minute, then restart; "
+                            "avoid starting many profiles at once.",
     ErrorKind.TIMEOUT: "Backend was slow — raise secrets.{name}.timeout_seconds if this recurs.",
 }
 

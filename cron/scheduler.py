@@ -447,7 +447,7 @@ def _merge_mcp_into_per_job_toolsets(per_job: list[str], cfg: dict) -> list[str]
     if "no_mcp" in per_job:
         return result
     # lazy: avoid heavy hermes_cli import at module load; shares MCP-membership with gateway/CLI
-    from hermes_cli.tools_config import enabled_mcp_server_names
+    from hermes_cli.tools_config import enabled_mcp_server_names, toolsets_request_no_tools
     enabled_mcp = enabled_mcp_server_names(cfg)
     # A job names an MCP server by its TOOLSET name (``mcp-<server>``) or by the bare alias the
     # registry registers for it; compare against BOTH, or a job that named one server never matched
@@ -455,8 +455,12 @@ def _merge_mcp_into_per_job_toolsets(per_job: list[str], cfg: dict) -> list[str]
     # A server that is CONFIGURED but disabled still counts as named: it is the user's selection, it
     # stays off, and it must not fall through to every enabled server either - the same rule the
     # interactive resolver follows (hermes_cli.tools_config._merge_mcp_servers).
-    configured = cfg.get("mcp_servers") if isinstance(cfg.get("mcp_servers"), dict) else {}
+    configured = (cfg or {}).get("mcp_servers") if isinstance((cfg or {}).get("mcp_servers"), dict) else {}
     known = enabled_mcp | {str(name) for name in configured}
+    # An empty native toolset (``bot_room``) opted out of tools. Do not inject every enabled
+    # MCP server, including generated list_prompts / list_resources utilities.
+    if toolsets_request_no_tools(per_job, known):
+        return result
     if set(result) & (known | {f"mcp-{name}" for name in known}):
         return result
     for name in sorted(enabled_mcp):

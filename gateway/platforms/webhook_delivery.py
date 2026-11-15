@@ -6,6 +6,10 @@ import json
 from hermes_state_runtime import RuntimeStoreError
 
 
+# Route ``post_script`` inputs stay in the adapter's in-process ``_delivery_info``; never persisted here.
+_PROCESS_ONLY_KEYS = frozenset({'payload', 'post_script'})
+
+
 def route_digest(adapter, chat_id):
     from gateway.platforms.webhook import _WebhookDeliveryIdentity
     adapter._reload_dynamic_routes()
@@ -23,7 +27,7 @@ def validate_destination(delivery):
     from gateway.platforms.webhook import _is_known_platform, _REPO_RE
     if (not isinstance(delivery, dict)
             or not {'deliver', 'deliver_extra'} <= set(delivery)
-            or set(delivery) - {'deliver', 'deliver_extra', 'profile', 'mirror', 'route'}
+            or set(delivery) - {'deliver', 'deliver_extra', 'profile', 'mirror', 'route', *_PROCESS_ONLY_KEYS}
             or (delivery.get('profile') is not None and not isinstance(delivery['profile'], str))
             or not isinstance(delivery.get('mirror', False), bool)
             or (delivery.get('route') is not None and not isinstance(delivery['route'], str))):
