@@ -135,6 +135,7 @@ def is_environment_failure(detail: str) -> bool:
             "npm cli is required",
             "uv is required on path",
             "timed out after",
+            "pinned frontend tool",
         ):
             if marker in lower:
                 return True

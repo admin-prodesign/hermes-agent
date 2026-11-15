@@ -23,7 +23,7 @@ Usage: build.sh --sha SHA (--mirror DIR | --tarball FILE) [options]
   --previous PATH        Previous release to copy .python and frontend bits from.
   --staging PATH         Keep this directory when --stop-after is source or frontend.
   --stop-after STEP      source, frontend, or publish (default).
-  --skip-frontend        Do not npm ci or build the dashboard.
+  --skip-frontend        Do not install or build the dashboard.
 
 Audit files land in <home>/upgrade-audits/<build>/.
 EOF
@@ -273,9 +273,23 @@ fi
 ) || die "the release venv is missing requirements declared for .[${extra}]"
 
 if [[ "${skip_frontend}" != "1" ]]; then
-  command -v node >/dev/null 2>&1 || die "node is required to preinstall dashboard dependencies"
+  # engines.node is >=26 and node-deps.mjs requires the exact pnpm in this
+  # tree's pm/lock.json. The prefix is this subshell only: gateway units are
+  # not started here and keep their own Python and PATH.
+  tool_prefix="$(nemo_python -m scripts.deploy.nemo.cli frontend-tools \
+    --source "${staging}" --hermes-home "${home}")" \
+    || die "pinned frontend tool provisioning failed"
+  if [[ -z "${tool_prefix}" ]]; then
+    die "pinned frontend tool provisioning returned an empty PATH"
+  fi
   (
     cd "${staging}"
+    export PATH="${tool_prefix}:${PATH}"
+    # pnpm's store stays under the Hermes home. node-deps ignores these keys
+    # when it decides whether an install can be reused.
+    export pnpm_config_store_dir="${home}/cache/pnpm/store"
+    export pnpm_config_cache_dir="${home}/cache/pnpm/cache"
+    export pnpm_config_state_dir="${home}/cache/pnpm/state"
     node "scripts/build/node-deps.mjs" \
       --source . --reuse --workspace ui-tui --workspace web
     tui_fresh="$(node "scripts/build/freshness.mjs" \

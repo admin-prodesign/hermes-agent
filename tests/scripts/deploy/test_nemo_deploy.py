@@ -743,6 +743,7 @@ def test_is_environment_failure_recognizes_build_host_errors() -> None:
     assert is_environment_failure("uv is required on PATH")
     assert is_environment_failure("build.sh failed\nError: EACCES, unlink 'node_modules/.hermes-node-deps'")
     assert is_environment_failure("build.sh failed\nnode is required to preinstall dashboard dependencies")
+    assert is_environment_failure("build.sh failed\npinned frontend tool: checksum mismatch")
     assert not is_environment_failure("build.sh failed\nimport hermes_cli failed")
 
 
