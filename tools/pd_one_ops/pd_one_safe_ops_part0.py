@@ -6,7 +6,7 @@ it uses shell=False, validates inputs, avoids token printing, emits JSON receipt
 and defaults to read-only/dry-run behavior.
 """
 from __future__ import annotations
-__all__ = ['_PdReturn', '_PdHandled', '_PdUnset', '_PdUnset', '_PdLazyMod', '_PdLazyAttr', 'requests', 'ROOT', 'PYTHON_MEDIA_STACK_MODULES', 'PYTHON_CAD_STACK_MODULES', 'CAD_DOCUMENT_ROOTS', 'CAD_DOCUMENT_SUFFIXES', 'CAD_DOCUMENT_MAX_INPUTS', 'CAD_DOCUMENT_PATH_MAX_CHARS', 'STEP_GEOMETRY_SCRIPT', 'STEP_GEOMETRY_FREECADCMD', 'STEP_GEOMETRY_INPUT_ROOTS', 'STEP_GEOMETRY_OUTPUT_ROOT', 'STEP_GEOMETRY_SUFFIXES', 'STEP_GEOMETRY_JSON_SUFFIXES', 'STEP_GEOMETRY_JSON_MAX_BYTES', 'STEP_GEOMETRY_MAX_SOLIDS', 'STEP_GEOMETRY_MAX_UNKNOWN_EDGES', 'STEP_GEOMETRY_MAX_FACE_EXTRAS', 'STEP_GEOMETRY_FACE_EXTRA_KEYS', 'STEP_GEOMETRY_UNKNOWN_EDGE_KINDS', 'STEP_GEOMETRY_MAX_SOURCE_BYTES', 'STEP_GEOMETRY_TIMEOUT_SECONDS', 'STEP_GEOMETRY_HEADER_BYTES', 'STEP_PRINTABILITY_SCRIPT', 'STEP_PRINTABILITY_OUTPUT_ROOT', 'STEP_PRINTABILITY_TIMEOUT_SECONDS', 'STEP_PRINTABILITY_JSON_MAX_BYTES', 'STEP_PRINTABILITY_MAX_FINDINGS', 'STEP_PRINTABILITY_JSON_NAMES', 'USER_PROCESS_SNAPSHOT_USER', 'USER_PROCESS_SNAPSHOT_MAX_ROWS', 'USER_PROCESS_SNAPSHOT_CMD_CHARS', 'USER_PROCESS_SNAPSHOT_SECRET_KV_RE', 'POLICY_USERS', 'POLICY_ROLES', 'REGISTRY', 'DEFAULT_ACCOUNT', 'APPROVAL_LEDGER', 'MATTERMOST_REVIEW_LOG', 'SHEETS_SAFE_OPS', 'DRIVE_ACL_AUTHORIZE', 'APPSHEET_TABLE_PROBE', 'APPSHEET_ENV_FILES', 'APPSHEET_INCIDENT_MORNING_BRIEFING_SENDER', 'APPSHEET_INCIDENT_MORNING_BRIEFING_RETRY', 'APPSHEET_INCIDENT_MORNING_BRIEFING_SCRIPT', 'DOCS_API', 'ADMIN_APPROVAL_TOOLS', 'ADMIN_APPROVAL_NOTIFY', 'ADMIN_APPROVAL_LISTENER', 'ADMIN_APPROVAL_EXECUTOR', 'ADMIN_APPROVAL_EXECUTOR_CONFIG', 'ADMIN_APPROVAL_KANBAN_STATE', 'KANBAN_BOARDS_ROOT', 'ADMIN_APPROVAL_KANBAN_BOARD', 'ADMIN_APPROVAL_KANBAN_MAPPING_SCHEMA', 'ADMIN_APPROVAL_EXECUTION_RESULT_SCHEMA', 'PDAPP_TICKET_ID_RE', 'KANBAN_TASK_ID_RE', 'ADMIN_APPROVAL_KANBAN_JSON_MAX_BYTES', 'MATTERMOST_POLICY_LOOKUP', 'DEFAULT_ADMIN_CHANNEL_ID', 'DEFAULT_ANDY_USER_ID', 'ADMIN_ALERT_SOURCE_AUDIT_ROOTS', 'ADMIN_ALERT_SOURCE_AUDIT_MAX_FILES', 'ADMIN_ALERT_SOURCE_AUDIT_MAX_FILE_BYTES', 'HR_POLICY_DOCUMENT_IDS', 'MATTERMOST_CHANNEL_SETUP_CONFIRMATION', 'MATTERMOST_CHANNEL_CREATE_CONFIRMATION', 'ADMIN_APPROVAL_DECISION_CONFIRMATION', 'ADMIN_APPROVAL_CANCEL_CONFIRMATION', 'CANCELLABLE_TICKET_STATUSES', 'DOC_ALLOWED_ROOTS', 'COMPANY_ANNOUNCEMENT_TEMPLATE', 'COMPANY_ANNOUNCEMENT_MAX_REPLACEMENTS', 'COMPANY_ANNOUNCEMENT_MAX_REPLACEMENT_CHARS', 'DOC_ALLOWED_FILES', 'LOCAL_ARTIFACT_COPY_SOURCE_ROOT', 'LOCAL_ARTIFACT_COPY_DEST_ROOT', 'LOCAL_ARTIFACT_COPY_ALLOWED_SUFFIXES', 'LOCAL_ARTIFACT_COPY_MAX_BYTES', 'ARTIFACT_BASE64_ALLOWED_ROOTS', 'ARTIFACT_BASE64_ALLOWED_SUFFIXES', 'ARTIFACT_BASE64_MAX_BYTES', 'SVG_INSPECT_MAX_BYTES', 'SVG_INSPECT_MAX_ELEMENTS', 'SVG_INSPECT_MAX_IMAGES', 'SVG_INSPECT_MAX_REQUIRED_TEXTS', 'SVG_INSPECT_MAX_REQUIRED_TEXT_CHARS', 'SVG_INSPECT_MAX_ATTR_CHARS', 'PPTX_INSPECT_MAX_BYTES', 'PPTX_INSPECT_MAX_SLIDES', 'PPTX_INSPECT_MAX_SHAPES', 'PPTX_INSPECT_MAX_PARAS', 'PPTX_INSPECT_MAX_RUNS', 'PPTX_INSPECT_MAX_TEXT', 'PPTX_INSPECT_MAX_DEPTH', 'ARTIFACT_BASE64_MIME_TYPES', 'VIDEO_FRAME_INPUT_ROOT', 'VIDEO_FRAME_OUTPUT_ROOT', 'VIDEO_FRAME_ALLOWED_SUFFIXES', 'VIDEO_FRAME_MAX_SOURCE_BYTES', 'VIDEO_FRAME_MAX_DURATION_SECONDS', 'VIDEO_FRAME_DEFAULT_FRACTIONS', 'THREEMF_SLICER_INPUT_ROOTS', 'ARTIFACT_IDENTITY_INPUT_ROOTS', 'ARTIFACT_IDENTITY_ALLOWED_SUFFIXES', 'ARTIFACT_IDENTITY_MAX_GLOBS', 'ARTIFACT_IDENTITY_MAX_GLOB_CHARS', 'ARTIFACT_IDENTITY_MAX_MATCHES', 'ARTIFACT_IDENTITY_MAX_PEEK_BYTES', 'ARTIFACT_IDENTITY_DEFAULT_PEEK_BYTES', 'THREEMF_SLICER_OUTPUT_ROOT', 'THREEMF_SLICER_MAX_SOURCE_BYTES', 'THREEMF_SLICER_MAX_MEMBER_BYTES', 'THREEMF_SLICER_MAX_NAMELIST', 'THREEMF_SLICER_MAX_VALUE_CHARS', 'THREEMF_SLICER_MAX_SETTINGS', 'THREEMF_SLICER_MEMBERS', 'THREEMF_SLICER_SETTING_KEYS', 'CAD_RUNTIME_CANDIDATE_BINS', 'CAD_RUNTIME_WHICH_NAMES', 'CAD_RUNTIME_LIB_DIRS', 'CAD_RUNTIME_DIR_SAMPLE', 'CAD_3MF_PEEK_SUFFIXES', 'CAD_3MF_MAX_PEEK_FILES', 'CAD_3MF_PEEK_BYTES', 'CAD_3MF_NAMELIST_SAMPLE', 'SVG_EMBED_IMAGE_OUTPUT_ROOT', 'SVG_EMBED_IMAGE_ALLOWED_URL', 'SVG_EMBED_IMAGE_MAX_SVG_BYTES', 'SVG_EMBED_IMAGE_MAX_REMOTE_BYTES', 'HERMES_RESULTS_ROOT', 'HERMES_RESULT_SUMMARY_MAX_BYTES', 'HERMES_RESULT_SUMMARY_MAX_MESSAGES', 'HERMES_RESULT_SUMMARY_MAX_CONTENT_ITEMS', 'HERMES_RESULT_SUMMARY_MAX_TEXT_CHARS', 'JSON_ARTIFACT_INSPECT_ROOTS', 'JSON_ARTIFACT_INSPECT_MAX_FILES', 'JSON_ARTIFACT_INSPECT_MAX_BYTES', 'JSON_ARTIFACT_INSPECT_MAX_KEYS', 'JSON_ARTIFACT_INSPECT_MAX_SAMPLE_KEYS', 'JSON_ARTIFACT_INSPECT_KEY_CHARS', 'LOCAL_FILE_SEARCH_ROOTS', 'LOCAL_FILE_SEARCH_MAX_PATHS', 'LOCAL_FILE_SEARCH_MAX_PATTERNS', 'LOCAL_FILE_SEARCH_MAX_MATCHES', 'LOCAL_FILE_SEARCH_MAX_WALK_FILES', 'LOCAL_FILE_SEARCH_MAX_PATTERN_CHARS', 'DOCX_INSPECT_MAX_BYTES', 'DOCX_INSPECT_MAX_TEXT_CHARS', 'DOCX_INSPECT_MAX_RUNS', 'PPTX_OOXML_TEXT_INSPECT_MAX_BYTES', 'PPTX_OOXML_TEXT_INSPECT_MAX_MEMBER_BYTES', 'PPTX_OOXML_TEXT_INSPECT_MAX_MEMBERS', 'PPTX_OOXML_TEXT_INSPECT_MAX_TEXTS', 'PPTX_OOXML_TEXT_INSPECT_MAX_TEXT_CHARS', 'PPTX_OOXML_TEXT_INSPECT_MEMBER_RE', 'PPTX_OOXML_DRAWINGML_T', 'DOCX_LAYOUT_TARGET_MAX_CHARS', 'XLSX_WORKBOOK_INSPECT_SUFFIXES', 'XLSX_WORKBOOK_INSPECT_MAX_FILES', 'XLSX_WORKBOOK_INSPECT_MAX_BYTES', 'XLSX_WORKBOOK_INSPECT_MAX_SHEETS', 'XLSX_WORKBOOK_INSPECT_MAX_ROWS', 'XLSX_WORKBOOK_INSPECT_MAX_COLUMNS', 'XLSX_WORKBOOK_INSPECT_MAX_CELL_CHARS', 'SIP_THREAD_INDEX_ROOT', 'SIP_THREAD_INDEX_SCRIPT', 'SIP_THREAD_INDEX_OUTPUT', 'ITEM_NUMBER_WORKFLOW_ROOT', 'ITEM_NUMBER_COMPILER_ROOT', 'ITEM_NUMBER_COMPILER_SCRIPT', 'ITEM_NUMBER_COMPILER_TEST', 'ITEM_NUMBER_SOURCE_XLS', 'ITEM_NUMBER_WORKFLOW_TMP_ROOT', 'EQUIPMENT_WORKBOOK_SCRIPT', 'EQUIPMENT_WORKBOOK_TMP_ROOT', 'ITEM_NUMBER_SMOKE_TEMPLATE_NAME', 'ITEM_NUMBER_SMOKE_DISPLAY_NAME', 'ITEM_NUMBER_SMOKE_CREATE_AT', 'ITEM_NUMBER_SMOKE_USER_ID', 'ITEM_NUMBER_SMOKE_POST_ID', 'ITEM_NUMBER_SMOKE_ROUTE', 'ITEM_NUMBER_SMOKE_FULFILLMENT_LINK', 'ITEM_NUMBER_SMOKE_ROOT_POST_ID', 'ITEM_NUMBER_SMOKE_REVISION_HASH', 'ITEM_NUMBER_SMOKE_COMMENTS', 'SIP_THREAD_INDEX_INPUT_GLOBS', 'SIP_THREAD_INDEX_NOISE_MARKERS', 'ITEM_NUMBER_WORKFLOW_ROOT', 'ITEM_NUMBER_WORKFLOW_ENGINE', 'ITEM_NUMBER_WORKFLOW_SCRIPT', 'ITEM_NUMBER_WORKFLOW_TEST', 'ITEM_NUMBER_WORKFLOW_RUNNER', 'ITEM_NUMBER_WORKFLOW_RUNNER_SCRIPT', 'ITEM_NUMBER_WORKFLOW_RUNNER_TEST', 'ITEM_NUMBER_RENDER_QA_ROOT', 'ITEM_NUMBER_RENDER_QA_ARTIFACTS', 'ITEM_NUMBER_RENDER_QA_RESULTS', 'ITEM_NUMBER_RENDER_QA_TEST_REPORT', 'ITEM_NUMBER_RENDER_QA_ADMIN_PACKET', 'ITEM_NUMBER_RENDER_QA_TEMPLATE', 'ITEM_NUMBER_HISTORICAL_ROOT', 'ITEM_NUMBER_HISTORICAL_SCRIPT', 'ITEM_NUMBER_HISTORICAL_RECEIPT', 'ITEM_NUMBER_HISTORICAL_OUTPUT', 'ITEM_NUMBER_LOCAL_QA_ROOT', 'ITEM_NUMBER_LOCAL_QA_RECEIPT', 'ITEM_NUMBER_LOCAL_QA_INPUTS', 'ECRN_APPROVAL_PILOT_STATE', 'ECRN_APPROVAL_PILOT_SCRIPT', 'ECRN_CHANNEL_HEADER_TEST_ROOT', 'ECRN_CHANNEL_HEADER_SCRIPT', 'ECRN_CHANNEL_HEADER_TEST', 'ECRN_DOCX_PATCH_SCRIPT', 'PPTX_EXACT_TEXT_PATCH_SCRIPT', 'PPTX_FROM_TEMPLATE_SCRIPT', 'OFFICE_TO_PDF_INPUT_SUFFIXES', 'HTML_TO_DOCX_INPUT_SUFFIXES', 'OFFICE_VISUAL_QA_INPUT_SUFFIXES', 'OFFICE_HTML_TO_DOCX_INPUT_SUFFIXES', 'OFFICE_HTML_TO_DOCX_MAX_BYTES', 'JSON_HTML_ARTIFACT_MAX_BYTES', 'JSON_HTML_ARTIFACT_MAX_PARAGRAPHS', 'OFFICE_VISUAL_QA_MAX_BYTES', 'OFFICE_VISUAL_QA_MAX_FILES', 'OFFICE_VISUAL_QA_SCRIPT', 'OFFICE_DOCPROPS_INPUT_SUFFIXES', 'OFFICE_DOCPROPS_MAX_SOURCE_BYTES', 'OFFICE_DOCPROPS_MAX_MEMBER_BYTES', 'OFFICE_DOCPROPS_MAX_FIELD_CHARS', 'OFFICE_DOCPROPS_MAX_NAMELIST', 'OFFICE_DOCPROPS_MEMBERS', 'OFFICE_DOCPROPS_CORE_FIELDS', 'OFFICE_DOCPROPS_APP_FIELDS', 'OFFICE_DOCPROPS_INT_FIELDS', 'OFFICE_DEB_ALLOWED_ROOT', 'OFFICE_DEB_CONTENT_MAX_LINES', 'OFFICE_TOOLCHAIN_BINARIES', 'PATH_BASE', 'TYPHOON_AUTOMATION_SCRIPT', 'TYPHOON_AUTOMATION_TEST', 'TYPHOON_AUTOMATION_FIXTURE_ROOTS', 'TYPHOON_AUTOMATION_LIVE_CONFIRMATION', 'TYPHOON_AUTOMATION_SWEEP_STATE_FILE', 'PYTHON_DOCX_REPAIR_TICKET_ID', 'PYTHON_DOCX_REPAIR_PACKAGE', 'PYTHON_DOCX_REPAIR_VERSION', 'PYTHON_DOCX_REPAIR_PYTHON', 'PYTHON_DOCX_REPAIR_CONFIRMATION', 'TYPHOON_AUTOMATION_SWEEP_CASES', 'SYSSTAT_LOG_ROOT', 'SYSSTAT_SUMMARY_DEFAULT_HOURS', 'SYSSTAT_SUMMARY_MAX_HOURS', 'SYSSTAT_SUMMARY_METRIC_SPECS', 'OLLAMA_EMBEDDING_UNIT', 'OLLAMA_EMBEDDING_PORT', 'OLLAMA_EMBEDDING_CONTAINER', 'OLLAMA_EMBEDDING_PEER_CONTAINER', 'OLLAMA_EMBEDDING_MAX_CONTAINER_TAIL_LINES', 'OLLAMA_EMBEDDING_MAX_JOURNAL_TAIL_LINES', 'OLLAMA_EMBEDDING_LOG_PATTERNS', 'OLLAMA_EMBEDDING_WATCHDOG_UNIT', 'OLLAMA_EMBEDDING_WATCHDOG_MAX_JOURNAL_TAIL_LINES', 'OLLAMA_EMBEDDING_WATCHDOG_LOG_PATTERNS', 'LOCAL_PROCESS_LISTENER_PORTS', 'LOCAL_PROCESS_LISTENER_DEFAULT_PORTS', 'LOCAL_PROCESS_LISTENER_MAX_PORTS', 'LOCAL_PROCESS_LISTENER_MAX_PIDS', 'LOCAL_PROCESS_LISTENER_CMD_CAP', 'LOCAL_PROCESS_LISTENER_SS_PID_RE', 'LOCAL_PROCESS_LISTENER_SS_COMM_RE', 'PROTECTED_PORTAL_ORIGIN_HOST', 'PROTECTED_PORTAL_ORIGIN_PORT', 'PROTECTED_PORTAL_ORIGIN_TIMEOUT_SEC', 'PROTECTED_PORTAL_ORIGIN_BODY_CAP', 'PROTECTED_PORTAL_ORIGIN_TITLE_CAP', 'PROTECTED_PORTAL_MANIFEST', 'PROTECTED_PORTAL_UNKNOWN_EMAIL', 'PROTECTED_PORTAL_ADMIN_EMAIL', 'PROTECTED_PORTAL_DEFAULT_PROBES', 'fail', 'emit', 'enforce_drive_acl', 'safe_env', 'find_bin', 'run_json', 'run_capture', 'tail_text', 'normalize_email', 'cmd_registry_list', 'SHEETS_GET_RENDER_OPTIONS', 'cmd_sheets_get_range', 'CACHED_SHEET_JSON_MAX_BYTES', 'CACHED_SHEET_JSON_MAX_ROWS', 'CACHED_SHEET_JSON_MAX_COLS', 'CACHED_SHEET_JSON_MAX_TERMS', 'CACHED_SHEET_JSON_MAX_COLUMNS', 'CACHED_SHEET_JSON_MAX_MATCHES', 'CACHED_SHEET_JSON_CELL_CHARS', 'CACHED_SHEET_JSON_TERM_CHARS', 'DEST_REST_COUNT_MAX_WORKERS', 'DEST_REST_COUNT_NAME_CHARS', 'DEST_REST_COUNT_MAX_DAYS', 'DEST_REST_COUNT_DEFAULT_MARKERS', 'cmd_cached_sheet_json_search', '_dest_rest_day_number', 'cmd_cached_dest_rest_count', 'require_pdone_tmp_path', 'require_under_roots', 'cmd_sheets_batch_update', 'cmd_sheets_append', 'cmd_sheets_header_update_row', 'BOUNDED_SHEET_CELL_A1_RE', 'BOUNDED_SHEET_CELL_WRITE_MAX_CELLS', 'BOUNDED_SHEET_CELL_WRITE_LIVE_CONFIRM', 'bounded_sheet_cell_a1', 'load_bounded_sheet_cell_write_payload', 'cmd_bounded_sheet_cell_write', 'cmd_appsheet_table_probe', '_load_appsheet_incident_morning_briefing_module', '_appsheet_incident_morning_briefing_qa_samples', 'cmd_appsheet_incident_morning_briefing_qa', 'cmd_appsheet_definition_inspect', 'cmd_appsheet_definition_apply', 'cmd_google_group_members', 'cmd_google_drive_parent_chain', 'cmd_google_drive_search_files', 'cmd_google_group_change', 'http_status', 'port_open', '_bounded_int', '_validated_probe_name', '_parse_key_value_lines', '_scan_embedding_log_text', '_scan_embedding_watchdog_log_text', '_probe_text', 'cmd_auth_browser_status', '_sysstat_percentile', '_sysstat_series_summary', '_sysstat_numeric', '_sysstat_select_log_files', '_sysstat_parse_sadf_output', '_sysstat_emit_row', '_sysstat_metric_report', '_sysstat_state_high', '_sysstat_state_low', 'cmd_numeric_summary', 'cmd_text_metrics', 'cmd_disk_space_summary', '_format_ps_etime', 'redact_process_cmd', '_proc_start_ticks']
+__all__ = ['ADMIN_ALERT_SOURCE_AUDIT_MAX_FILES', 'ADMIN_ALERT_SOURCE_AUDIT_MAX_FILE_BYTES', 'ADMIN_ALERT_SOURCE_AUDIT_ROOTS', 'ADMIN_APPROVAL_CANCEL_CONFIRMATION', 'ADMIN_APPROVAL_DECISION_CONFIRMATION', 'ADMIN_APPROVAL_EXECUTION_RESULT_SCHEMA', 'ADMIN_APPROVAL_EXECUTOR', 'ADMIN_APPROVAL_EXECUTOR_CONFIG', 'ADMIN_APPROVAL_KANBAN_BOARD', 'ADMIN_APPROVAL_KANBAN_JSON_MAX_BYTES', 'ADMIN_APPROVAL_KANBAN_MAPPING_SCHEMA', 'ADMIN_APPROVAL_KANBAN_STATE', 'ADMIN_APPROVAL_LISTENER', 'ADMIN_APPROVAL_NOTIFY', 'ADMIN_APPROVAL_TOOLS', 'APPROVAL_LEDGER', 'APPSHEET_ENV_FILES', 'APPSHEET_INCIDENT_MORNING_BRIEFING_RETRY', 'APPSHEET_INCIDENT_MORNING_BRIEFING_SCRIPT', 'APPSHEET_INCIDENT_MORNING_BRIEFING_SENDER', 'APPSHEET_TABLE_PROBE', 'ARTIFACT_BASE64_ALLOWED_ROOTS', 'ARTIFACT_BASE64_ALLOWED_SUFFIXES', 'ARTIFACT_BASE64_MAX_BYTES', 'ARTIFACT_BASE64_MIME_TYPES', 'ARTIFACT_IDENTITY_ALLOWED_SUFFIXES', 'ARTIFACT_IDENTITY_DEFAULT_PEEK_BYTES', 'ARTIFACT_IDENTITY_INPUT_ROOTS', 'ARTIFACT_IDENTITY_MAX_GLOBS', 'ARTIFACT_IDENTITY_MAX_GLOB_CHARS', 'ARTIFACT_IDENTITY_MAX_MATCHES', 'ARTIFACT_IDENTITY_MAX_PEEK_BYTES', 'BOUNDED_SHEET_CELL_A1_RE', 'BOUNDED_SHEET_CELL_WRITE_LIVE_CONFIRM', 'BOUNDED_SHEET_CELL_WRITE_MAX_CELLS', 'CACHED_SHEET_JSON_CELL_CHARS', 'CACHED_SHEET_JSON_MAX_BYTES', 'CACHED_SHEET_JSON_MAX_COLS', 'CACHED_SHEET_JSON_MAX_COLUMNS', 'CACHED_SHEET_JSON_MAX_MATCHES', 'CACHED_SHEET_JSON_MAX_ROWS', 'CACHED_SHEET_JSON_MAX_TERMS', 'CACHED_SHEET_JSON_TERM_CHARS', 'CAD_3MF_MAX_PEEK_FILES', 'CAD_3MF_NAMELIST_SAMPLE', 'CAD_3MF_PEEK_BYTES', 'CAD_3MF_PEEK_SUFFIXES', 'CAD_DOCUMENT_MAX_INPUTS', 'CAD_DOCUMENT_PATH_MAX_CHARS', 'CAD_DOCUMENT_ROOTS', 'CAD_DOCUMENT_SUFFIXES', 'CAD_RUNTIME_CANDIDATE_BINS', 'CAD_RUNTIME_DIR_SAMPLE', 'CAD_RUNTIME_LIB_DIRS', 'CAD_RUNTIME_WHICH_NAMES', 'CANCELLABLE_TICKET_STATUSES', 'COMPANY_ANNOUNCEMENT_MAX_REPLACEMENTS', 'COMPANY_ANNOUNCEMENT_MAX_REPLACEMENT_CHARS', 'COMPANY_ANNOUNCEMENT_TEMPLATE', 'DEFAULT_ACCOUNT', 'DEFAULT_ADMIN_CHANNEL_ID', 'DEFAULT_ANDY_USER_ID', 'DEST_REST_COUNT_DEFAULT_MARKERS', 'DEST_REST_COUNT_MAX_DAYS', 'DEST_REST_COUNT_MAX_WORKERS', 'DEST_REST_COUNT_NAME_CHARS', 'DOCS_API', 'DOCX_INSPECT_MAX_BYTES', 'DOCX_INSPECT_MAX_RUNS', 'DOCX_INSPECT_MAX_TEXT_CHARS', 'DOCX_LAYOUT_TARGET_MAX_CHARS', 'DOC_ALLOWED_FILES', 'DOC_ALLOWED_ROOTS', 'DRIVE_ACL_AUTHORIZE', 'ECRN_APPROVAL_PILOT_SCRIPT', 'ECRN_APPROVAL_PILOT_STATE', 'ECRN_CHANNEL_HEADER_SCRIPT', 'ECRN_CHANNEL_HEADER_TEST', 'ECRN_CHANNEL_HEADER_TEST_ROOT', 'ECRN_DOCX_PATCH_SCRIPT', 'EQUIPMENT_WORKBOOK_SCRIPT', 'EQUIPMENT_WORKBOOK_TMP_ROOT', 'HERMES_RESULTS_ROOT', 'HERMES_RESULT_SUMMARY_MAX_BYTES', 'HERMES_RESULT_SUMMARY_MAX_CONTENT_ITEMS', 'HERMES_RESULT_SUMMARY_MAX_MESSAGES', 'HERMES_RESULT_SUMMARY_MAX_TEXT_CHARS', 'HR_POLICY_DOCUMENT_IDS', 'HTML_TO_DOCX_INPUT_SUFFIXES', 'ITEM_NUMBER_COMPILER_ROOT', 'ITEM_NUMBER_COMPILER_SCRIPT', 'ITEM_NUMBER_COMPILER_TEST', 'ITEM_NUMBER_HISTORICAL_OUTPUT', 'ITEM_NUMBER_HISTORICAL_RECEIPT', 'ITEM_NUMBER_HISTORICAL_ROOT', 'ITEM_NUMBER_HISTORICAL_SCRIPT', 'ITEM_NUMBER_LOCAL_QA_INPUTS', 'ITEM_NUMBER_LOCAL_QA_RECEIPT', 'ITEM_NUMBER_LOCAL_QA_ROOT', 'ITEM_NUMBER_RENDER_QA_ADMIN_PACKET', 'ITEM_NUMBER_RENDER_QA_ARTIFACTS', 'ITEM_NUMBER_RENDER_QA_RESULTS', 'ITEM_NUMBER_RENDER_QA_ROOT', 'ITEM_NUMBER_RENDER_QA_TEMPLATE', 'ITEM_NUMBER_RENDER_QA_TEST_REPORT', 'ITEM_NUMBER_SMOKE_COMMENTS', 'ITEM_NUMBER_SMOKE_CREATE_AT', 'ITEM_NUMBER_SMOKE_DISPLAY_NAME', 'ITEM_NUMBER_SMOKE_FULFILLMENT_LINK', 'ITEM_NUMBER_SMOKE_POST_ID', 'ITEM_NUMBER_SMOKE_REVISION_HASH', 'ITEM_NUMBER_SMOKE_ROOT_POST_ID', 'ITEM_NUMBER_SMOKE_ROUTE', 'ITEM_NUMBER_SMOKE_TEMPLATE_NAME', 'ITEM_NUMBER_SMOKE_USER_ID', 'ITEM_NUMBER_SOURCE_XLS', 'ITEM_NUMBER_WORKFLOW_ENGINE', 'ITEM_NUMBER_WORKFLOW_ROOT', 'ITEM_NUMBER_WORKFLOW_ROOT', 'ITEM_NUMBER_WORKFLOW_RUNNER', 'ITEM_NUMBER_WORKFLOW_RUNNER_SCRIPT', 'ITEM_NUMBER_WORKFLOW_RUNNER_TEST', 'ITEM_NUMBER_WORKFLOW_SCRIPT', 'ITEM_NUMBER_WORKFLOW_TEST', 'ITEM_NUMBER_WORKFLOW_TMP_ROOT', 'JSON_ARTIFACT_INSPECT_KEY_CHARS', 'JSON_ARTIFACT_INSPECT_MAX_BYTES', 'JSON_ARTIFACT_INSPECT_MAX_FILES', 'JSON_ARTIFACT_INSPECT_MAX_KEYS', 'JSON_ARTIFACT_INSPECT_MAX_SAMPLE_KEYS', 'JSON_ARTIFACT_INSPECT_ROOTS', 'JSON_HTML_ARTIFACT_MAX_BYTES', 'JSON_HTML_ARTIFACT_MAX_PARAGRAPHS', 'KANBAN_BOARDS_ROOT', 'KANBAN_TASK_ID_RE', 'LOCAL_ARTIFACT_COPY_ALLOWED_SUFFIXES', 'LOCAL_ARTIFACT_COPY_DEST_ROOT', 'LOCAL_ARTIFACT_COPY_MAX_BYTES', 'LOCAL_ARTIFACT_COPY_SOURCE_ROOT', 'LOCAL_FILE_SEARCH_MAX_MATCHES', 'LOCAL_FILE_SEARCH_MAX_PATHS', 'LOCAL_FILE_SEARCH_MAX_PATTERNS', 'LOCAL_FILE_SEARCH_MAX_PATTERN_CHARS', 'LOCAL_FILE_SEARCH_MAX_WALK_FILES', 'LOCAL_FILE_SEARCH_ROOTS', 'LOCAL_PROCESS_LISTENER_CMD_CAP', 'LOCAL_PROCESS_LISTENER_DEFAULT_PORTS', 'LOCAL_PROCESS_LISTENER_MAX_PIDS', 'LOCAL_PROCESS_LISTENER_MAX_PORTS', 'LOCAL_PROCESS_LISTENER_PORTS', 'LOCAL_PROCESS_LISTENER_SS_COMM_RE', 'LOCAL_PROCESS_LISTENER_SS_PID_RE', 'MATTERMOST_CHANNEL_CREATE_CONFIRMATION', 'MATTERMOST_CHANNEL_SETUP_CONFIRMATION', 'MATTERMOST_POLICY_LOOKUP', 'MATTERMOST_REVIEW_LOG', 'OFFICE_DEB_ALLOWED_ROOT', 'OFFICE_DEB_CONTENT_MAX_LINES', 'OFFICE_DOCPROPS_APP_FIELDS', 'OFFICE_DOCPROPS_CORE_FIELDS', 'OFFICE_DOCPROPS_INPUT_SUFFIXES', 'OFFICE_DOCPROPS_INT_FIELDS', 'OFFICE_DOCPROPS_MAX_FIELD_CHARS', 'OFFICE_DOCPROPS_MAX_MEMBER_BYTES', 'OFFICE_DOCPROPS_MAX_NAMELIST', 'OFFICE_DOCPROPS_MAX_SOURCE_BYTES', 'OFFICE_DOCPROPS_MEMBERS', 'OFFICE_HTML_TO_DOCX_INPUT_SUFFIXES', 'OFFICE_HTML_TO_DOCX_MAX_BYTES', 'OFFICE_TOOLCHAIN_BINARIES', 'OFFICE_TO_PDF_INPUT_SUFFIXES', 'OFFICE_VISUAL_QA_INPUT_SUFFIXES', 'OFFICE_VISUAL_QA_MAX_BYTES', 'OFFICE_VISUAL_QA_MAX_FILES', 'OFFICE_VISUAL_QA_SCRIPT', 'OLLAMA_EMBEDDING_CONTAINER', 'OLLAMA_EMBEDDING_LOG_PATTERNS', 'OLLAMA_EMBEDDING_MAX_CONTAINER_TAIL_LINES', 'OLLAMA_EMBEDDING_MAX_JOURNAL_TAIL_LINES', 'OLLAMA_EMBEDDING_PEER_CONTAINER', 'OLLAMA_EMBEDDING_PORT', 'OLLAMA_EMBEDDING_UNIT', 'OLLAMA_EMBEDDING_WATCHDOG_LOG_PATTERNS', 'OLLAMA_EMBEDDING_WATCHDOG_MAX_JOURNAL_TAIL_LINES', 'OLLAMA_EMBEDDING_WATCHDOG_UNIT', 'PATH_BASE', 'PDAPP_TICKET_ID_RE', 'POLICY_ROLES', 'POLICY_USERS', 'PPTX_EXACT_TEXT_PATCH_SCRIPT', 'PPTX_FROM_TEMPLATE_SCRIPT', 'PPTX_INSPECT_MAX_BYTES', 'PPTX_INSPECT_MAX_DEPTH', 'PPTX_INSPECT_MAX_PARAS', 'PPTX_INSPECT_MAX_RUNS', 'PPTX_INSPECT_MAX_SHAPES', 'PPTX_INSPECT_MAX_SLIDES', 'PPTX_INSPECT_MAX_TEXT', 'PPTX_OOXML_DRAWINGML_T', 'PPTX_OOXML_TEXT_INSPECT_MAX_BYTES', 'PPTX_OOXML_TEXT_INSPECT_MAX_MEMBERS', 'PPTX_OOXML_TEXT_INSPECT_MAX_MEMBER_BYTES', 'PPTX_OOXML_TEXT_INSPECT_MAX_TEXTS', 'PPTX_OOXML_TEXT_INSPECT_MAX_TEXT_CHARS', 'PPTX_OOXML_TEXT_INSPECT_MEMBER_RE', 'PROTECTED_PORTAL_ADMIN_EMAIL', 'PROTECTED_PORTAL_DEFAULT_PROBES', 'PROTECTED_PORTAL_MANIFEST', 'PROTECTED_PORTAL_ORIGIN_BODY_CAP', 'PROTECTED_PORTAL_ORIGIN_HOST', 'PROTECTED_PORTAL_ORIGIN_PORT', 'PROTECTED_PORTAL_ORIGIN_TIMEOUT_SEC', 'PROTECTED_PORTAL_ORIGIN_TITLE_CAP', 'PROTECTED_PORTAL_UNKNOWN_EMAIL', 'PYTHON_CAD_STACK_MODULES', 'PYTHON_DOCX_REPAIR_CONFIRMATION', 'PYTHON_DOCX_REPAIR_PACKAGE', 'PYTHON_DOCX_REPAIR_PYTHON', 'PYTHON_DOCX_REPAIR_TICKET_ID', 'PYTHON_DOCX_REPAIR_VERSION', 'PYTHON_MEDIA_STACK_MODULES', 'REGISTRY', 'ROOT', 'SHEETS_GET_RENDER_OPTIONS', 'SHEETS_SAFE_OPS', 'SIP_THREAD_INDEX_INPUT_GLOBS', 'SIP_THREAD_INDEX_NOISE_MARKERS', 'SIP_THREAD_INDEX_OUTPUT', 'SIP_THREAD_INDEX_ROOT', 'SIP_THREAD_INDEX_SCRIPT', 'STEP_GEOMETRY_FACE_EXTRA_KEYS', 'STEP_GEOMETRY_FREECADCMD', 'STEP_GEOMETRY_HEADER_BYTES', 'STEP_GEOMETRY_INPUT_ROOTS', 'STEP_GEOMETRY_JSON_MAX_BYTES', 'STEP_GEOMETRY_JSON_SUFFIXES', 'STEP_GEOMETRY_MAX_FACE_EXTRAS', 'STEP_GEOMETRY_MAX_SOLIDS', 'STEP_GEOMETRY_MAX_SOURCE_BYTES', 'STEP_GEOMETRY_MAX_UNKNOWN_EDGES', 'STEP_GEOMETRY_OUTPUT_ROOT', 'STEP_GEOMETRY_SCRIPT', 'STEP_GEOMETRY_SUFFIXES', 'STEP_GEOMETRY_TIMEOUT_SECONDS', 'STEP_GEOMETRY_UNKNOWN_EDGE_KINDS', 'STEP_PRINTABILITY_JSON_MAX_BYTES', 'STEP_PRINTABILITY_JSON_NAMES', 'STEP_PRINTABILITY_MAX_FINDINGS', 'STEP_PRINTABILITY_OUTPUT_ROOT', 'STEP_PRINTABILITY_SCRIPT', 'STEP_PRINTABILITY_TIMEOUT_SECONDS', 'SVG_EMBED_IMAGE_ALLOWED_URL', 'SVG_EMBED_IMAGE_MAX_REMOTE_BYTES', 'SVG_EMBED_IMAGE_MAX_SVG_BYTES', 'SVG_EMBED_IMAGE_OUTPUT_ROOT', 'SVG_INSPECT_MAX_ATTR_CHARS', 'SVG_INSPECT_MAX_BYTES', 'SVG_INSPECT_MAX_ELEMENTS', 'SVG_INSPECT_MAX_IMAGES', 'SVG_INSPECT_MAX_REQUIRED_TEXTS', 'SVG_INSPECT_MAX_REQUIRED_TEXT_CHARS', 'SYSSTAT_LOG_ROOT', 'SYSSTAT_SUMMARY_DEFAULT_HOURS', 'SYSSTAT_SUMMARY_MAX_HOURS', 'SYSSTAT_SUMMARY_METRIC_SPECS', 'THREEMF_SLICER_INPUT_ROOTS', 'THREEMF_SLICER_MAX_MEMBER_BYTES', 'THREEMF_SLICER_MAX_NAMELIST', 'THREEMF_SLICER_MAX_SETTINGS', 'THREEMF_SLICER_MAX_SOURCE_BYTES', 'THREEMF_SLICER_MAX_VALUE_CHARS', 'THREEMF_SLICER_MEMBERS', 'THREEMF_SLICER_OUTPUT_ROOT', 'THREEMF_SLICER_SETTING_KEYS', 'TYPHOON_AUTOMATION_FIXTURE_ROOTS', 'TYPHOON_AUTOMATION_LIVE_CONFIRMATION', 'TYPHOON_AUTOMATION_SCRIPT', 'TYPHOON_AUTOMATION_SWEEP_CASES', 'TYPHOON_AUTOMATION_SWEEP_STATE_FILE', 'TYPHOON_AUTOMATION_TEST', 'USER_PROCESS_SNAPSHOT_CMD_CHARS', 'USER_PROCESS_SNAPSHOT_MAX_ROWS', 'USER_PROCESS_SNAPSHOT_SECRET_KV_RE', 'USER_PROCESS_SNAPSHOT_USER', 'VIDEO_FRAME_ALLOWED_SUFFIXES', 'VIDEO_FRAME_DEFAULT_FRACTIONS', 'VIDEO_FRAME_INPUT_ROOT', 'VIDEO_FRAME_MAX_DURATION_SECONDS', 'VIDEO_FRAME_MAX_SOURCE_BYTES', 'VIDEO_FRAME_OUTPUT_ROOT', 'XLSX_WORKBOOK_INSPECT_MAX_BYTES', 'XLSX_WORKBOOK_INSPECT_MAX_CELL_CHARS', 'XLSX_WORKBOOK_INSPECT_MAX_COLUMNS', 'XLSX_WORKBOOK_INSPECT_MAX_FILES', 'XLSX_WORKBOOK_INSPECT_MAX_ROWS', 'XLSX_WORKBOOK_INSPECT_MAX_SHEETS', 'XLSX_WORKBOOK_INSPECT_SUFFIXES', '_PdHandled', '_PdLazyAttr', '_PdLazyMod', '_PdReturn', '_PdUnset', '_PdUnset', '_appsheet_incident_morning_briefing_qa_samples', '_bounded_int', '_dest_rest_day_number', '_format_ps_etime', '_load_appsheet_incident_morning_briefing_module', '_parse_key_value_lines', '_probe_text', '_proc_start_ticks', '_scan_embedding_log_text', '_scan_embedding_watchdog_log_text', '_sysstat_emit_row', '_sysstat_metric_report', '_sysstat_numeric', '_sysstat_parse_sadf_output', '_sysstat_percentile', '_sysstat_select_log_files', '_sysstat_series_summary', '_sysstat_state_high', '_sysstat_state_low', '_validated_probe_name', 'bounded_sheet_cell_a1', 'cmd_appsheet_definition_apply', 'cmd_appsheet_definition_inspect', 'cmd_appsheet_incident_morning_briefing_qa', 'cmd_appsheet_table_probe', 'cmd_auth_browser_status', 'cmd_bounded_sheet_cell_write', 'cmd_cached_dest_rest_count', 'cmd_cached_sheet_json_search', 'cmd_disk_space_summary', 'cmd_google_drive_parent_chain', 'cmd_google_drive_search_files', 'cmd_google_group_change', 'cmd_google_group_members', 'cmd_numeric_summary', 'cmd_registry_list', 'cmd_sheets_append', 'cmd_sheets_batch_update', 'cmd_sheets_get_range', 'cmd_sheets_header_update_row', 'cmd_text_metrics', 'emit', 'enforce_drive_acl', 'fail', 'find_bin', 'http_status', 'load_bounded_sheet_cell_write_payload', 'normalize_email', 'port_open', 'redact_process_cmd', 'requests', 'require_pdone_tmp_path', 'require_under_roots', 'run_capture', 'run_json', 'safe_env', 'tail_text']
 
 class _PdReturn:
     __slots__ = ('value',)
@@ -94,7 +94,7 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 from pathlib import Path
 from statistics import mean, median
 from typing import Any
@@ -328,6 +328,7 @@ def SVG_EMBED_IMAGE_OUTPUT_ROOT():
 SVG_EMBED_IMAGE_ALLOWED_URL = 'https://tw.prodesign-group.com/img/logo.png'
 SVG_EMBED_IMAGE_MAX_SVG_BYTES = 2 * 1024 * 1024
 SVG_EMBED_IMAGE_MAX_REMOTE_BYTES = 512 * 1024
+# no-tmp: ok — documented nemo host path or an existing PD One artifact contract
 HERMES_RESULTS_ROOT = Path('/tmp/hermes-results')
 HERMES_RESULT_SUMMARY_MAX_BYTES = 5 * 1024 * 1024
 HERMES_RESULT_SUMMARY_MAX_MESSAGES = 200
@@ -568,10 +569,10 @@ OLLAMA_EMBEDDING_CONTAINER = 'honcho-pd-neo-api-1'
 OLLAMA_EMBEDDING_PEER_CONTAINER = 'honcho-pd-neo-deriver-1'
 OLLAMA_EMBEDDING_MAX_CONTAINER_TAIL_LINES = 20000
 OLLAMA_EMBEDDING_MAX_JOURNAL_TAIL_LINES = 2000
-OLLAMA_EMBEDDING_LOG_PATTERNS = {'embedding_mentions': re.compile('embedd', re.I), 'connection_refused': re.compile('connection refused|errno 111', re.I), 'connection_timeout': re.compile('timed? ?out|timeout', re.I), 'authentication_error': re.compile('authenticationerror|401|unauthorized', re.I), 'retrying_requests': re.compile('retrying request', re.I), 'ollama_mentions': re.compile('ollama|bge-m3', re.I), 'successful_http_200': re.compile('HTTP/1\\.[01].* 200\\b', re.I), 'httpx_connect_error': re.compile('httpx\\.ConnectError|All connection attempts failed', re.I), 'api_connection_error': re.compile('openai\\.APIConnectionError|Connection error\\.', re.I)}
+OLLAMA_EMBEDDING_LOG_PATTERNS = {'embedding_mentions': re.compile('embedd', re.IGNORECASE), 'connection_refused': re.compile('connection refused|errno 111', re.IGNORECASE), 'connection_timeout': re.compile('timed? ?out|timeout', re.IGNORECASE), 'authentication_error': re.compile('authenticationerror|401|unauthorized', re.IGNORECASE), 'retrying_requests': re.compile('retrying request', re.IGNORECASE), 'ollama_mentions': re.compile('ollama|bge-m3', re.IGNORECASE), 'successful_http_200': re.compile('HTTP/1\\.[01].* 200\\b', re.IGNORECASE), 'httpx_connect_error': re.compile('httpx\\.ConnectError|All connection attempts failed', re.IGNORECASE), 'api_connection_error': re.compile('openai\\.APIConnectionError|Connection error\\.', re.IGNORECASE)}
 OLLAMA_EMBEDDING_WATCHDOG_UNIT = 'pd-neo-embedding-endpoint-watchdog.service'
 OLLAMA_EMBEDDING_WATCHDOG_MAX_JOURNAL_TAIL_LINES = 4000
-OLLAMA_EMBEDDING_WATCHDOG_LOG_PATTERNS = {'remote_ok_true': re.compile('\\bremote_ok=True\\b'), 'remote_ok_false': re.compile('\\bremote_ok=False\\b'), 'mode_remote': re.compile('\\bmode=remote\\b'), 'mode_local': re.compile('\\bmode=local\\b'), 'switch_events': re.compile('switched Honcho embeddings', re.I), 'service_failures': re.compile('Failed with result|status=1/FAILURE', re.I)}
+OLLAMA_EMBEDDING_WATCHDOG_LOG_PATTERNS = {'remote_ok_true': re.compile('\\bremote_ok=True\\b'), 'remote_ok_false': re.compile('\\bremote_ok=False\\b'), 'mode_remote': re.compile('\\bmode=remote\\b'), 'mode_local': re.compile('\\bmode=local\\b'), 'switch_events': re.compile('switched Honcho embeddings', re.IGNORECASE), 'service_failures': re.compile('Failed with result|status=1/FAILURE', re.IGNORECASE)}
 LOCAL_PROCESS_LISTENER_PORTS = {8646: 'pdone_line_gateway', 8766: 'pdone_protected_portal', 8765: 'hermes_dashboard'}
 LOCAL_PROCESS_LISTENER_DEFAULT_PORTS = (8646, 8766)
 LOCAL_PROCESS_LISTENER_MAX_PORTS = 3
@@ -615,9 +616,9 @@ def enforce_drive_acl(file_id: str, requester_user_id: str | None, *, need: str)
     if not isinstance(data, dict):
         fail('drive ACL helper returned invalid receipt')
     if need == 'write' and (not data.get('canWrite')):
-        fail(f'drive ACL denied write via={data.get('via') or 'none'} reason={data.get('reason') or 'denied'}')
+        fail(f"drive ACL denied write via={data.get('via') or 'none'} reason={data.get('reason') or 'denied'}")
     if need == 'read' and (not data.get('canRead')):
-        fail(f'drive ACL denied read via={data.get('via') or 'none'} reason={data.get('reason') or 'denied'}')
+        fail(f"drive ACL denied read via={data.get('via') or 'none'} reason={data.get('reason') or 'denied'}")
     return data
 
 def safe_env() -> dict[str, str]:
@@ -644,7 +645,7 @@ def launch_argv(cmd: list[Any]) -> list[str]:
         raise
 
 def run_json(cmd: list[str], timeout: int=120) -> Any:
-    proc = subprocess.run(launch_argv(cmd), text=True, capture_output=True, env=safe_env(), shell=False, timeout=timeout)
+    proc = subprocess.run(launch_argv(cmd), check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, env=safe_env(), shell=False, timeout=timeout)
     if proc.returncode != 0:
         fail(f'command failed rc={proc.returncode}: {proc.stderr.strip()[:800] or proc.stdout.strip()[:800]}', proc.returncode)
     out = proc.stdout.strip()
@@ -657,7 +658,7 @@ def run_json(cmd: list[str], timeout: int=120) -> Any:
         return {'raw_stdout': out}
 
 def run_capture(cmd: list[str], timeout: int=120, cwd: str | None=None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(launch_argv(cmd), cwd=cwd, text=True, capture_output=True, env=safe_env(), shell=False, timeout=timeout)
+    return subprocess.run(launch_argv(cmd), check=False, cwd=cwd, text=True, encoding="utf-8", errors="replace", capture_output=True, env=safe_env(), shell=False, timeout=timeout)
 
 def tail_text(text: str, limit: int=1200) -> str:
     return (text or '')[-limit:]
@@ -671,7 +672,7 @@ def normalize_email(v: str) -> str:
 def cmd_registry_list(args: argparse.Namespace) -> None:
     if not REGISTRY().exists():
         fail(f'registry not found: {REGISTRY()}')
-    emit({'status': 'ok', 'registry': str(REGISTRY()), 'content': REGISTRY().read_text(encoding='utf-8')})
+    emit({'status': 'ok', 'registry': str(REGISTRY()), 'content': REGISTRY().read_text(encoding='utf-8-sig')})
 SHEETS_GET_RENDER_OPTIONS = ('FORMATTED_VALUE', 'UNFORMATTED_VALUE', 'FORMULA')
 
 def cmd_sheets_get_range(args: argparse.Namespace) -> None:
@@ -750,19 +751,19 @@ def cmd_cached_sheet_json_search(args: argparse.Namespace) -> None:
             fail('cached-sheet-json-search requires at least one --term')
         if len(terms) > CACHED_SHEET_JSON_MAX_TERMS:
             fail('cached-sheet-json-search accepts at most 8 terms')
-        if any((len(term) > CACHED_SHEET_JSON_TERM_CHARS for term in terms)):
+        if any(len(term) > CACHED_SHEET_JSON_TERM_CHARS for term in terms):
             fail('cached-sheet-json-search terms must be at most 128 characters')
         requested_columns = [str(column).strip() for column in args.column or [] if str(column).strip()]
         if len(requested_columns) > CACHED_SHEET_JSON_MAX_COLUMNS:
             fail('cached-sheet-json-search accepts at most 12 columns')
-        if any((len(column) > 64 for column in requested_columns)):
+        if any(len(column) > 64 for column in requested_columns):
             fail('cached-sheet-json-search column names must be at most 64 characters')
         header_row = int(args.header_row)
         if header_row < 1 or header_row > CACHED_SHEET_JSON_MAX_ROWS:
             fail('header-row must be a 1-based sheet row between 1 and 10000')
         max_matches = max(1, min(int(args.max_matches), CACHED_SHEET_JSON_MAX_MATCHES))
         try:
-            payload = json.loads(path.read_text(encoding='utf-8'))
+            payload = json.loads(path.read_text(encoding='utf-8-sig'))
         except Exception as exc:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             fail(f'cached-sheet-json-search could not parse JSON: {exc}')
@@ -794,7 +795,7 @@ def cmd_cached_sheet_json_search(args: argparse.Namespace) -> None:
             if not isinstance(row, list):
                 continue
             bounded_row = row[:CACHED_SHEET_JSON_MAX_COLS]
-            haystack = ' '.join(('' if cell is None else str(cell) for cell in bounded_row)).casefold()
+            haystack = ' '.join('' if cell is None else str(cell) for cell in bounded_row).casefold()
             matched_terms = [term for term, folded in folded_terms if folded in haystack]
             if not matched_terms:
                 continue
@@ -864,7 +865,7 @@ def cmd_cached_dest_rest_count(args: argparse.Namespace) -> None:
             fail('cached-dest-rest-count requires at least one --term')
         if len(terms) > CACHED_SHEET_JSON_MAX_TERMS:
             fail('cached-dest-rest-count accepts at most 8 terms')
-        if any((len(term) > CACHED_SHEET_JSON_TERM_CHARS for term in terms)):
+        if any(len(term) > CACHED_SHEET_JSON_TERM_CHARS for term in terms):
             fail('cached-dest-rest-count terms must be at most 128 characters')
         markers = [str(marker).strip() for marker in args.marker or [] if str(marker).strip()]
         if not markers:
@@ -887,7 +888,7 @@ def cmd_cached_dest_rest_count(args: argparse.Namespace) -> None:
         if window_start is not None and window_end is not None and (window_start > window_end):
             fail('window-start must be <= window-end')
         try:
-            payload = json.loads(path.read_text(encoding='utf-8'))
+            payload = json.loads(path.read_text(encoding='utf-8-sig'))
         except Exception as exc:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             fail(f'cached-dest-rest-count could not parse JSON: {exc}')
@@ -964,14 +965,14 @@ def cmd_cached_dest_rest_count(args: argparse.Namespace) -> None:
 def require_pdone_tmp_path(path_text: str, label: str) -> Path:
     path = Path(path_text).expanduser().resolve(strict=False)
     allowed = [ROOT() / 'tmp', ROOT() / 'artifacts', ROOT() / 'cache']
-    if not any((str(path).startswith(str(root.resolve()) + os.sep) or path == root.resolve() for root in allowed)):
+    if not any(str(path).startswith(str(root.resolve()) + os.sep) or path == root.resolve() for root in allowed):
         fail(f'{label} must be under an approved PD One tmp/artifacts/cache root: {path}')
     return path
 
 def require_under_roots(path_text: str, label: str, roots: list[Path]) -> Path:
     path = Path(path_text).expanduser().resolve(strict=False)
     resolved_roots = [root.resolve() for root in roots]
-    if not any((str(path).startswith(str(root) + os.sep) or path == root for root in resolved_roots)):
+    if not any(str(path).startswith(str(root) + os.sep) or path == root for root in resolved_roots):
         fail(f'{label} must be under an approved PD One root: {path}')
     return path
 
@@ -1076,7 +1077,7 @@ def load_bounded_sheet_cell_write_payload(path_text: str) -> dict[str, Any]:
     if not bind_path.is_file():
         fail(f'--bind-json not found: {bind_path}')
     try:
-        raw = json.loads(bind_path.read_text(encoding='utf-8'))
+        raw = json.loads(bind_path.read_text(encoding='utf-8-sig'))
     except json.JSONDecodeError as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         fail(f'--bind-json is not valid JSON: {exc}')
@@ -1134,18 +1135,18 @@ def cmd_bounded_sheet_cell_write(args: argparse.Namespace) -> None:
     spreadsheet_id = payload['spreadsheet_id']
     tab = payload['tab']
     quoted_tab = "'" + tab.replace("'", "''") + "'"
-    freeze_ranges = [f'{quoted_tab}!{item['a1']}' for item in payload['do_not_change']]
-    write_ranges = [f'{quoted_tab}!{item['a1']}' for item in payload['cells']]
+    freeze_ranges = [f"{quoted_tab}!{item['a1']}" for item in payload['do_not_change']]
+    write_ranges = [f"{quoted_tab}!{item['a1']}" for item in payload['cells']]
     if args.verify_live_read:
         for item in payload['do_not_change']:
-            cell_range = f'{quoted_tab}!{item['a1']}'
+            cell_range = f"{quoted_tab}!{item['a1']}"
             live = run_json([sys.executable, str(SHEETS_SAFE_OPS()), 'get', spreadsheet_id, cell_range, '--account', args.account, '--print-values', '--retries', '3'], timeout=150)
             values = live.get('values') if isinstance(live, dict) else None
             current = ''
             if isinstance(values, list) and values and isinstance(values[0], list) and values[0]:
                 current = str(values[0][0])
             if current != item['value']:
-                fail(f'vendor/grade freeze mismatch at {item['a1']}: live {current!r} != bound {item['value']!r}')
+                fail(f"vendor/grade freeze mismatch at {item['a1']}: live {current!r} != bound {item['value']!r}")
     if args.live:
         if args.confirm_live_write != BOUNDED_SHEET_CELL_WRITE_LIVE_CONFIRM:
             fail(f"live bounded sheet cell write requires --confirm-live-write '{BOUNDED_SHEET_CELL_WRITE_LIVE_CONFIRM}'")
@@ -1265,7 +1266,7 @@ def cmd_appsheet_incident_morning_briefing_qa(args: argparse.Namespace) -> None:
     safety = {'read_only': True, 'shell_used': False, 'network_used': False, 'fixed_script': True, 'uses_execute_code_replacement': True}
     script = APPSHEET_INCIDENT_MORNING_BRIEFING_SCRIPT()
     try:
-        source_text = script.read_text(encoding='utf-8')
+        source_text = script.read_text(encoding='utf-8-sig')
     except Exception as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         emit({'status': 'error', 'capability': 'pd_one_appsheet_incident_morning_briefing_qa', 'error': 'script_read_failed', 'detail': str(exc), 'script': str(script), 'safety': safety})
@@ -1291,7 +1292,7 @@ def cmd_appsheet_incident_morning_briefing_qa(args: argparse.Namespace) -> None:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         emit({'status': 'error', 'capability': 'pd_one_appsheet_incident_morning_briefing_qa', 'error': 'helper_qa_failed', 'detail': str(exc), 'script': str(script), 'source_sha256': hashlib.sha256(source_text.encode('utf-8')).hexdigest(), 'safety': safety})
         return
-    emit({'status': 'ok', 'capability': 'pd_one_appsheet_incident_morning_briefing_qa', 'script': str(script), 'source_sha256': hashlib.sha256(source_text.encode('utf-8')).hexdigest(), 'module': {'name': getattr(module, '__name__', ''), 'loaded': True}, 'checks': {'dashboard_link_idempotent': dashboard_linked == dashboard_relinked, 'dashboard_link_count': dashboard_linked.count(dashboard_url) if dashboard_url else 0, 'short_split_kept_whole': short_current == short_sample and short_remaining is None, 'long_split_has_continuation': bool(long_remaining), 'long_split_current_within_limit': len(long_current) <= 420, 'split_part_count': len(split_parts), 'split_parts_within_limit': all((len(part) <= 420 for part in split_parts)), 'split_first_part_has_suffix': bool(split_parts and split_parts[0].endswith('_Continued in reply / 下方回覆續上。_')), 'split_later_parts_have_prefix': all((part.startswith('_Continuation / 續上。_\n\n') for part in split_parts[1:])), 'long_split_current_has_suffix': long_current.endswith('_Continued in reply / 下方回覆續上。_')}, 'samples': {'short_length': len(short_sample), 'long_length': len(long_sample)}, 'safety': safety})
+    emit({'status': 'ok', 'capability': 'pd_one_appsheet_incident_morning_briefing_qa', 'script': str(script), 'source_sha256': hashlib.sha256(source_text.encode('utf-8')).hexdigest(), 'module': {'name': getattr(module, '__name__', ''), 'loaded': True}, 'checks': {'dashboard_link_idempotent': dashboard_linked == dashboard_relinked, 'dashboard_link_count': dashboard_linked.count(dashboard_url) if dashboard_url else 0, 'short_split_kept_whole': short_current == short_sample and short_remaining is None, 'long_split_has_continuation': bool(long_remaining), 'long_split_current_within_limit': len(long_current) <= 420, 'split_part_count': len(split_parts), 'split_parts_within_limit': all(len(part) <= 420 for part in split_parts), 'split_first_part_has_suffix': bool(split_parts and split_parts[0].endswith('_Continued in reply / 下方回覆續上。_')), 'split_later_parts_have_prefix': all(part.startswith('_Continuation / 續上。_\n\n') for part in split_parts[1:]), 'long_split_current_has_suffix': long_current.endswith('_Continued in reply / 下方回覆續上。_')}, 'samples': {'short_length': len(short_sample), 'long_length': len(long_sample)}, 'safety': safety})
 
 def cmd_appsheet_definition_inspect(args: argparse.Namespace) -> None:
     from tools.pd_one_ops.pd_one_appsheet_definition_ops import inspect_definition
@@ -1349,7 +1350,7 @@ def cmd_google_drive_parent_chain(args: argparse.Namespace) -> None:
     chain: list[dict[str, Any]] = []
     current = file_id
     for _ in range(hops):
-        proc = subprocess.run([gog, 'drive', 'get', current, '--account', account, '--json', '--no-input'], cwd=resolve_configured_path('~'), env={**os.environ, 'HOME': resolve_configured_path('~')}, text=True, capture_output=True, shell=False, timeout=30)
+        proc = subprocess.run([gog, 'drive', 'get', current, '--account', account, '--json', '--no-input'], check=False, cwd=resolve_configured_path('~'), env={**os.environ, 'HOME': resolve_configured_path('~')}, text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=30)
         if proc.returncode != 0:
             chain.append({'id': current, 'error': proc.stderr[-500:] or proc.stdout[-500:]})
             break
@@ -1392,7 +1393,7 @@ def cmd_google_drive_search_files(args: argparse.Namespace) -> None:
     if not gog:
         fail('gog binary not found')
     query = f"modifiedTime >= '{window_start}' and '{parent_id}' in parents"
-    proc = subprocess.run([gog, 'drive', 'search', query, '--raw-query', '--account', account, '--json', '--no-input', '--max', str(max_files)], cwd=resolve_configured_path('~'), env=safe_env(), text=True, capture_output=True, shell=False, timeout=min(int(args.timeout), 120))
+    proc = subprocess.run([gog, 'drive', 'search', query, '--raw-query', '--account', account, '--json', '--no-input', '--max', str(max_files)], check=False, cwd=resolve_configured_path('~'), env=safe_env(), text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=min(int(args.timeout), 120))
     if proc.returncode != 0:
         fail(proc.stderr[-500:] or proc.stdout[-500:] or 'Drive search failed')
     try:
@@ -1532,7 +1533,7 @@ def cmd_auth_browser_status(args: argparse.Namespace) -> None:
     container = args.container
     info: dict[str, Any] = {'status': 'ok', 'capability': 'pd_one_auth_browser_status', 'container': container}
     if docker:
-        proc = subprocess.run([docker, 'ps', '--filter', f'name={container}', '--format', '{{json .}}'], text=True, capture_output=True, env=safe_env(), shell=False, timeout=10)
+        proc = subprocess.run([docker, 'ps', '--filter', f'name={container}', '--format', '{{json .}}'], check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, env=safe_env(), shell=False, timeout=10)
         rows = []
         for line in proc.stdout.splitlines():
             try:
@@ -1553,7 +1554,7 @@ def cmd_auth_browser_status(args: argparse.Namespace) -> None:
     emit(info)
 
 def _sysstat_percentile(values: list[float], p: float) -> float | None:
-    clean = sorted((v for v in values if isinstance(v, (int, float))))
+    clean = sorted(v for v in values if isinstance(v, (int, float)))
     if not clean:
         return None
     k = (len(clean) - 1) * p / 100
@@ -1609,7 +1610,7 @@ def _sysstat_parse_sadf_output(stdout: str, window_start: datetime, window_end: 
     for row in reader:
         ts_text = (row.get('timestamp') or '').strip()
         try:
-            ts = datetime.strptime(ts_text, '%Y-%m-%d %H:%M:%S UTC').replace(tzinfo=timezone.utc)
+            ts = datetime.strptime(ts_text, '%Y-%m-%d %H:%M:%S UTC').replace(tzinfo=UTC)
         except ValueError:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             continue
@@ -1710,12 +1711,12 @@ def cmd_text_metrics(args: argparse.Namespace) -> None:
     text = str(args.text or '')
     if len(text) > 20000:
         fail('text must contain at most 20000 Unicode code points')
-    emit({'status': 'ok', 'capability': 'pd_one_text_metrics', 'characters_including_punctuation': len(text), 'utf8_bytes': len(text.encode('utf-8')), 'non_whitespace_characters': sum((1 for character in text if not character.isspace())), 'line_count': 0 if not text else text.count('\n') + 1, 'safety': {'read_only': True, 'shell_used': False, 'bounded_inputs': True, 'text_returned': False, 'source_system_writes_forbidden': True}})
+    emit({'status': 'ok', 'capability': 'pd_one_text_metrics', 'characters_including_punctuation': len(text), 'utf8_bytes': len(text.encode('utf-8')), 'non_whitespace_characters': sum(1 for character in text if not character.isspace()), 'line_count': 0 if not text else text.count('\n') + 1, 'safety': {'read_only': True, 'shell_used': False, 'bounded_inputs': True, 'text_returned': False, 'source_system_writes_forbidden': True}})
 
 def cmd_disk_space_summary(args: argparse.Namespace) -> None:
     """Read root capacity and project bounded reclaim estimates without cleanup."""
     values = (int(args.low_risk_bytes), int(args.medium_risk_bytes), int(args.additional_bytes))
-    if any((value < 0 for value in values)):
+    if any(value < 0 for value in values):
         fail('reclaim byte estimates must be non-negative')
     usage = shutil.disk_usage('/')
     size = int(usage.total)

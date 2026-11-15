@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from pathlib import Path
 from unittest.mock import patch
 
@@ -80,7 +80,7 @@ def test_hold_ack_suppresses_mattermost_release(home: Path, monkeypatch) -> None
 
     assert cmd_ack(home, correlation) == 0
 
-    t1 = datetime(2026, 1, 1, 12, 20, tzinfo=timezone.utc)
+    t1 = datetime(2026, 1, 1, 12, 20, tzinfo=UTC)
     state = load_state(home)
     released = flush_held(home, state, dry_run=False, now=t1)
     assert released == 0
@@ -108,7 +108,7 @@ def test_hold_expiry_releases_to_mattermost(home: Path, monkeypatch) -> None:
         lambda channel, message, dry_run=False: mm.append(message) or True,
     )
 
-    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     send_route(
         home,
         "pd_one_failure_escalations",
@@ -163,7 +163,7 @@ def test_supervisor_deadman_single_escalation(home: Path, monkeypatch) -> None:
     )
     monkeypatch.setattr(supervisor, "is_correlation_acked", lambda _h, _c: False)
 
-    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     state = {"findings": [{"id": "x", "severity": "critical", "subject": "fire"}], "notified_fingerprint": ""}
     with patch.object(neo, "post_json_webhook", return_value=True):
         state = supervisor.maybe_notify_neo(home, state, now=t0, dry_run=False)

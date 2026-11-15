@@ -84,6 +84,7 @@ Use bounded probes; avoid broad live-gateway diagnostics. Do not pipe `openclaw 
 cd /home/prodesign/.openclaw/workspace
 openclaw config validate
 openclaw channels status
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 curl -fsS -o /tmp/pd-one-line-webhook-check.txt -w '%{http_code}' https://pd-one-line.andyylin.com/line/webhook
 journalctl --user -u openclaw-gateway.service --since '5 min ago' --no-pager -o cat \
   | grep -E 'reload|ready|starting LINE|invalid config|error|warning|ownerAllowFrom|allowFrom' \

@@ -9,7 +9,10 @@ webhook post fails or an incident stays unacked for 45 minutes.
 from __future__ import annotations
 
 import argparse
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # Linux file locks; this host is nemo
 import hashlib
 import json
 import logging
@@ -25,7 +28,7 @@ import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -57,7 +60,7 @@ LOG = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _iso(dt: datetime | None = None) -> str:
@@ -114,7 +117,7 @@ def load_secrets(path: Path) -> dict[str, str]:
     if not _secrets_mode_ok(path):
         raise SystemExit(f"secrets file must be mode 600 or tighter (no group/world access): {path}")
     data: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -179,7 +182,7 @@ def collect_supervisor_findings(path: Path) -> list[LiveIncident]:
     if not path.is_file():
         return []
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
         LOG.exception("failed to read supervisor state %s", path)
         return []
@@ -217,7 +220,7 @@ def collect_cron_failures(paths: list[Path]) -> list[LiveIncident]:
         if not path.is_file():
             continue
         try:
-            jobs = json.loads(path.read_text(encoding="utf-8"))
+            jobs = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError):
             LOG.exception("failed to read cron jobs %s", path)
             continue
@@ -251,7 +254,7 @@ def collect_cron_failures(paths: list[Path]) -> list[LiveIncident]:
 def _list_failed_hermes_units(
     runner: Callable[[list[str]], subprocess.CompletedProcess[str]] | None = None,
 ) -> list[str]:
-    run = runner or (lambda argv: subprocess.run(argv, capture_output=True, text=True, timeout=30, check=False))
+    run = runner or (lambda argv: subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False))
     proc = run(
         [
             "systemctl",
@@ -337,7 +340,7 @@ def load_state(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {"incidents": {}, "last_fallback_at": None, "updated_at": None}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
         LOG.exception("corrupt watchdog state; resetting %s", path)
         return {"incidents": {}, "last_fallback_at": None, "updated_at": None}
@@ -446,7 +449,7 @@ def send_mattermost_fallback(message: str, *, dry_run: bool) -> bool:
     hermes = os.environ.get("HERMES_BIN", "hermes").strip() or "hermes"
     cmd = [hermes, "--profile", PROFILE, "send", "--to", target, message]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         LOG.error("mattermost fallback command failed: %s", exc)
         return False

@@ -247,7 +247,7 @@ def _cacheable(text: str) -> bool:
 
 
 def _cache_text(value: object) -> str | None:
-    if value is None or isinstance(value, bool) or isinstance(value, (dict, list)):
+    if value is None or isinstance(value, (bool, dict, list)):
         return None
     text = str(value).strip()
     if not _cacheable(text):

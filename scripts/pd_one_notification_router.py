@@ -46,7 +46,7 @@ RETRY_MAX_SECONDS = 3600
 
 
 def utcnow() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)
+    return dt.datetime.now(dt.UTC)
 
 
 def iso(value: dt.datetime | None = None) -> str:
@@ -54,7 +54,7 @@ def iso(value: dt.datetime | None = None) -> str:
 
 
 def parse_iso(value: str) -> dt.datetime:
-    return dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+    return dt.datetime.fromisoformat(value)
 
 
 def atomic_json(path: Path, payload: Any, mode: int = 0o600) -> None:
@@ -80,7 +80,7 @@ def atomic_json(path: Path, payload: Any, mode: int = 0o600) -> None:
 
 
 def load_registry(path: Path) -> dict[str, Any]:
-    data = json.loads(path.read_text(encoding='utf-8'))
+    data = json.loads(path.read_text(encoding='utf-8-sig'))
     if data.get('schema_version') != 1 or not isinstance(data.get('routes'), dict):
         raise RuntimeError(f'invalid notification route registry: {path}')
     return data
@@ -127,7 +127,7 @@ def load_neo_router_state(home: Path) -> dict[str, Any]:
     if not path.is_file():
         return {'acked': [], 'held_for_neo': []}
     try:
-        data = json.loads(path.read_text(encoding='utf-8'))
+        data = json.loads(path.read_text(encoding='utf-8-sig'))
     except (OSError, json.JSONDecodeError):
         LOG.exception('resetting corrupt neo router state %s', path)
         return {'acked': [], 'held_for_neo': []}
@@ -439,9 +439,9 @@ def deliver_email(recipient: str, title: str, message: str, dry_run: bool) -> di
 
 def deliver_hermes(target: str, message: str, dry_run: bool) -> dict[str, Any]:
     if dry_run:
-        proc = subprocess.run([HERMES, '--profile', 'pdone', 'send', '--list', target.split(':', 1)[0], '--json'], text=True, capture_output=True, timeout=30, check=False)
+        proc = subprocess.run([HERMES, '--profile', 'pdone', 'send', '--list', target.split(':', 1)[0], '--json'], text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=30, check=False)
     else:
-        proc = subprocess.run([HERMES, '--profile', 'pdone', 'send', '--to', target, '--json', message], text=True, capture_output=True, timeout=60, check=False)
+        proc = subprocess.run([HERMES, '--profile', 'pdone', 'send', '--to', target, '--json', message], text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=60, check=False)
     if proc.returncode != 0:
         raise RuntimeError((proc.stderr or proc.stdout or 'Hermes delivery failed')[-1200:])
     try:
@@ -471,7 +471,7 @@ def state_path(state_dir: Path, route_name: str) -> Path:
 
 def load_route_state(path: Path) -> dict[str, Any]:
     try:
-        data = json.loads(path.read_text(encoding='utf-8'))
+        data = json.loads(path.read_text(encoding='utf-8-sig'))
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
@@ -561,7 +561,6 @@ def send_event(registry_path: Path, state_dir: Path, route_name: str, event_id: 
         atomic_json(path, state)
         return {'status': 'suppressed', 'route': route_name, 'correlation_key': correlation_key, 'suppressed': previous['suppressed']}
     pending_item = (state.get('pending') or {}).get(key)
-    next_attempt_at = str((pending_item or {}).get('next_attempt_at') or '')
     if not force and pending_item and not retry_due(pending_item, now):
         item = queue_pending(state, key, event_id, title, body, severity, '', now, attempted=False)
         if not dry_run:
@@ -699,7 +698,7 @@ def main() -> int:
     else:
         if not args.event_id or not args.title or (args.body is None and args.body_file is None):
             raise SystemExit('send requires --event-id, --title, and --body|--body-file unless --json is set')
-        body = args.body if args.body is not None else args.body_file.read_text(encoding='utf-8')
+        body = args.body if args.body is not None else args.body_file.read_text(encoding='utf-8-sig')
         result = send_event(
             args.config,
             args.state_dir,

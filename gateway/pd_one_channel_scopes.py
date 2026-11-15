@@ -108,7 +108,7 @@ def _policy_cache_has_admin_role(user_config: dict[str, Any], user_id: str | Non
     if not cache_dir:
         return False
     try:
-        data = json.loads((Path(str(cache_dir)).expanduser() / f"{user_id}.json").read_text(encoding="utf-8"))
+        data = json.loads((Path(str(cache_dir)).expanduser() / f"{user_id}.json").read_text(encoding="utf-8-sig"))
     except Exception:
         return False
     if not isinstance(data, dict) or data.get("active") is False or data.get("found") is False:

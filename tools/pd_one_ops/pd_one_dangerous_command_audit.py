@@ -43,7 +43,7 @@ def DEFAULT_REGISTRY():
     return Path(resolve_configured_path('~/.hermes/profiles/pdone/capabilities/registry.yaml'))
 
 def utc_ts(days: int) -> float:
-    return (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).timestamp()
+    return (dt.datetime.now(dt.UTC) - dt.timedelta(days=days)).timestamp()
 
 def load_tool_call_map(con: sqlite3.Connection, since: float) -> dict[str, dict[str, Any]]:
     callmap: dict[str, dict[str, Any]] = {}
@@ -77,69 +77,69 @@ def redact(text: str) -> str:
 
 def _looks_like_mattermost_channel_setup(command: str) -> bool:
     text = command.lower()
-    return any((marker in text for marker in ('item master data', 'item-master-data-requests', '品號資料申請'))) and any((marker in text for marker in ('name_chars', 'display_name_chars', 'purpose_chars', 'purpose_utf8_bytes', 'len(name)', 'len(display_name)', 'len(purpose)', 'lengths')))
+    return any(marker in text for marker in ('item master data', 'item-master-data-requests', '品號資料申請')) and any(marker in text for marker in ('name_chars', 'display_name_chars', 'purpose_chars', 'purpose_utf8_bytes', 'len(name)', 'len(display_name)', 'len(purpose)', 'lengths'))
 
 def _looks_like_mattermost_channel_activity_summary(command: str) -> bool:
     text = command.lower()
-    return 'mattermost' in text and any((marker in text for marker in ('activity summary', 'participant summary', 'post summary', 'posts_by_user'))) and any((marker in text for marker in ('/api/v4/posts', 'channel_id', 'user_id')))
+    return 'mattermost' in text and any(marker in text for marker in ('activity summary', 'participant summary', 'post summary', 'posts_by_user')) and any(marker in text for marker in ('/api/v4/posts', 'channel_id', 'user_id'))
 
 def _looks_like_mattermost_channel_lookup(command: str) -> bool:
     text = command.lower()
-    return any((marker in text for marker in ('mattermost_url', 'mattermost_bot_token', 'mm_bot_token'))) and '/api/v4/users/me' in text and ('/api/v4/teams/name/' in text) and ("/api/v4/teams/{team['id']}/channels/name/" in text)
+    return any(marker in text for marker in ('mattermost_url', 'mattermost_bot_token', 'mm_bot_token')) and '/api/v4/users/me' in text and ('/api/v4/teams/name/' in text) and ("/api/v4/teams/{team['id']}/channels/name/" in text)
 
 def _looks_like_mattermost_channel_post_audit(command: str) -> bool:
     text = command.lower()
-    return any((marker in text for marker in ('mattermost_url', 'mattermost_bot_token', 'mm_bot_token'))) and '/api/v4/channels/' in text and ('/posts' in text) and ('include_deleted' in text) and any((marker in text for marker in ('timedelta(days=7)', 'cutoff_ms', 'cutoff.timestamp', 'page in range')))
+    return any(marker in text for marker in ('mattermost_url', 'mattermost_bot_token', 'mm_bot_token')) and '/api/v4/channels/' in text and ('/posts' in text) and ('include_deleted' in text) and any(marker in text for marker in ('timedelta(days=7)', 'cutoff_ms', 'cutoff.timestamp', 'page in range'))
 
 def _looks_like_admin_alert_source_audit(command: str) -> bool:
     text = command.lower()
     channel = site_text('PDONE_ADMIN_ALERT_CHANNEL_ID')
-    return bool(channel) and channel in text and 'search_files' in text and ('read_file' in text) and ('*.py' in text) and any((marker in text for marker in ('ensure_pd_one_admin_mention', 'send_hermes_message'))) and any((marker in text for marker in ('api/v4/posts', 'openclaw_send', 'literal_mention')))
+    return bool(channel) and channel in text and 'search_files' in text and ('read_file' in text) and ('*.py' in text) and any(marker in text for marker in ('ensure_pd_one_admin_mention', 'send_hermes_message')) and any(marker in text for marker in ('api/v4/posts', 'openclaw_send', 'literal_mention'))
 
 def _looks_like_google_drive_parent_chain(command: str) -> bool:
     text = command.lower()
     admin = site_text('PDONE_EMAIL_ADMIN')
-    return 'gog drive get' in text and 'parents' in text and any((marker in text for marker in ('for _ in range', 'while', 'chain.append', 'mimetype'))) and bool(admin) and admin in text
+    return 'gog drive get' in text and 'parents' in text and any(marker in text for marker in ('for _ in range', 'while', 'chain.append', 'mimetype')) and bool(admin) and admin in text
 
 def _looks_like_google_group_owner_enforcement(command: str) -> bool:
     text = (command or '').lower()
     gmail = site_text('PDONE_EMAIL_ANDYLIN_GMAIL')
     group_mail = site_text('PDONE_EMAIL_PRO_DESIGN_GROUP_TW_GMAIL')
-    return bool(gmail) and gmail in text and bool(group_mail) and group_mail in text and ('owner' in text) and ('group' in text) and any((marker in text for marker in ('admin sdk', 'gog admin', 'directory/v1', 'admin.googleapis.com')))
+    return bool(gmail) and gmail in text and bool(group_mail) and group_mail in text and ('owner' in text) and ('group' in text) and any(marker in text for marker in ('admin sdk', 'gog admin', 'directory/v1', 'admin.googleapis.com'))
 
 def _looks_like_google_drive_search_files(command: str) -> bool:
     text = command.lower()
     admin = site_text('PDONE_EMAIL_ADMIN')
-    return 'gog drive search' in text and '--raw-query' in text and ('--parent' in text or ' in parents' in text) and ('application/vnd.ms-excel' in text) and ('modifiedtime >=' in text) and bool(admin) and admin in text and any((marker in text for marker in ('name_contains', '品號資料申請表', 'eligible_count', 'modifiedtime')))
+    return 'gog drive search' in text and '--raw-query' in text and ('--parent' in text or ' in parents' in text) and ('application/vnd.ms-excel' in text) and ('modifiedtime >=' in text) and bool(admin) and admin in text and any(marker in text for marker in ('name_contains', '品號資料申請表', 'eligible_count', 'modifiedtime'))
 
 def _looks_like_sheets_get_range(command: str) -> bool:
     """Recognize live Sheets range reads via sheets_safe_ops.py get or gog sheets get."""
     text = (command or '').lower()
-    if any((marker in text for marker in ('batch-update', 'header-update-row', 'sheets_safe_ops.py append', 'gog sheets append', 'gog sheets batch-update', 'gog drive '))):
+    if any(marker in text for marker in ('batch-update', 'header-update-row', 'sheets_safe_ops.py append', 'gog sheets append', 'gog sheets batch-update', 'gog drive ')):
         return False
     if _looks_like_cached_sheet_json_search(command):
         return False
     quoted = text.replace("'", '"')
-    helper_get = 'sheets_safe_ops.py' in text and '"get"' in quoted and any((marker in text for marker in ('subprocess', 'subprocess.run', '--gog-bin', '--out')))
+    helper_get = 'sheets_safe_ops.py' in text and '"get"' in quoted and any(marker in text for marker in ('subprocess', 'subprocess.run', '--gog-bin', '--out'))
     raw_gog_get = 'gog sheets get' in text
-    argv_gog_get = any((marker in text for marker in ('subprocess', 'subprocess.run'))) and any((marker in text for marker in ('/bin/gog', 'gog =', 'gog='))) and ('"sheets"' in quoted) and ('"get"' in quoted) and any((marker in text for marker in ('--render', 'formula', '--no-input', 'sid =', 'sid=', 'spreadsheet', '!')))
+    argv_gog_get = any(marker in text for marker in ('subprocess', 'subprocess.run')) and any(marker in text for marker in ('/bin/gog', 'gog =', 'gog=')) and ('"sheets"' in quoted) and ('"get"' in quoted) and any(marker in text for marker in ('--render', 'formula', '--no-input', 'sid =', 'sid=', 'spreadsheet', '!'))
     return helper_get or raw_gog_get or argv_gog_get
 
 def _looks_like_appsheet_incident_morning_briefing_qa(command: str) -> bool:
     text = command.lower()
-    return any((marker in text for marker in ('send_appsheet_incident_morning_briefing.py', 'run_scheduled_morning_briefing.py'))) and any((marker in text for marker in ('add_dashboard_link_near_top', 'split_at_intelligent_boundaries', 'split_once_at_intelligent_boundary', 'mattermost_safe_text_limit', 'briefing helper qa')))
+    return any(marker in text for marker in ('send_appsheet_incident_morning_briefing.py', 'run_scheduled_morning_briefing.py')) and any(marker in text for marker in ('add_dashboard_link_near_top', 'split_at_intelligent_boundaries', 'split_once_at_intelligent_boundary', 'mattermost_safe_text_limit', 'briefing helper qa'))
 
 def _looks_like_timezone_snapshot(command: str) -> bool:
     text = command.lower()
-    return 'datetime.now' in text and 'timezone.utc' in text and any((marker in text for marker in ('asia/taipei', 'timedelta(hours=8)', 'zoneinfo')))
+    return 'datetime.now' in text and 'timezone.utc' in text and any(marker in text for marker in ('asia/taipei', 'timedelta(hours=8)', 'zoneinfo'))
 
 def _looks_like_protected_portal_origin_probe(command: str) -> bool:
     text = (command or '').lower()
-    return '127.0.0.1:8766' in text and 'cf-access-authenticated-user-email' in text and any((marker in text for marker in ('urllib.request', 'urlopen', 'urllib.error'))) and text_excludes_configured_hosts(text) and text_excludes_configured_hosts(text)
+    return '127.0.0.1:8766' in text and 'cf-access-authenticated-user-email' in text and any(marker in text for marker in ('urllib.request', 'urlopen', 'urllib.error')) and text_excludes_configured_hosts(text) and text_excludes_configured_hosts(text)
 
 def _looks_like_timestamp_to_epoch(command: str) -> bool:
     text = command.lower().replace(' ', '')
-    return 'datetime.fromisoformat' in text and '.timestamp()' in text and any((marker in text for marker in ('*1000', '*1000.0', 'epoch_milliseconds', 'epoch_ms')))
+    return 'datetime.fromisoformat' in text and '.timestamp()' in text and any(marker in text for marker in ('*1000', '*1000.0', 'epoch_milliseconds', 'epoch_ms'))
 
 def _looks_like_epoch_milliseconds_to_iso(command: str) -> bool:
     text = command.lower().replace(' ', '')
@@ -148,7 +148,7 @@ def _looks_like_epoch_milliseconds_to_iso(command: str) -> bool:
 def _looks_like_sheets_serial_column_convert(command: str) -> bool:
     text = command.lower()
     compact = text.replace(' ', '')
-    if any((marker in compact for marker in ('datetime.now', 'fromisoformat', 'fromtimestamp'))):
+    if any(marker in compact for marker in ('datetime.now', 'fromisoformat', 'fromtimestamp')):
         return False
     serial_shape = ('date(1899,12,30)' in compact or '1899-12-30' in compact) and 'timedelta' in compact and ('days=' in compact)
     column_shape = 'n*26' in compact and 'ord(' in compact and ('-64' in compact) or 'col_to_num' in compact
@@ -156,28 +156,28 @@ def _looks_like_sheets_serial_column_convert(command: str) -> bool:
 
 def _looks_like_disk_space_summary(command: str) -> bool:
     text = command.lower().replace(' ', '')
-    return 'df-b1' in text and '--output=size,used,avail,pcent' in text and any((marker in text for marker in ('avail_gib', 'avail_pct', 'after_low_risk', 'after_low_plus_medium')))
+    return 'df-b1' in text and '--output=size,used,avail,pcent' in text and any(marker in text for marker in ('avail_gib', 'avail_pct', 'after_low_risk', 'after_low_plus_medium'))
 
 def _looks_like_local_process_listener_inspect(command: str) -> bool:
     text = (command or '').lower()
-    if any((marker in text for marker in ('pd-neo-ollama', ':11434', 'honcho-pd-neo', 'kill ', 'pkill', 'killall'))):
+    if any(marker in text for marker in ('pd-neo-ollama', ':11434', 'honcho-pd-neo', 'kill ', 'pkill', 'killall')):
         return False
-    has_ps = 'ps -p' in text and any((marker in text for marker in ('etime', 'pid,etime', '-o pid')))
+    has_ps = 'ps -p' in text and any(marker in text for marker in ('etime', 'pid,etime', '-o pid'))
     has_ss = 'ss -' in text and 'ltnp' in text
-    has_allowlisted_port = any((port in text for port in (':8766', ':8646', ':8765', "'8766'", "'8646'", "'8765'")))
+    has_allowlisted_port = any(port in text for port in (':8766', ':8646', ':8765', "'8766'", "'8646'", "'8765'"))
     if has_ss and has_allowlisted_port:
         return True
     return bool(has_ps and has_ss)
 
 def _looks_like_user_process_snapshot(command: str) -> bool:
     text = (command or '').lower()
-    if any((marker in text for marker in ('kill ', 'kill(', 'pkill', 'killall', 'os.kill', 'signal.'))):
+    if any(marker in text for marker in ('kill ', 'kill(', 'pkill', 'killall', 'os.kill', 'signal.')):
         return False
     normalized = re.sub('[\'\\",\\s]+', ' ', text)
     if 'ps -p' in normalized or ('ss -' in normalized and 'ltnp' in normalized):
         return False
     has_user_ps = 'ps -u prodesign' in normalized or 'ps -u' in normalized
-    has_cols = 'pid' in normalized and 'etime' in normalized and any((marker in normalized for marker in ('cmd', 'args')))
+    has_cols = 'pid' in normalized and 'etime' in normalized and any(marker in normalized for marker in ('cmd', 'args'))
     return has_user_ps and has_cols
 
 def _looks_like_mixed_host_terminal_inspect(command: str) -> bool:
@@ -185,9 +185,10 @@ def _looks_like_mixed_host_terminal_inspect(command: str) -> bool:
     text = (command or '').lower()
     if _looks_like_local_process_listener_inspect(command) or _looks_like_user_process_snapshot(command):
         return False
-    if any((marker in text for marker in ('kill ', 'kill(', 'pkill', 'killall', 'os.kill', 'signal.'))):
+    if any(marker in text for marker in ('kill ', 'kill(', 'pkill', 'killall', 'os.kill', 'signal.')):
         return False
     has_terminal = 'hermes_tools' in text and 'terminal' in text
+    # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
     has_x11 = '/tmp/.x11-unix' in text
     has_ps_p = 'ps -p' in text
     has_systemd_ls = '.config/systemd/user' in text or 'profiles/pdone/systemd' in text
@@ -198,35 +199,39 @@ def _looks_like_mixed_host_terminal_inspect(command: str) -> bool:
 
 def _looks_like_text_metrics(command: str) -> bool:
     text = (command or '').lower()
-    return 'len(' in text and any((marker in text for marker in ('characters_including_punctuation', 'character_count', 'char_count', '字數', '字元數'))) and (not any((marker in text for marker in ('read_text(', 'open(', 'write_text(', 'write_bytes('))))
+    return 'len(' in text and any(marker in text for marker in ('characters_including_punctuation', 'character_count', 'char_count', '字數', '字元數')) and (not any(marker in text for marker in ('read_text(', 'open(', 'write_text(', 'write_bytes(')))
 
 def _looks_like_cached_sheet_json_search(command: str) -> bool:
     text = (command or '').lower()
-    if any((marker in text for marker in ('inspect.json', 'structural-summary.json', '/tmp/hermes-results', 'html.escape', 'official_preflight'))):
+    # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
+    if any(marker in text for marker in ('inspect.json', 'structural-summary.json', '/tmp/hermes-results', 'html.escape', 'official_preflight')):
         return False
-    json_touch = any((marker in text for marker in ('json.load(', 'json.loads(', 'json.dumps(')))
-    values = any((marker in text for marker in ('["values"]', "['values']", '.get("values"', ".get('values'")))
-    extract_records = 'extract_records' in text and any((name in text for name in ('appsheet-history.json', 'appsheet-current.json', 'appsheet-send-list.json', 'appsheet-requests.json')))
-    path_ok = '.json' in text and any((marker in text for marker in ('/tmp/', '/cache/', '/artifacts/', 'profiles/pdone/', 'mold-repair-sheet')))
-    search_ok = any((marker in text for marker in ('re.search', 're.compile', 'match_count', 'colmap', 'headers', 'dump_hits', 'header_row', '維修單號', '模具編號', '品名')))
+    json_touch = any(marker in text for marker in ('json.load(', 'json.loads(', 'json.dumps('))
+    values = any(marker in text for marker in ('["values"]', "['values']", '.get("values"', ".get('values'"))
+    extract_records = 'extract_records' in text and any(name in text for name in ('appsheet-history.json', 'appsheet-current.json', 'appsheet-send-list.json', 'appsheet-requests.json'))
+    # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
+    path_ok = '.json' in text and any(marker in text for marker in ('/tmp/', '/cache/', '/artifacts/', 'profiles/pdone/', 'mold-repair-sheet'))
+    search_ok = any(marker in text for marker in ('re.search', 're.compile', 'match_count', 'colmap', 'headers', 'dump_hits', 'header_row', '維修單號', '模具編號', '品名'))
     count_ok = '.join(' in text and ' in t' in text
     return json_touch and path_ok and (values or extract_records) and (search_ok or count_ok)
 
 def _looks_like_cached_dest_rest_count(command: str) -> bool:
     text = (command or '').lower()
-    if any((marker in text for marker in ('inspect.json', 'structural-summary.json', '/tmp/hermes-results', 'html.escape', 'official_preflight', '維修單號', '模具編號', 'extract_records'))):
+    # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
+    if any(marker in text for marker in ('inspect.json', 'structural-summary.json', '/tmp/hermes-results', 'html.escape', 'official_preflight', '維修單號', '模具編號', 'extract_records')):
         return False
-    json_touch = any((marker in text for marker in ('json.load(', 'json.loads(')))
-    values = any((marker in text for marker in ('["values"]', "['values']", '.get("values"', ".get('values'")))
-    path_ok = '.json' in text and any((marker in text for marker in ('worker-scheduling', 'profiles/pdone/tmp', '/tmp/', '/cache/', '/artifacts/')))
-    rest_shape = any((marker in text for marker in ('r[6:]', 'days = r[', 'days=r[', 'rest_days', 'rest count', 'marked ='))) or ('"v"' in text and any((marker in text for marker in ('休息', 'centeno', '森特諾', '來斯特', '雷恩', 'last days'))))
+    json_touch = any(marker in text for marker in ('json.load(', 'json.loads('))
+    values = any(marker in text for marker in ('["values"]', "['values']", '.get("values"', ".get('values'"))
+    # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
+    path_ok = '.json' in text and any(marker in text for marker in ('worker-scheduling', 'profiles/pdone/tmp', '/tmp/', '/cache/', '/artifacts/'))
+    rest_shape = any(marker in text for marker in ('r[6:]', 'days = r[', 'days=r[', 'rest_days', 'rest count', 'marked =')) or ('"v"' in text and any(marker in text for marker in ('休息', 'centeno', '森特諾', '來斯特', '雷恩', 'last days')))
     return json_touch and values and path_ok and rest_shape
 
 def _looks_like_yammer_archive_search(command: str) -> bool:
     """Recognize raw Yammer archive JSONL scans that belong on the scoped search wrapper."""
     text = (command or '').lower()
-    archive = any((marker in text for marker in ('messages.jsonl', 'yammer-migration', 'yammer_archive', 'archive/messages', 'yammer-archive-search')))
-    scan = any((marker in text for marker in ('json.loads(line', 'for line in', '.jsonl')))
+    archive = any(marker in text for marker in ('messages.jsonl', 'yammer-migration', 'yammer_archive', 'archive/messages', 'yammer-archive-search'))
+    scan = any(marker in text for marker in ('json.loads(line', 'for line in', '.jsonl'))
     return archive and scan
 
 def _has_pip_token(command: str) -> bool:
@@ -236,8 +241,8 @@ def _has_pip_token(command: str) -> bool:
 def _looks_like_pdone_dependency_install(command: str) -> bool:
     """Classify package-manager mutation/setup into a gated manual path."""
     text = command.lower()
-    python_install = 'uv' in text and _has_pip_token(text) and ('install' in text) and any((marker in text for marker in ('/profiles/pdone/', 'releases/pdone-current', '--python')))
-    apt_install = any((marker in text for marker in ('apt-get', 'apt '))) and any((marker in text for marker in (' install', ' download'))) and any((marker in text for marker in ('--simulate', '--download-only', 'apt-get download', 'apt download')))
+    python_install = 'uv' in text and _has_pip_token(text) and ('install' in text) and any(marker in text for marker in ('/profiles/pdone/', 'releases/pdone-current', '--python'))
+    apt_install = any(marker in text for marker in ('apt-get', 'apt ')) and any(marker in text for marker in (' install', ' download')) and any(marker in text for marker in ('--simulate', '--download-only', 'apt-get download', 'apt download'))
     return python_install or apt_install
 
 def _looks_like_item_number_render_qa(command: str) -> bool:
@@ -253,89 +258,89 @@ def _looks_like_item_number_local_lo_builder(command: str) -> bool:
     text = command.lower()
     if 'item-number-workflow' not in text:
         return False
-    builder_path = 'build_local_libreoffice_qa.py' in text and (all((marker in text for marker in ('migrate_xls_to_xlsx', 'compile_signed_xlsx', 'qa-artifacts-local-lo'))) or 'runpy.run_path' in text)
-    inline_cjk_render = 'qa-artifacts-local-lo' in text and '.xlsx' in text and any((marker in text for marker in ('libreoffice', 'soffice'))) and ('pdfinfo' in text) and ('pdftoppm' in text) and any((marker in text for marker in ('renders-cjk', 'libreoffice-cjk-fontconfig', 'qa-artifacts-local-lo-v2'))) and any((marker in text for marker in ('procurement', 'production', 'special')))
+    builder_path = 'build_local_libreoffice_qa.py' in text and (all(marker in text for marker in ('migrate_xls_to_xlsx', 'compile_signed_xlsx', 'qa-artifacts-local-lo')) or 'runpy.run_path' in text)
+    inline_cjk_render = 'qa-artifacts-local-lo' in text and '.xlsx' in text and any(marker in text for marker in ('libreoffice', 'soffice')) and ('pdfinfo' in text) and ('pdftoppm' in text) and any(marker in text for marker in ('renders-cjk', 'libreoffice-cjk-fontconfig', 'qa-artifacts-local-lo-v2')) and any(marker in text for marker in ('procurement', 'production', 'special'))
     return builder_path or inline_cjk_render
 
 def _looks_like_ecrn_approval_pilot_status(command: str) -> bool:
     text = command.lower()
-    return any((marker in text for marker in ('ecrn-approval-pilot.json', 'state/ecrn-approval-pilot.json', 'ecrn_approval_pilot.py'))) and any((marker in text for marker in ("stage != 'complete'", 'stage != "complete"', 'preview_pdfs', 'signed_document_posted', 'deletion_verification_pending', 'deletion_last_readback', 'routing_checked_from_form', 'all_required_complete_posted')))
+    return any(marker in text for marker in ('ecrn-approval-pilot.json', 'state/ecrn-approval-pilot.json', 'ecrn_approval_pilot.py')) and any(marker in text for marker in ("stage != 'complete'", 'stage != "complete"', 'preview_pdfs', 'signed_document_posted', 'deletion_verification_pending', 'deletion_last_readback', 'routing_checked_from_form', 'all_required_complete_posted'))
 
 def _looks_like_ecrn_channel_header_test(command: str) -> bool:
     text = command.lower()
-    return 'test_ecrn_channel_header.py' in text and 'pytest' in text and any((marker in text for marker in ('channel_header', 'ecrn', 'update_daily_ecrn_channel_header', 'header-only')))
+    return 'test_ecrn_channel_header.py' in text and 'pytest' in text and any(marker in text for marker in ('channel_header', 'ecrn', 'update_daily_ecrn_channel_header', 'header-only'))
 
 def _looks_like_ecrn_approval_pilot_check(command: str) -> bool:
     text = command.lower()
-    return 'ecrn_approval_pilot.py' in text and 'test_ecrn_' in text and any((marker in text for marker in ('pytest', 'py_compile', 'ruff'))) and any((marker in text for marker in ('hermes-backup', 'shutil.copyfile', 'run(cmd', 'subprocess.run')))
+    return 'ecrn_approval_pilot.py' in text and 'test_ecrn_' in text and any(marker in text for marker in ('pytest', 'py_compile', 'ruff')) and any(marker in text for marker in ('hermes-backup', 'shutil.copyfile', 'run(cmd', 'subprocess.run'))
 
 def _looks_like_hermes_backup_sync_copy(command: str) -> bool:
     text = command.lower()
-    return resolve_configured_path('~/.hermes/profiles/pdone/legacy-openclaw/workspace/tools') in text and resolve_configured_path('~/hermes-backup/hermes/profiles/pdone/legacy-openclaw/workspace/tools') in text and any((marker in text for marker in ('hermes_tools', 'read_file(', 'write_file('))) and any((marker in text for marker in ('rels=', 'rels =', 'for rel in rels', 'copied=')))
+    return resolve_configured_path('~/.hermes/profiles/pdone/legacy-openclaw/workspace/tools') in text and resolve_configured_path('~/hermes-backup/hermes/profiles/pdone/legacy-openclaw/workspace/tools') in text and any(marker in text for marker in ('hermes_tools', 'read_file(', 'write_file(')) and any(marker in text for marker in ('rels=', 'rels =', 'for rel in rels', 'copied='))
 
 def _looks_like_docx_exact_text_patch(command: str) -> bool:
     text = command.lower()
-    common = 'docx' in text and 'zipfile' in text and any((marker in text for marker in ('cache/documents', '/profiles/pdone/artifacts', '/profiles/pdone/tmp')))
-    document_xml = any((marker in text for marker in ('word/document.xml', "'word'/'document.xml'", '"word"/"document.xml"', 'document.xml')))
-    replacement_map = any((marker in text for marker in ('repls', 'replacements', 'repl={', 'repl ={', 'for old,new', 'for old, new')))
-    replacement_loop = document_xml and replacement_map and ('.replace(' in text) and any((marker in text for marker in ('writestr', 'zipfile(tmp', 'os.replace', '.tmp')))
-    bilingual_named_replacements = all((marker in text for marker in ('old_zh', 'old_en', 'new_zh', 'new_en'))) and any((marker in text for marker in ('.replace(', 'writestr', 'os.replace', 'xml.sax.saxutils', 'w:br')))
-    minidom_repl_prefix = 'minidom' in text and replacement_map and document_xml and any((marker in text for marker in ('getelementsbytagnamens', 'ptext('))) and any((marker in text for marker in ('extractall', 'temporarydirectory'))) and (not any((marker in text for marker in ('pagebreakbefore', 'keepnext', 'tblgrid'))))
+    common = 'docx' in text and 'zipfile' in text and any(marker in text for marker in ('cache/documents', '/profiles/pdone/artifacts', '/profiles/pdone/tmp'))
+    document_xml = any(marker in text for marker in ('word/document.xml', "'word'/'document.xml'", '"word"/"document.xml"', 'document.xml'))
+    replacement_map = any(marker in text for marker in ('repls', 'replacements', 'repl={', 'repl ={', 'for old,new', 'for old, new'))
+    replacement_loop = document_xml and replacement_map and ('.replace(' in text) and any(marker in text for marker in ('writestr', 'zipfile(tmp', 'os.replace', '.tmp'))
+    bilingual_named_replacements = all(marker in text for marker in ('old_zh', 'old_en', 'new_zh', 'new_en')) and any(marker in text for marker in ('.replace(', 'writestr', 'os.replace', 'xml.sax.saxutils', 'w:br'))
+    minidom_repl_prefix = 'minidom' in text and replacement_map and document_xml and any(marker in text for marker in ('getelementsbytagnamens', 'ptext(')) and any(marker in text for marker in ('extractall', 'temporarydirectory')) and (not any(marker in text for marker in ('pagebreakbefore', 'keepnext', 'tblgrid')))
     return common and (replacement_loop or bilingual_named_replacements or minidom_repl_prefix)
 
 def _looks_like_ecrn_docx_unique_text_patch(command: str) -> bool:
     text = command.lower()
-    return 'docx' in text and 'document(' in text and ('old_line' in text) and ('new_line' in text) and ('doc.tables' in text) and ('cell.paragraphs' in text) and any((marker in text for marker in ('artifacts/ecrn', '電子簽核', 'ecrn')))
+    return 'docx' in text and 'document(' in text and ('old_line' in text) and ('new_line' in text) and ('doc.tables' in text) and ('cell.paragraphs' in text) and any(marker in text for marker in ('artifacts/ecrn', '電子簽核', 'ecrn'))
 
 def _looks_like_docx_table_structure(command: str) -> bool:
     text = command.lower()
-    return 'zipfile' in text and 'word/document.xml' in text and any((marker in text for marker in ('minidom', 'getelementsbytagnamens'))) and (sum((marker in text for marker in ('tblgrid', 'gridcol', "'tbl'", "'tr'", "'tc'"))) >= 3) and any((marker in text for marker in ('.docx', 'artifacts/typhoon'))) and (not any((marker in text for marker in ('.write(', '.writestr(', '.replace('))))
+    return 'zipfile' in text and 'word/document.xml' in text and any(marker in text for marker in ('minidom', 'getelementsbytagnamens')) and (sum(marker in text for marker in ('tblgrid', 'gridcol', "'tbl'", "'tr'", "'tc'")) >= 3) and any(marker in text for marker in ('.docx', 'artifacts/typhoon')) and (not any(marker in text for marker in ('.write(', '.writestr(', '.replace(')))
 
 def _looks_like_docx_body_xml_inspection(command: str) -> bool:
     text = command.lower()
-    return 'zipfile' in text and 'word/document.xml' in text and any((marker in text for marker in ('elementtree', 'et.fromstring', 'etree.fromstring', 'fromstring('))) and any((marker in text for marker in ('.//w:p', "findall('.//w:p'", 'findall(".//w:p"', "xpath('.//w:p'", 'xpath(".//w:p"'))) and any((marker in text for marker in ('et.tostring', 'etree.tostring', 'elementtree.tostring'))) and any((marker in text for marker in ('.docx', 'cache/documents'))) and (not any((marker in text for marker in ('.write(', '.writestr(', '.replace('))))
+    return 'zipfile' in text and 'word/document.xml' in text and any(marker in text for marker in ('elementtree', 'et.fromstring', 'etree.fromstring', 'fromstring(')) and any(marker in text for marker in ('.//w:p', "findall('.//w:p'", 'findall(".//w:p"', "xpath('.//w:p'", 'xpath(".//w:p"')) and any(marker in text for marker in ('et.tostring', 'etree.tostring', 'elementtree.tostring')) and any(marker in text for marker in ('.docx', 'cache/documents')) and (not any(marker in text for marker in ('.write(', '.writestr(', '.replace(')))
 
 def _looks_like_docx_layout_patch(command: str) -> bool:
     text = command.lower()
-    return 'zipfile' in text and 'word/document.xml' in text and any((marker in text for marker in ('minidom', 'getelementsbytagnamens'))) and any((marker in text for marker in ('pagebreakbefore', 'keepnext', 'keep_with_next', 'page_break_before'))) and any((marker in text for marker in ('ppr', 'createelementns', 'createelementn'))) and any((marker in text for marker in ('.docx', 'artifacts/typhoon')))
+    return 'zipfile' in text and 'word/document.xml' in text and any(marker in text for marker in ('minidom', 'getelementsbytagnamens')) and any(marker in text for marker in ('pagebreakbefore', 'keepnext', 'keep_with_next', 'page_break_before')) and any(marker in text for marker in ('ppr', 'createelementns', 'createelementn')) and any(marker in text for marker in ('.docx', 'artifacts/typhoon'))
 
 def _looks_like_equipment_workbook_builder(command: str) -> bool:
     text = command.lower()
     source_markers = ('doc_fafbca05b172', 'doc_d33fde0d9970', 'doc_01691e27f673', '良器現有射出機履歷', '色母機設備盤點量測參數', '機台設備總覽表')
-    return 'openpyxl' in text and 'load_workbook' in text and (sum((marker in text for marker in source_markers)) >= 2) and any((marker in text for marker in ('設備管理', 'equipment_specifications', 'src_inj', 'src_ov', 'out_dir', 'masterbatch_history_rows', "'injection'", "'masterbatch'", "'overview'"))) and any((marker in text for marker in ('workbook', 'patternfill', 'tablestyleinfo', 'table', 'freeze_panes', 'masterbatch_history_rows', 'report')))
+    return 'openpyxl' in text and 'load_workbook' in text and (sum(marker in text for marker in source_markers) >= 2) and any(marker in text for marker in ('設備管理', 'equipment_specifications', 'src_inj', 'src_ov', 'out_dir', 'masterbatch_history_rows', "'injection'", "'masterbatch'", "'overview'")) and any(marker in text for marker in ('workbook', 'patternfill', 'tablestyleinfo', 'table', 'freeze_panes', 'masterbatch_history_rows', 'report'))
 
 def _looks_like_xlsx_workbook_inspection(command: str) -> bool:
     text = command.lower()
-    if any((marker in text for marker in ('item-number-workflow', 'item_number_xlsx_compiler', 'sip_threads_pd'))):
+    if any(marker in text for marker in ('item-number-workflow', 'item_number_xlsx_compiler', 'sip_threads_pd')):
         return False
-    return 'openpyxl' in text and 'load_workbook' in text and any((marker in text for marker in ('.xlsx', '.xlsm', 'max_row', 'max_column', '.worksheets', 'sheetnames'))) and any((marker in text for marker in ('path(', 'cache/documents', 'read_only', 'workbook')))
+    return 'openpyxl' in text and 'load_workbook' in text and any(marker in text for marker in ('.xlsx', '.xlsm', 'max_row', 'max_column', '.worksheets', 'sheetnames')) and any(marker in text for marker in ('path(', 'cache/documents', 'read_only', 'workbook'))
 
 def _looks_like_office_visual_qa(command: str) -> bool:
     text = command.lower()
-    return ('office_visual_qa.py' in text or 'visual-office-qa' in text) and '--out-dir' in text and any((marker in text for marker in ('.docx', '.pptx')))
+    return ('office_visual_qa.py' in text or 'visual-office-qa' in text) and '--out-dir' in text and any(marker in text for marker in ('.docx', '.pptx'))
 
 def _looks_like_office_doc_build(command: str) -> bool:
     text = command.lower()
-    json_spec_build = any((marker in text for marker in ('json.loads', 'json.load('))) and 'html' in text and ('.docx' in text) and any((marker in text for marker in ('read_file(', 'hermes_tools.read_file', 'open(', 'spec_path'))) and any((marker in text for marker in ('write_file(', 'docx_path', 'document('))) and any((marker in text for marker in ('artifacts/documents', 'cache/documents', '/profiles/pdone/')))
-    company_announcement_template_build = 'pro-design-company-announcement-template.docx' in text and 'replacements' in text and ('word/document.xml' in text) and any((marker in text for marker in ('zipfile', 'zipfile.zipfile', 'minidom'))) and any((marker in text for marker in ('artifacts/typhoon', 'workspace-employee/artifacts', 'workspace-employee/out')))
+    json_spec_build = any(marker in text for marker in ('json.loads', 'json.load(')) and 'html' in text and ('.docx' in text) and any(marker in text for marker in ('read_file(', 'hermes_tools.read_file', 'open(', 'spec_path')) and any(marker in text for marker in ('write_file(', 'docx_path', 'document(')) and any(marker in text for marker in ('artifacts/documents', 'cache/documents', '/profiles/pdone/'))
+    company_announcement_template_build = 'pro-design-company-announcement-template.docx' in text and 'replacements' in text and ('word/document.xml' in text) and any(marker in text for marker in ('zipfile', 'zipfile.zipfile', 'minidom')) and any(marker in text for marker in ('artifacts/typhoon', 'workspace-employee/artifacts', 'workspace-employee/out'))
     return json_spec_build or company_announcement_template_build
 
 def _looks_like_json_html_artifact_build(command: str) -> bool:
     text = command.lower()
-    return any((marker in text for marker in ('json.loads', 'json.load(', 'read_text('))) and 'paragraphs' in text and ('html.escape' in text) and any((marker in text for marker in ('.html', '.htm'))) and any((marker in text for marker in ('write_text(', 'write_file(', 'open(', 'out='))) and any((marker in text for marker in ('artifacts/', 'cache/documents', '/profiles/pdone/')))
+    return any(marker in text for marker in ('json.loads', 'json.load(', 'read_text(')) and 'paragraphs' in text and ('html.escape' in text) and any(marker in text for marker in ('.html', '.htm')) and any(marker in text for marker in ('write_text(', 'write_file(', 'open(', 'out=')) and any(marker in text for marker in ('artifacts/', 'cache/documents', '/profiles/pdone/'))
 
 def _looks_like_google_docs_inspect_receipt_summary(command: str) -> bool:
     text = (command or '').lower()
     if _looks_like_json_html_artifact_build(command):
         return False
-    json_load = any((marker in text for marker in ('json.load(', 'json.loads(', 'json.load(open(')))
+    json_load = any(marker in text for marker in ('json.load(', 'json.loads(', 'json.load(open('))  # windows-footgun: ok — quoted audit marker, not a call
     if not json_load or '.json' not in text:
         return False
     if 'google-docs-document-ops' not in text:
         return False
     if 'headings' not in text:
         return False
-    return any((marker in text for marker in ('heading_count', 'start_index', 'inspect.json', '-inspect.json', "h['text']", 'h["text"]')))
+    return any(marker in text for marker in ('heading_count', 'start_index', 'inspect.json', '-inspect.json', "h['text']", 'h["text"]'))
 
 def _looks_like_json_artifact_inspect(command: str) -> bool:
     text = command.lower()
@@ -353,15 +358,15 @@ def _looks_like_json_artifact_inspect(command: str) -> bool:
         return False
     if 'structural-summary.json' in text:
         return False
-    json_load = any((marker in text for marker in ('json.load(', 'json.loads(', 'json.load(open(')))
+    json_load = any(marker in text for marker in ('json.load(', 'json.loads(', 'json.load(open('))  # windows-footgun: ok — quoted audit marker, not a call
     if not json_load or '.json' not in text:
         return False
-    if not any((marker in text for marker in ('os.stat', '.stat()', 'st_size'))):
+    if not any(marker in text for marker in ('os.stat', '.stat()', 'st_size')):
         return False
-    structure_hits = sum((marker in text for marker in ('top type', 'print("keys"', "print('keys'", 'list(data.keys())', 'list(data.keys()', 'sample0', 'type(data)', 'isinstance(data, dict)', 'isinstance(data,dict)')))
+    structure_hits = sum(marker in text for marker in ('top type', 'print("keys"', "print('keys'", 'list(data.keys())', 'list(data.keys()', 'sample0', 'type(data)', 'isinstance(data, dict)', 'isinstance(data,dict)'))
     if structure_hits < 2:
         return False
-    if any((marker in text for marker in ('write_text(', 'write_bytes(', 'json.dump(', 'html.escape'))):
+    if any(marker in text for marker in ('write_text(', 'write_bytes(', 'json.dump(', 'html.escape')):
         return False
     return True
 
@@ -379,109 +384,110 @@ def _looks_like_local_file_search(command: str) -> bool:
         return False
     if 'hermes_tools' not in text and 'from hermes_tools import' not in text:
         return False
-    return any((marker in text for marker in ('target="files"', "target='files'", 'target=files', 'target = "files"', "target = 'files'")))
+    return any(marker in text for marker in ('target="files"', "target='files'", 'target=files', 'target = "files"', "target = 'files'"))
 
 def _looks_like_office_html_to_docx(command: str) -> bool:
     text = command.lower()
-    return ('libreoffice' in text or 'soffice' in text) and '--convert-to' in text and ('docx' in text) and any((marker in text for marker in ('.html', '.htm', 'html_path'))) and any((marker in text for marker in ('--outdir', 'out_dir', 'docx_path'))) and any((marker in text for marker in ('artifacts/documents', '/profiles/pdone/', 'cache/documents')))
+    return ('libreoffice' in text or 'soffice' in text) and '--convert-to' in text and ('docx' in text) and any(marker in text for marker in ('.html', '.htm', 'html_path')) and any(marker in text for marker in ('--outdir', 'out_dir', 'docx_path')) and any(marker in text for marker in ('artifacts/documents', '/profiles/pdone/', 'cache/documents'))
 
 def _looks_like_office_deb_contents(command: str) -> bool:
     text = command.lower()
-    return 'dpkg-deb' in text and '--contents' in text and ('.deb' in text) and ('apt-debs' in text) and any((marker in text for marker in ('registry', '.xcd', 'calc')))
+    return 'dpkg-deb' in text and '--contents' in text and ('.deb' in text) and ('apt-debs' in text) and any(marker in text for marker in ('registry', '.xcd', 'calc'))
 
 def _looks_like_docx_targeted_inspection(command: str) -> bool:
     text = command.lower()
     structure_markers = ('doc.tables[', 'doc.tables', '.rows[', 'table.rows', '.cells[', '.paragraphs[', '.runs')
-    return 'docx' in text and 'document(' in text and any((marker in text for marker in ('.docx', 'cache/documents', 'from docx import document'))) and (sum((marker in text for marker in structure_markers)) >= 2)
+    return 'docx' in text and 'document(' in text and any(marker in text for marker in ('.docx', 'cache/documents', 'from docx import document')) and (sum(marker in text for marker in structure_markers) >= 2)
 
 def _looks_like_docx_table_search(command: str) -> bool:
     text = command.lower()
-    return ('from docx import document' in text or 'python-docx' in text) and 'doc.tables' in text and ('table.rows' in text) and any((marker in text for marker in ('cell.text', 'cell.paragraphs'))) and any((marker in text for marker in ('cell.tables', 'nested_tables', 'found.append', 'matches.append', 'seen_cells')))
+    return ('from docx import document' in text or 'python-docx' in text) and 'doc.tables' in text and ('table.rows' in text) and any(marker in text for marker in ('cell.text', 'cell.paragraphs')) and any(marker in text for marker in ('cell.tables', 'nested_tables', 'found.append', 'matches.append', 'seen_cells'))
 
 def _looks_like_docx_xml_text_extraction(command: str) -> bool:
     text = command.lower()
-    return 'zipfile' in text and 'word/document.xml' in text and any((marker in text for marker in ('minidom', 'getelementsbytagnamens', 'w:t'))) and any((marker in text for marker in ('.docx', 'company-announcement-template'))) and (not any((marker in text for marker in ('.write(', '.writestr(', '.replace(', '.3mf'))))
+    return 'zipfile' in text and 'word/document.xml' in text and any(marker in text for marker in ('minidom', 'getelementsbytagnamens', 'w:t')) and any(marker in text for marker in ('.docx', 'company-announcement-template')) and (not any(marker in text for marker in ('.write(', '.writestr(', '.replace(', '.3mf')))
 
 def _looks_like_pptx_xml_inspect(command: str) -> bool:
     text = command.lower()
-    if any((marker in text for marker in ('.write(', '.writestr(', '.extract(', '.replace(', '.3mf'))):
+    if any(marker in text for marker in ('.write(', '.writestr(', '.extract(', '.replace(', '.3mf')):
         return False
-    return 'zipfile' in text and '.pptx' in text and any((marker in text for marker in ('drawingml', 'presentationml', 'a:t', '<a:t', 'ppt/slides', 'ppt/presentation.xml', 'namelist', 'slide_xml_count'))) and any((marker in text for marker in ('elementtree', 'xml.etree', 'et.fromstring', 'minidom', 'getelementsbytagnamens', 'w:t', 'a:t', 'namelist()')))
+    return 'zipfile' in text and '.pptx' in text and any(marker in text for marker in ('drawingml', 'presentationml', 'a:t', '<a:t', 'ppt/slides', 'ppt/presentation.xml', 'namelist', 'slide_xml_count')) and any(marker in text for marker in ('elementtree', 'xml.etree', 'et.fromstring', 'minidom', 'getelementsbytagnamens', 'w:t', 'a:t', 'namelist()'))
 _PPTX_OOXML_NAMED_MEMBER_RE = re.compile('ppt/(?:slides/slide|notesslides/notesslide|diagrams/data|charts/chart)\\d+\\.xml')
 
 def _looks_like_pptx_ooxml_text_inspect(command: str) -> bool:
     text = command.lower()
-    if any((marker in text for marker in ('.write(', '.writestr(', '.extract(', '.replace(', '.3mf'))):
+    if any(marker in text for marker in ('.write(', '.writestr(', '.extract(', '.replace(', '.3mf')):
         return False
     if _PPTX_OOXML_NAMED_MEMBER_RE.search(text) is None:
         return False
-    return 'zipfile' in text and '.pptx' in text and any((marker in text for marker in ('a:t', '<a:t', 're.finditer', 'findall', '== "t"', "== 't'", 'root.iter', '.iter()', 'et.fromstring', 'elementtree', 'xml.etree')))
+    return 'zipfile' in text and '.pptx' in text and any(marker in text for marker in ('a:t', '<a:t', 're.finditer', 'findall', '== "t"', "== 't'", 'root.iter', '.iter()', 'et.fromstring', 'elementtree', 'xml.etree'))
 
 def _looks_like_office_docprops_inspect(command: str) -> bool:
     text = (command or '').lower()
-    if any((marker in text for marker in ('.write(', '.writestr(', '.3mf', 'slic3r'))):
+    if any(marker in text for marker in ('.write(', '.writestr(', '.3mf', 'slic3r')):
         return False
-    if any((marker in text for marker in ('word/document.xml', 'ppt/slides', 'ppt/presentation.xml', 'drawingml', 'a:t', '<a:t'))):
+    if any(marker in text for marker in ('word/document.xml', 'ppt/slides', 'ppt/presentation.xml', 'drawingml', 'a:t', '<a:t')):
         return False
-    office_suffix = any((marker in text for marker in ('.pptx', '.pptm', '.potx', '.docx', '.docm', '.xlsx', '.xlsm', '.xltx')))
+    office_suffix = any(marker in text for marker in ('.pptx', '.pptm', '.potx', '.docx', '.docm', '.xlsx', '.xlsm', '.xltx'))
     docprops_member = 'docprops' in text and 'core.xml' in text or ('docprops' in text and 'app.xml' in text)
     return 'zipfile' in text and office_suffix and docprops_member
 
 def _looks_like_pptx_from_template(command: str) -> bool:
     text = command.lower()
-    in_roots = any((marker in text for marker in ('cache/documents', '/profiles/pdone/artifacts', '/profiles/pdone/tmp', 'workspace-employee/out', '/profiles/pdone/templates')))
-    writes = any((marker in text for marker in ('prs.save', '.save(', 'add_slide', 'zipfile')))
-    template_marker = any((marker in text for marker in ('.potx', 'slide_layouts', 'load_firm_presentation', 'slidemaster', 'apply_template')))
-    return in_roots and writes and template_marker and any((marker in text for marker in ('from pptx import', 'presentation(', '.pptx')))
+    in_roots = any(marker in text for marker in ('cache/documents', '/profiles/pdone/artifacts', '/profiles/pdone/tmp', 'workspace-employee/out', '/profiles/pdone/templates'))
+    writes = any(marker in text for marker in ('prs.save', '.save(', 'add_slide', 'zipfile'))
+    template_marker = any(marker in text for marker in ('.potx', 'slide_layouts', 'load_firm_presentation', 'slidemaster', 'apply_template'))
+    return in_roots and writes and template_marker and any(marker in text for marker in ('from pptx import', 'presentation(', '.pptx'))
 
 def _looks_like_pptx_inspect(command: str) -> bool:
     text = command.lower()
-    if any((marker in text for marker in ('prs.save', 'add_slide', 'add_picture', '.save('))):
+    if any(marker in text for marker in ('prs.save', 'add_slide', 'add_picture', '.save(')):
         return False
-    return ('from pptx import presentation' in text or 'presentation(' in text) and any((marker in text for marker in ('.pptx', 'cache/documents'))) and any((marker in text for marker in ('mso_shape_type', 'has_text_frame', 'text_frame'))) and any((marker in text for marker in ('slide_width', 'slide_height', 'group', 'prs.slides')))
+    return ('from pptx import presentation' in text or 'presentation(' in text) and any(marker in text for marker in ('.pptx', 'cache/documents')) and any(marker in text for marker in ('mso_shape_type', 'has_text_frame', 'text_frame')) and any(marker in text for marker in ('slide_width', 'slide_height', 'group', 'prs.slides'))
 
 def _looks_like_office_docprops_inspect(command: str) -> bool:
     text = command.lower()
-    if any((marker in text for marker in ('.write(', '.writestr(', '.3mf', 'slic3r'))):
+    if any(marker in text for marker in ('.write(', '.writestr(', '.3mf', 'slic3r')):
         return False
-    if any((marker in text for marker in ('word/document.xml', 'ppt/slides', 'ppt/presentation.xml', 'drawingml', 'a:t', '<a:t'))):
+    if any(marker in text for marker in ('word/document.xml', 'ppt/slides', 'ppt/presentation.xml', 'drawingml', 'a:t', '<a:t')):
         return False
-    office_suffix = any((marker in text for marker in ('.pptx', '.pptm', '.potx', '.docx', '.docm', '.xlsx', '.xlsm', '.xltx')))
+    office_suffix = any(marker in text for marker in ('.pptx', '.pptm', '.potx', '.docx', '.docm', '.xlsx', '.xlsm', '.xltx'))
     docprops_member = 'docprops' in text and 'core.xml' in text or ('docprops' in text and 'app.xml' in text)
     return 'zipfile' in text and office_suffix and docprops_member
 
 def _looks_like_pptx_exact_text_patch(command: str) -> bool:
     text = command.lower()
-    common = 'zipfile' in text and '.pptx' in text and any((marker in text for marker in ('workspace-employee/out', 'cache/documents', '/profiles/pdone/artifacts', '/profiles/pdone/tmp', 'legacy-openclaw/workspace-employee')))
-    replacement_map = any((marker in text for marker in ('fixes', 'repls', 'replacements', 'pairs =', 'pairs=[', 'map = {', 'map={', 'for old, new', 'for old,new')))
-    replacement_loop = replacement_map and '.replace(' in text and any((marker in text for marker in ('endswith(".xml")', "endswith('.xml')", 'ppt/slides', 'a:t', 'filename.endswith'))) and any((marker in text for marker in ('zipfile(tmp', 'with_suffix', '.tmp', 'zipinfo', 'os.replace', 'shutil')))
-    truncated_at_map = replacement_map and any((marker in text for marker in ('a:t', '<a:t', 'inner-text', 'exact xml', 'translation-compare', 'keep brand'))) and any((marker in text for marker in ('elementtree', 'xml.etree', 'xml.sax.saxutils', 'escape('))) and any((marker in text for marker in ('dst =', 'dst=', 'out_dir', 'workspace-employee/out')))
+    common = 'zipfile' in text and '.pptx' in text and any(marker in text for marker in ('workspace-employee/out', 'cache/documents', '/profiles/pdone/artifacts', '/profiles/pdone/tmp', 'legacy-openclaw/workspace-employee'))
+    replacement_map = any(marker in text for marker in ('fixes', 'repls', 'replacements', 'pairs =', 'pairs=[', 'map = {', 'map={', 'for old, new', 'for old,new'))
+    replacement_loop = replacement_map and '.replace(' in text and any(marker in text for marker in ('endswith(".xml")', "endswith('.xml')", 'ppt/slides', 'a:t', 'filename.endswith')) and any(marker in text for marker in ('zipfile(tmp', 'with_suffix', '.tmp', 'zipinfo', 'os.replace', 'shutil'))
+    truncated_at_map = replacement_map and any(marker in text for marker in ('a:t', '<a:t', 'inner-text', 'exact xml', 'translation-compare', 'keep brand')) and any(marker in text for marker in ('elementtree', 'xml.etree', 'xml.sax.saxutils', 'escape(')) and any(marker in text for marker in ('dst =', 'dst=', 'out_dir', 'workspace-employee/out'))
     return common and (replacement_loop or truncated_at_map)
 
 def _looks_like_admin_approval_kanban_status(command: str) -> bool:
     text = command.lower()
     ticketish = 'pdapp-' in text
-    mapping_or_result = 'admin-approval-kanban/mappings' in text or 'admin-approval-kanban/results' in text or ('admin-approval-kanban' in text and any((marker in text for marker in ('mapping_exists', 'result_exists', 'mappings/', 'results/'))))
+    mapping_or_result = 'admin-approval-kanban/mappings' in text or 'admin-approval-kanban/results' in text or ('admin-approval-kanban' in text and any(marker in text for marker in ('mapping_exists', 'result_exists', 'mappings/', 'results/')))
     workspace = 'kanban/boards/pdapp-approvals' in text
     return ticketish and (mapping_or_result or workspace)
 
 def _looks_like_hermes_result_messages_summary(command: str) -> bool:
     text = command.lower()
-    return '/tmp/hermes-results' in text and any((marker in text for marker in ['json.load(', 'json.loads(', 'json.load(open('])) and any((marker in text for marker in ["get('messages'", 'get("messages")', 'messages =', 'messages='])) and any((marker in text for marker in ["m.get('role'", 'm.get("role")', "m.get('content'", 'm.get("content")', 'content_summary', 'message_count'])) and any((marker in text for marker in ['tool_name', "m.get('name'", 'm.get("name")', 'isinstance(content, list)', 'isinstance(content,list)']))
+    # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
+    return '/tmp/hermes-results' in text and any(marker in text for marker in ['json.load(', 'json.loads(', 'json.load(open(']) and any(marker in text for marker in ["get('messages'", 'get("messages")', 'messages =', 'messages=']) and any(marker in text for marker in ["m.get('role'", 'm.get("role")', "m.get('content'", 'm.get("content")', 'content_summary', 'message_count']) and any(marker in text for marker in ['tool_name', "m.get('name'", 'm.get("name")', 'isinstance(content, list)', 'isinstance(content,list)'])  # windows-footgun: ok — quoted audit marker, not a call
 
 def _looks_like_python_package_dry_run(command: str) -> bool:
     text = command.lower()
-    return _has_pip_token(text) and 'install' in text and ('--dry-run' in text) and ('--python' in text) and any((marker in text for marker in ('subprocess.run', 'cmd=[', 'cmd = [')))
+    return _has_pip_token(text) and 'install' in text and ('--dry-run' in text) and ('--python' in text) and any(marker in text for marker in ('subprocess.run', 'cmd=[', 'cmd = ['))
 
 def _looks_like_python_media_stack_status(command: str) -> bool:
     text = command.lower()
     media_markers = ('cv2', 'pil', 'numpy', 'av', 'moviepy', 'imageio', 'imageio_ffmpeg', 'scipy')
-    return 'importlib' in text and 'find_spec' in text and (sum((marker in text for marker in media_markers)) >= 4)
+    return 'importlib' in text and 'find_spec' in text and (sum(marker in text for marker in media_markers) >= 4)
 
 def _looks_like_python_cad_stack_status(command: str) -> bool:
     text = command.lower()
     cad_markers = ('cadquery', 'ocp', 'occ.core', 'freecad', 'build123d', 'ezdxf', 'trimesh', 'gmsh')
-    return 'importlib' in text and any((marker in text for marker in ('import_module', 'find_spec'))) and (sum((marker in text for marker in cad_markers)) >= 3)
+    return 'importlib' in text and any(marker in text for marker in ('import_module', 'find_spec')) and (sum(marker in text for marker in cad_markers) >= 3)
 
 def _looks_like_legacy_xls_hash(command: str) -> bool:
     text = (command or '').lower()
@@ -489,33 +495,34 @@ def _looks_like_legacy_xls_hash(command: str) -> bool:
 
 def _looks_like_artifact_base64_encode(command: str) -> bool:
     text = (command or '').lower()
-    return 'base64' in text and 'b64encode' in text and any((marker in text for marker in ('open(', '.read_bytes()', '.read()'))) and any((marker in text for marker in ('.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.pdf'))) and any((marker in text for marker in ('/artifacts/', '/tmp/', '/cache/documents/', '/workspace-employee/exports/', '/workspace-employee/out/')))
+    # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
+    return 'base64' in text and 'b64encode' in text and any(marker in text for marker in ('open(', '.read_bytes()', '.read()')) and any(marker in text for marker in ('.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.pdf')) and any(marker in text for marker in ('/artifacts/', '/tmp/', '/cache/documents/', '/workspace-employee/exports/', '/workspace-employee/out/'))
 
 def _looks_like_local_artifact_copy(command: str) -> bool:
     text = (command or '').lower()
-    return any((marker in text for marker in ('shutil.copy2', 'shutil.copyfile'))) and 'legacy-openclaw/workspace-employee/artifacts/' in text and ('/profiles/pdone/artifacts/' in text) and any((marker in text for marker in ('.docx', '.xlsx', '.pptx', '.pdf', '.png', '.svg')))
+    return any(marker in text for marker in ('shutil.copy2', 'shutil.copyfile')) and 'legacy-openclaw/workspace-employee/artifacts/' in text and ('/profiles/pdone/artifacts/' in text) and any(marker in text for marker in ('.docx', '.xlsx', '.pptx', '.pdf', '.png', '.svg'))
 
 def _looks_like_artifact_identity_inventory(command: str) -> bool:
     text = (command or '').lower()
-    if any((marker in text for marker in ('zipfile', 'shutil.copy', 'importlib', 'freecadcmd', 'subprocess'))):
+    if any(marker in text for marker in ('zipfile', 'shutil.copy', 'importlib', 'freecadcmd', 'subprocess')):
         return False
-    return '.glob(' in text and any((marker in text for marker in ('workspace-employee/artifacts', '/profiles/pdone/artifacts/', 'cache/documents'))) and any((marker in text for marker in ('.stat()', 'st_size', '.exists()'))) and any((marker in text for marker in ('read_bytes()[:', 'magic', '.suffix'))) and any((marker in text for marker in ('.3mf', '.png', '.stp', '.step', '.stl')))
+    return '.glob(' in text and any(marker in text for marker in ('workspace-employee/artifacts', '/profiles/pdone/artifacts/', 'cache/documents')) and any(marker in text for marker in ('.stat()', 'st_size', '.exists()')) and any(marker in text for marker in ('read_bytes()[:', 'magic', '.suffix')) and any(marker in text for marker in ('.3mf', '.png', '.stp', '.step', '.stl'))
 
 def _looks_like_video_frame_sample(command: str) -> bool:
     text = (command or '').lower()
-    return 'ffprobe' in text and 'ffmpeg' in text and any((marker in text for marker in ('-show_entries', 'format=duration', 'r_frame_rate'))) and any((marker in text for marker in ('-frames:v', 'frame_1.jpg', 'video-frames'))) and any((marker in text for marker in ('.mp4', '.mov', '.mkv', '.webm'))) and ('/cache/documents/' in text)
+    return 'ffprobe' in text and 'ffmpeg' in text and any(marker in text for marker in ('-show_entries', 'format=duration', 'r_frame_rate')) and any(marker in text for marker in ('-frames:v', 'frame_1.jpg', 'video-frames')) and any(marker in text for marker in ('.mp4', '.mov', '.mkv', '.webm')) and ('/cache/documents/' in text)
 
 def _looks_like_step_geometry_inspect_json_summary(command: str) -> bool:
     text = (command or '').lower()
-    if any((marker in text for marker in ('freecadcmd', 'subprocess.run', 'importlib'))):
+    if any(marker in text for marker in ('freecadcmd', 'subprocess.run', 'importlib')):
         return False
-    return 'inspect.json' in text and any((marker in text for marker in ('json.loads', 'json.load('))) and any((marker in text for marker in ('summarize_solid', "s['faces']", 's["faces"]', "['faces']", '["faces"]'))) and any((marker in text for marker in ('volume', 'bbox', 'counter'))) and any((marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'tmp/step-geometry-inspect', 'slope_from_horizontal', 'unknown edges', 'unknown_edges')))
+    return 'inspect.json' in text and any(marker in text for marker in ('json.loads', 'json.load(')) and any(marker in text for marker in ('summarize_solid', "s['faces']", 's["faces"]', "['faces']", '["faces"]')) and any(marker in text for marker in ('volume', 'bbox', 'counter')) and any(marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'tmp/step-geometry-inspect', 'slope_from_horizontal', 'unknown edges', 'unknown_edges'))
 
 def _looks_like_step_inspect_json_summary(command: str) -> bool:
     text = (command or '').lower()
-    if any((marker in text for marker in ('freecadcmd', '--pass', 'zipfile', 'importlib'))):
+    if any(marker in text for marker in ('freecadcmd', '--pass', 'zipfile', 'importlib')):
         return False
-    return 'inspect.json' in text and 'json.loads' in text and ('solids' in text) and any((marker in text for marker in ('slope_from_horizontal_deg', 'brief_face', 'semi_angle_deg', 'cylinder_radii'))) and any((marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'tmp/step-geometry-inspect', 'cache/documents')))
+    return 'inspect.json' in text and 'json.loads' in text and ('solids' in text) and any(marker in text for marker in ('slope_from_horizontal_deg', 'brief_face', 'semi_angle_deg', 'cylinder_radii')) and any(marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'tmp/step-geometry-inspect', 'cache/documents'))
 
 def _looks_like_step_geometry_inspect(command: str) -> bool:
     if _looks_like_caller_supplied_freecad_mutation(command):
@@ -523,24 +530,24 @@ def _looks_like_step_geometry_inspect(command: str) -> bool:
     if _looks_like_step_inspect_json_summary(command) or _looks_like_step_geometry_inspect_json_summary(command):
         return True
     text = (command or '').lower()
-    freecad_shape = any((marker in text for marker in ('freecadcmd', 'freecadcmd)', 'freecad'))) and '--pass' in text and any((marker in text for marker in ('.stp', '.step'))) and any((marker in text for marker in ('subprocess.run', 'subprocess.popen', 'cmd = [', 'cmd=['))) and any((marker in text for marker in ('inspect_handle.py', 'inspect_step_geometry.py', 'probe_profile.py', 'inspect.json', 'probe.json')))
-    copy_shape = any((marker in text for marker in ('shutil.copy2', 'shutil.copyfile'))) and any((marker in text for marker in ('.stp', '.step'))) and ('inspect_handle.py' in text) and ('inspect.json' in text) and ('subprocess' in text) and any((marker in text for marker in ('cache/documents', 'workspace-employee/artifacts')))
+    freecad_shape = any(marker in text for marker in ('freecadcmd', 'freecadcmd)', 'freecad')) and '--pass' in text and any(marker in text for marker in ('.stp', '.step')) and any(marker in text for marker in ('subprocess.run', 'subprocess.popen', 'cmd = [', 'cmd=[')) and any(marker in text for marker in ('inspect_handle.py', 'inspect_step_geometry.py', 'probe_profile.py', 'inspect.json', 'probe.json'))
+    copy_shape = any(marker in text for marker in ('shutil.copy2', 'shutil.copyfile')) and any(marker in text for marker in ('.stp', '.step')) and ('inspect_handle.py' in text) and ('inspect.json' in text) and ('subprocess' in text) and any(marker in text for marker in ('cache/documents', 'workspace-employee/artifacts'))
     return freecad_shape or copy_shape
 
 def _looks_like_step_printability_json_summary(command: str) -> bool:
     text = (command or '').lower()
-    if any((marker in text for marker in ('freecadcmd', 'subprocess.run', 'importlib', 'zipfile'))):
+    if any(marker in text for marker in ('freecadcmd', 'subprocess.run', 'importlib', 'zipfile')):
         return False
-    return any((marker in text for marker in ('official_preflight.json', 'official_preflight_', 'printability.json', 'analyze.json', 'analysis.json'))) and any((marker in text for marker in ('json.loads', 'json.load('))) and any((marker in text for marker in ('flagged_area_mm2', 'flagged_face_count', 'flagged_triangle_count', 'top_findings', 'error_class'))) and any((marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'tmp/step-printability', '3d-printing-step-preflight')))
+    return any(marker in text for marker in ('official_preflight.json', 'official_preflight_', 'printability.json', 'analyze.json', 'analysis.json')) and any(marker in text for marker in ('json.loads', 'json.load(')) and any(marker in text for marker in ('flagged_area_mm2', 'flagged_face_count', 'flagged_triangle_count', 'top_findings', 'error_class')) and any(marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'tmp/step-printability', '3d-printing-step-preflight'))
 
 def _looks_like_caller_supplied_freecad_mutation(command: str) -> bool:
     text = (command or '').lower()
-    if not any((marker in text for marker in ('freecadcmd', 'freecadcmd)', 'freecad', 'import part', 'part.shape', 'circ_chamfer', 'tune_angle', 'replace_chead'))):
+    if not any(marker in text for marker in ('freecadcmd', 'freecadcmd)', 'freecad', 'import part', 'part.shape', 'circ_chamfer', 'tune_angle', 'replace_chead')):
         return False
     if '.py' not in text:
         return False
-    named = any((marker in text for marker in ('rebuild_60chamfer.py', 'rebuild2.py', 'rebuild3.py', 'rebuild4.py', 'rebuild_b.py', 'rebuild_c.py', 'rebuild_d.py', 'rebuild_e.py', 'rev_e.py', 'rev_e2.py', 'rev_f.py', 'rev_f2.py', 'rev_f3.py', 'rebuild_f.py', 'rebuild_g.py', 'rebuild_h.py', 'clip_b.py', 'clip_x.py', 'clip_x2.py', 'clip_chead.py', 'replace_chead.py', 'fuse_test.py', 'measure_rev1.py', 'chamfer_curve.py', 'probe_curve.py', 'chamfer_revolve.py', 'chamfer_revolve2.py', 'chamfer_pipe.py', 'test_pipe.py', 'test_fill_pipe.py', 'test_circ_chamfer.py', 'test_circ_chamfer2.py', 'tune_angle.py', 'tune_angle2.py'))) or 'rebuild_' in text or 'clip_' in text or ('chamfer_revolve' in text) or ('chamfer_pipe' in text) or ('_pipe.py' in text) or ('circ_chamfer' in text) or ('tune_angle' in text) or ('replace_chead' in text)
-    write_mutation = 'write_text' in text and '--pass' in text and any((marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'cache/documents'))) and any((marker in text for marker in ('.fuse(', 'makebox', 'part.shape', '.common(')))
+    named = any(marker in text for marker in ('rebuild_60chamfer.py', 'rebuild2.py', 'rebuild3.py', 'rebuild4.py', 'rebuild_b.py', 'rebuild_c.py', 'rebuild_d.py', 'rebuild_e.py', 'rev_e.py', 'rev_e2.py', 'rev_f.py', 'rev_f2.py', 'rev_f3.py', 'rebuild_f.py', 'rebuild_g.py', 'rebuild_h.py', 'clip_b.py', 'clip_x.py', 'clip_x2.py', 'clip_chead.py', 'replace_chead.py', 'fuse_test.py', 'measure_rev1.py', 'chamfer_curve.py', 'probe_curve.py', 'chamfer_revolve.py', 'chamfer_revolve2.py', 'chamfer_pipe.py', 'test_pipe.py', 'test_fill_pipe.py', 'test_circ_chamfer.py', 'test_circ_chamfer2.py', 'tune_angle.py', 'tune_angle2.py')) or 'rebuild_' in text or 'clip_' in text or ('chamfer_revolve' in text) or ('chamfer_pipe' in text) or ('_pipe.py' in text) or ('circ_chamfer' in text) or ('tune_angle' in text) or ('replace_chead' in text)
+    write_mutation = 'write_text' in text and '--pass' in text and any(marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'cache/documents')) and any(marker in text for marker in ('.fuse(', 'makebox', 'part.shape', '.common('))
     return named or write_mutation
 
 def _looks_like_step_printability_analyze(command: str) -> bool:
@@ -549,7 +556,7 @@ def _looks_like_step_printability_analyze(command: str) -> bool:
     if _looks_like_step_printability_json_summary(command):
         return True
     text = (command or '').lower()
-    return 'analyze_step_printability.py' in text and any((marker in text for marker in ('.stp', '.step'))) and any((marker in text for marker in ('freecadcmd', 'freecadcmd)', 'freecad', '--pass', 'official_preflight.json', 'json-out', '--json-out'))) and any((marker in text for marker in ('subprocess.run', 'subprocess.popen', 'cmd = [', 'cmd=[', 'shutil.copy2', 'shutil.copyfile'))) and any((marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'cache/documents', 'tmp/step-printability-analyze')))
+    return 'analyze_step_printability.py' in text and any(marker in text for marker in ('.stp', '.step')) and any(marker in text for marker in ('freecadcmd', 'freecadcmd)', 'freecad', '--pass', 'official_preflight.json', 'json-out', '--json-out')) and any(marker in text for marker in ('subprocess.run', 'subprocess.popen', 'cmd = [', 'cmd=[', 'shutil.copy2', 'shutil.copyfile')) and any(marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'cache/documents', 'tmp/step-printability-analyze'))
 
 def _looks_like_arbitrary_freecad_script(command: str) -> bool:
     if _looks_like_step_geometry_inspect(command):
@@ -559,43 +566,44 @@ def _looks_like_arbitrary_freecad_script(command: str) -> bool:
     if _looks_like_step_printability_analyze(command):
         return False
     text = (command or '').lower()
-    if any((marker in text for marker in ('inspect_handle.py', 'inspect_step_geometry.py', 'probe_profile.py', 'analyze_step_printability.py'))):
+    if any(marker in text for marker in ('inspect_handle.py', 'inspect_step_geometry.py', 'probe_profile.py', 'analyze_step_printability.py')):
         return False
     if '.py' not in text:
         return False
-    truncated_write_mutation = 'import subprocess' in text and '--pass' in text and any((marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'cache/documents'))) and any((marker in text for marker in ('write_text', 'fuse_test.py', 'clip_b.py', 'clip_x.py', 'clip_chead.py', 'replace_chead.py', 'test_circ_chamfer.py', 'test_pipe.py', 'test_fill_pipe.py', '_pipe.py', 'circ_chamfer', 'tune_angle.py', 'tune_angle2.py', 'tune_angle'))) and any((marker in text for marker in ('.fuse(', 'makebox', 'part.shape', '.common(')))
+    truncated_write_mutation = 'import subprocess' in text and '--pass' in text and any(marker in text for marker in ('workspace-employee/artifacts', '/artifacts/', 'cache/documents')) and any(marker in text for marker in ('write_text', 'fuse_test.py', 'clip_b.py', 'clip_x.py', 'clip_chead.py', 'replace_chead.py', 'test_circ_chamfer.py', 'test_pipe.py', 'test_fill_pipe.py', '_pipe.py', 'circ_chamfer', 'tune_angle.py', 'tune_angle2.py', 'tune_angle')) and any(marker in text for marker in ('.fuse(', 'makebox', 'part.shape', '.common('))
     if truncated_write_mutation:
         return True
-    if not any((marker in text for marker in ('freecadcmd', 'freecadcmd)', 'freecad'))):
+    if not any(marker in text for marker in ('freecadcmd', 'freecadcmd)', 'freecad')):
         return False
-    classic_launch = '--pass' in text and any((marker in text for marker in ('.stp', '.step'))) and any((marker in text for marker in ('subprocess.run', 'subprocess.popen', 'cmd = [', 'cmd=[')))
+    classic_launch = '--pass' in text and any(marker in text for marker in ('.stp', '.step')) and any(marker in text for marker in ('subprocess.run', 'subprocess.popen', 'cmd = [', 'cmd=['))
     return classic_launch
 
 def _looks_like_3mf_slicer_inspect(command: str) -> bool:
     text = (command or '').lower()
-    if 'importlib' in text and any((marker in text for marker in ('import_module', 'find_spec'))) and ('zipfile' not in text):
+    if 'importlib' in text and any(marker in text for marker in ('import_module', 'find_spec')) and ('zipfile' not in text):
         return False
-    return 'zipfile' in text and '.3mf' in text and any((marker in text for marker in ('cache/documents', '/artifacts/', 'workspace-employee'))) and any((marker in text for marker in ('slic3r', 'slicer_pe', 'metadata/slic3r', 'metadata/thumbnail', 'namelist', 'filament_type', 'layer_height', 'fill_density', 'endswith', '.model', '.config')))
+    return 'zipfile' in text and '.3mf' in text and any(marker in text for marker in ('cache/documents', '/artifacts/', 'workspace-employee')) and any(marker in text for marker in ('slic3r', 'slicer_pe', 'metadata/slic3r', 'metadata/thumbnail', 'namelist', 'filament_type', 'layer_height', 'fill_density', 'endswith', '.model', '.config'))
 
 def _looks_like_cad_runtime_status(command: str) -> bool:
     text = (command or '').lower()
-    if 'importlib' in text and any((marker in text for marker in ('import_module', 'find_spec'))):
+    if 'importlib' in text and any(marker in text for marker in ('import_module', 'find_spec')):
         return False
-    runtime = any((marker in text for marker in ('freecadcmd', '/usr/lib/freecad', '/usr/lib/freecad-python3', '/opt/freecad')))
-    probe = any((marker in text for marker in ('os.path.exists', 'os.stat', 'os.listdir', 'path.exists', 'oct(os.stat')))
+    runtime = any(marker in text for marker in ('freecadcmd', '/usr/lib/freecad', '/usr/lib/freecad-python3', '/opt/freecad'))
+    probe = any(marker in text for marker in ('os.path.exists', 'os.stat', 'os.listdir', 'path.exists', 'oct(os.stat'))
     return runtime and probe
 
 def _looks_like_svg_artifact_inspection(command: str) -> bool:
     text = (command or '').lower()
-    return '.svg' in text and any((marker in text for marker in ('xml.etree.elementtree', 'et.parse(', 'et.fromstring('))) and any((marker in text for marker in ('itertext', 'findall(', 'data:image/png;base64', "attrib['y']", 'attrib["y"]'))) and any((marker in text for marker in ('/artifacts/', '/tmp/', '/cache/documents/', '/workspace-employee/exports/', '/workspace-employee/out/')))
+    # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
+    return '.svg' in text and any(marker in text for marker in ('xml.etree.elementtree', 'et.parse(', 'et.fromstring(')) and any(marker in text for marker in ('itertext', 'findall(', 'data:image/png;base64', "attrib['y']", 'attrib["y"]')) and any(marker in text for marker in ('/artifacts/', '/tmp/', '/cache/documents/', '/workspace-employee/exports/', '/workspace-employee/out/'))
 
 def _looks_like_svg_embed_image(command: str) -> bool:
     text = (command or '').lower()
-    return 'base64' in text and 'b64encode' in text and ('.svg' in text) and ('tw.prodesign-group.com/img/logo.png' in text) and any((marker in text for marker in ('urlopen', 'urllib.request', 'request('))) and any((marker in text for marker in ('.replace(', '.write_text(', '.write_bytes('))) and ('data:image/png;base64,' in text)
+    return 'base64' in text and 'b64encode' in text and ('.svg' in text) and ('tw.prodesign-group.com/img/logo.png' in text) and any(marker in text for marker in ('urlopen', 'urllib.request', 'request(')) and any(marker in text for marker in ('.replace(', '.write_text(', '.write_bytes(')) and ('data:image/png;base64,' in text)
 
 def _looks_like_drive_individual_share(command: str) -> bool:
     text = (command or '').lower()
-    return 'gog drive share' in text or 'permissions.create' in text or ('drive.permissions' in text and 'create' in text) or ('gog drive' in text and ' --role ' in text and any((token in text for token in ('writer', 'reader', 'commenter', 'editor'))))
+    return 'gog drive share' in text or 'permissions.create' in text or ('drive.permissions' in text and 'create' in text) or ('gog drive' in text and ' --role ' in text and any(token in text for token in ('writer', 'reader', 'commenter', 'editor')))
 
 def classify(tool: str, approval: str, error: str, command: str) -> tuple[str, str | None, str]:
     text = ' '.join([approval or '', error or '', command or ''])
@@ -758,7 +766,8 @@ def classify(tool: str, approval: str, error: str, command: str) -> tuple[str, s
                 return _PdReturn(('admin_approval_kanban_status_execute_code', 'pd_one_admin_approval_kanban_status', 'Use the bounded read-only PDAPP Kanban status wrapper instead of listing workspaces or probing mapping/result files in execute_code.'))
             if _looks_like_hermes_result_messages_summary(command):
                 return _PdReturn(('hermes_result_messages_summary_execute_code', 'pd_one_hermes_result_messages_summary', 'Use the admin-only Hermes result-message summary wrapper instead of ad hoc JSON inspection in execute_code.'))
-            if any((x in low for x in ('hermes_tools.read_file', 'read_file(', '/tmp/hermes-results'))) and any((x in low for x in ("inner.get('tickets'", 'inner.get("tickets"'))) and ('ticket_id' in low):
+            # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
+            if any(x in low for x in ('hermes_tools.read_file', 'read_file(', '/tmp/hermes-results')) and any(x in low for x in ("inner.get('tickets'", 'inner.get("tickets"')) and ('ticket_id' in low):
                 return _PdReturn(('approval_ticket_status_execute_code', 'pd_one_approval_ticket_status', 'Use the typed approval-ticket-status wrapper instead of reading temp result files and scanning ticket lists in execute_code.'))
             if 'mattermost-users.json' in low or 'mattermost-roles.json' in low or '/policies/' in low:
                 return _PdReturn(('policy_config_mutation_execute_code', 'pd_one_policy_change_dry_run', 'Replace JSON mutation script with policy diff/apply wrapper.'))
@@ -773,25 +782,25 @@ def classify(tool: str, approval: str, error: str, command: str) -> tuple[str, s
                 return _PdReturn(('google_admin_or_sheets_execute_code', 'pd_one_sheets_get_range', 'Use existing Sheets safe ops or build Google group/AppScript wrapper.'))
             if ('libreoffice' in low or 'soffice' in low) and '--convert-to' in low and ('pdf' in low):
                 return _PdReturn(('office_convert_to_pdf_execute_code', 'pd_one_office_convert_to_pdf', 'Use the bounded office-to-PDF wrapper with isolated profile and receipt-backed validation.'))
-            if 'shutil.which' in low and any((x in low for x in ['ssconvert', 'gnumeric', 'soffice', 'libreoffice', 'pdftoppm', 'pdfinfo'])):
+            if 'shutil.which' in low and any(x in low for x in ['ssconvert', 'gnumeric', 'soffice', 'libreoffice', 'pdftoppm', 'pdfinfo']):
                 return _PdReturn(('office_toolchain_status_execute_code', 'pd_one_office_toolchain_status', 'Use the bounded office-toolchain-status wrapper instead of ad hoc binary availability probes.'))
-            workflow_engine_compile = 'item-number-workflow' in low and 'py_compile' in low and any((x in low for x in ['workflow_engine.py', 'test_workflow_engine.py']))
-            workflow_unit_discovery = 'item-number-workflow' in low and 'unittest' in low and ('discover' in low) and any((x in low for x in ['tests', 'workflow_engine.py', 'test_workflow_engine.py']))
+            workflow_engine_compile = 'item-number-workflow' in low and 'py_compile' in low and any(x in low for x in ['workflow_engine.py', 'test_workflow_engine.py'])
+            workflow_unit_discovery = 'item-number-workflow' in low and 'unittest' in low and ('discover' in low) and any(x in low for x in ['tests', 'workflow_engine.py', 'test_workflow_engine.py'])
             if 'item-number-workflow' in low and 'summarize_historical_sample.py' in low:
                 return _PdReturn(('item_number_historical_sample_summary_execute_code', 'pd_one_item_number_historical_sample_summary', 'Use the fixed historical item-number sample summary wrapper instead of execute_code subprocess glue.'))
             if workflow_engine_compile or workflow_unit_discovery:
                 return _PdReturn(('item_number_workflow_check_execute_code', 'pd_one_item_number_workflow_check', 'Use the bounded item-number workflow check wrapper instead of ad hoc Python compilation or unittest discovery in execute_code.'))
             if 'run_windows_excel_qa.py' in low and 'item-number-workflow' in low:
                 return _PdReturn(('item_number_windows_excel_qa_execute_code', 'pd_one_item_number_windows_excel_qa', 'Use the confirmation-gated Windows Excel/COM QA wrapper instead of execute_code subprocess glue.'))
-            if any((x in low for x in ['pd_one_item_number_xlsx_compiler', 'item-number-xlsx-compiler', 'item_number_xlsx_compiler', 'migrate_xls_to_xlsx', 'compile_signed_xlsx', 'prequalify_xlsx_template', 'verify_prequalified_template', 'test_item_number_xlsx_compiler.py'])):
+            if any(x in low for x in ['pd_one_item_number_xlsx_compiler', 'item-number-xlsx-compiler', 'item_number_xlsx_compiler', 'migrate_xls_to_xlsx', 'compile_signed_xlsx', 'prequalify_xlsx_template', 'verify_prequalified_template', 'test_item_number_xlsx_compiler.py']):
                 return _PdReturn(('item_number_xlsx_compiler_execute_code', 'pd_one_item_number_xlsx_compiler', 'Use the bounded item-number-xlsx-compiler smoke wrapper with canonical source/template paths and a fixed dummy approval.'))
-            if any((x in low for x in ['olefile', 'xlrd', 'legacy-xls-inspect', 'open_workbook', 'merged_cells', 'sheet_by_index', 'cellname', 'name_obj_list'])):
+            if any(x in low for x in ['olefile', 'xlrd', 'legacy-xls-inspect', 'open_workbook', 'merged_cells', 'sheet_by_index', 'cellname', 'name_obj_list']):
                 return _PdReturn(('legacy_xls_inspect_execute_code', 'pd_one_legacy_xls_inspect', 'Use the bounded legacy-xls-inspect wrapper with workbook stream, merged-cell, and preview receipts.'))
             if 'sip_threads_pd' in low and 'noisy' in low:
                 return _PdReturn(('sip_thread_index_audit_execute_code', 'pd_one_sip_thread_index_audit', 'Use the bounded SIP thread-index audit wrapper with fixed input root and bounded sample receipts.'))
             if 'build_sip_thread_index.py' in low or 'sip_threads_pd' in low or 'sip thread index' in low or ('sip製作溝通' in low):
                 return _PdReturn(('sip_thread_index_build_execute_code', 'pd_one_sip_thread_index_build', 'Use the bounded SIP workbook builder with fixed input root and OpenXML verification.'))
-            if any((x in low for x in ['pptx', 'docx', 'pdf', 'presentation', 'document', 'fitz'])):
+            if any(x in low for x in ['pptx', 'docx', 'pdf', 'presentation', 'document', 'fitz']):
                 return _PdReturn(('document_media_execute_code', 'pd_one_doc_extract', 'Use bounded document extraction/build wrappers plus Office QA.'))
             return _PdReturn(('arbitrary_execute_code', None, 'Avoid execute_code in PD One lanes; promote bounded operation to typed wrapper.'))
         _pd_result = _pd_phase_2()
@@ -813,6 +822,7 @@ def classify(tool: str, approval: str, error: str, command: str) -> tuple[str, s
         _pd_result = _pd_phase_1()
         if isinstance(_pd_result, _PdReturn):
             return _pd_result.value
+    # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
     if 'rm -rf' in low or 'recursive delete' in low or 'rm -f /tmp' in low:
         return ('cleanup_delete_command', 'pd_one_disk_cleanup_dry_run', 'Use bounded safe prune/cleanup wrapper with manifest/readback.')
     if 'docker' in low or 'curl http' in low or 'ss -' in low or ('systemctl' in low):
@@ -880,9 +890,9 @@ def collect(db: Path, days: int) -> dict[str, Any]:
         cls, suggested, mitigation = classify(row['tool_name'], approval or '', err, cmd)
         meta = session_meta.get(row['session_id'], {})
         cases.append({'message_id': row['id'], 'session_id': row['session_id'], 'source': meta.get('source'), 'title': meta.get('title'), 'timestamp': row['ts'], 'tool': row['tool_name'], 'outcome': outcome(approval, err), 'class': cls, 'suggested_capability': suggested, 'mitigation': mitigation, 'approval': redact((approval or err or '')[:500]), 'command_excerpt': redact(re.sub('\\s+', ' ', cmd).strip()[:800])})
-    class_counts = collections.Counter((c['class'] for c in cases))
-    outcome_counts = collections.Counter((c['outcome'] for c in cases))
-    cap_counts = collections.Counter((c['suggested_capability'] for c in cases if c['suggested_capability']))
+    class_counts = collections.Counter(c['class'] for c in cases)
+    outcome_counts = collections.Counter(c['outcome'] for c in cases)
+    cap_counts = collections.Counter(c['suggested_capability'] for c in cases if c['suggested_capability'])
     groups: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
     for c in cases:
         groups[c['session_id']].append(c)
@@ -891,15 +901,15 @@ def collect(db: Path, days: int) -> dict[str, Any]:
         examples = [c for c in cases if c['class'] == cls][:3]
         cap = next((c['suggested_capability'] for c in examples if c['suggested_capability']), None)
         proposals.append({'pattern': cls, 'count': count, 'suggested_capability': cap, 'mitigation': examples[0]['mitigation'] if examples else '', 'example_sessions': sorted({e['session_id'] for e in examples}), 'priority': 'high' if count >= 3 else 'medium' if count >= 2 else 'low'})
-    return {'db': str(db), 'window_days': days, 'since_utc': dt.datetime.fromtimestamp(since, dt.timezone.utc).isoformat(), 'case_count': len(cases), 'session_count': len(groups), 'outcome_counts': dict(outcome_counts), 'class_counts': dict(class_counts), 'suggested_capability_counts': dict(cap_counts), 'proposals': proposals, 'cases': cases}
+    return {'db': str(db), 'window_days': days, 'since_utc': dt.datetime.fromtimestamp(since, dt.UTC).isoformat(), 'case_count': len(cases), 'session_count': len(groups), 'outcome_counts': dict(outcome_counts), 'class_counts': dict(class_counts), 'suggested_capability_counts': dict(cap_counts), 'proposals': proposals, 'cases': cases}
 
 def markdown(report: dict[str, Any]) -> str:
     lines = []
     lines.append('# PD One dangerous-command audit')
     lines.append('')
-    lines.append(f'- DB: `{report['db']}`')
-    lines.append(f'- Window: {report['window_days']} days since {report['since_utc']}')
-    lines.append(f'- Cases: **{report['case_count']}** across **{report['session_count']}** sessions')
+    lines.append(f"- DB: `{report['db']}`")
+    lines.append(f"- Window: {report['window_days']} days since {report['since_utc']}")
+    lines.append(f"- Cases: **{report['case_count']}** across **{report['session_count']}** sessions")
     lines.append('')
     lines.append('## Outcomes')
     for k, v in report['outcome_counts'].items():
@@ -908,11 +918,11 @@ def markdown(report: dict[str, Any]) -> str:
     lines.append('## Top patterns / wrapper proposals')
     for p in report['proposals']:
         cap = p.get('suggested_capability') or 'TBD'
-        lines.append(f'- **{p['pattern']}** ({p['count']}, {p['priority']}): `{cap}` — {p['mitigation']}')
+        lines.append(f"- **{p['pattern']}** ({p['count']}, {p['priority']}): `{cap}` — {p['mitigation']}")
     lines.append('')
     lines.append('## Recent examples')
     for c in report['cases'][-20:]:
-        lines.append(f'- `{c['timestamp']}` `{c['session_id']}` {c['tool']} {c['outcome']} `{c['class']}` → `{c.get('suggested_capability') or 'TBD'}`')
+        lines.append(f"- `{c['timestamp']}` `{c['session_id']}` {c['tool']} {c['outcome']} `{c['class']}` → `{c.get('suggested_capability') or 'TBD'}`")
     return '\n'.join(lines) + '\n'
 
 def cmd_audit(args: argparse.Namespace) -> None:

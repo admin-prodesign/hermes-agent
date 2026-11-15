@@ -1,5 +1,5 @@
 from __future__ import annotations
-__all__ = ['cmd_approval_ticket_cancel', '_bounded_json_object', 'cmd_admin_approval_kanban_status', 'load_hr_policy_lookup_module', 'cmd_hr_policy_lookup', 'post_file_entries', 'match_post_terms', 'cmd_mattermost_member_search', 'channel_policy_suggestion', 'cmd_mattermost_channel_setup', 'cmd_mattermost_channel_create', '_normalize_mm_username_list', 'load_json', 'is_within', 'require_allowed_doc_path', 'ledger_ticket', 'require_approved_ticket', 'stable_dump', 'ensure_user', 'validate_mm_user_id', 'cmd_policy_change_dry_run', 'cmd_policy_change_apply', 'extract_docx', 'inspect_docx_paragraph', 'inspect_docx_body_xml', 'inspect_docx_table_structure', 'inspect_docx_table_matches', 'extract_legacy_doc', 'PPTX_EXTRACT_MAX_ARCHIVE_BYTES', 'PPTX_EXTRACT_MAX_SLIDE_XML_BYTES', 'PPTX_EXTRACT_MAX_SLIDES', 'PPTX_EXTRACT_MAX_TEXTS_PER_SLIDE', 'PPTX_EXTRACT_MAX_TEXT', '_pptx_reject_unsafe_zip_name', '_pptx_package_stats', '_extract_pptx_stdlib', 'extract_pptx', '_normalize_pptx_ooxml_member', '_pptx_ooxml_drawingml_texts', 'inspect_pptx_ooxml_text', '_pptx_trim_text', '_pptx_shape_type_name', '_pptx_is_group', '_pptx_collect_text_frame', 'inspect_pptx', 'extract_pdf', '_legacy_xls_column_name', '_legacy_xls_cell_address', '_legacy_xls_visibility_label', '_legacy_xls_cell_type_label', '_legacy_xls_trim_text', '_legacy_xls_jsonable', '_legacy_xls_sheet_attrs', '_legacy_xls_decode_cell_value', '_legacy_xls_encryption_probe', 'inspect_legacy_xls', 'extracted_plain_text', 'ANNOUNCEMENT_SIGNALS', 'REWARD_DISCIPLINE_SIGNALS', 'classify_company_announcement', 'extract_by_suffix', 'cmd_doc_extract', 'cmd_artifact_base64_encode', 'cmd_local_artifact_copy', 'cmd_video_frame_sample', 'cmd_svg_artifact_inspect', '_parse_3mf_slicer_settings', '_safe_3mf_zip_info', '_validate_artifact_identity_glob', 'cmd_artifact_identity_inventory']
+__all__ = ['ANNOUNCEMENT_SIGNALS', 'PPTX_EXTRACT_MAX_ARCHIVE_BYTES', 'PPTX_EXTRACT_MAX_SLIDES', 'PPTX_EXTRACT_MAX_SLIDE_XML_BYTES', 'PPTX_EXTRACT_MAX_TEXT', 'PPTX_EXTRACT_MAX_TEXTS_PER_SLIDE', 'REWARD_DISCIPLINE_SIGNALS', '_bounded_json_object', '_extract_pptx_stdlib', '_legacy_xls_cell_address', '_legacy_xls_cell_type_label', '_legacy_xls_column_name', '_legacy_xls_decode_cell_value', '_legacy_xls_encryption_probe', '_legacy_xls_jsonable', '_legacy_xls_sheet_attrs', '_legacy_xls_trim_text', '_legacy_xls_visibility_label', '_normalize_mm_username_list', '_normalize_pptx_ooxml_member', '_parse_3mf_slicer_settings', '_pptx_collect_text_frame', '_pptx_is_group', '_pptx_ooxml_drawingml_texts', '_pptx_package_stats', '_pptx_reject_unsafe_zip_name', '_pptx_shape_type_name', '_pptx_trim_text', '_safe_3mf_zip_info', '_validate_artifact_identity_glob', 'channel_policy_suggestion', 'classify_company_announcement', 'cmd_admin_approval_kanban_status', 'cmd_approval_ticket_cancel', 'cmd_artifact_base64_encode', 'cmd_artifact_identity_inventory', 'cmd_doc_extract', 'cmd_hr_policy_lookup', 'cmd_local_artifact_copy', 'cmd_mattermost_channel_create', 'cmd_mattermost_channel_setup', 'cmd_mattermost_member_search', 'cmd_policy_change_apply', 'cmd_policy_change_dry_run', 'cmd_svg_artifact_inspect', 'cmd_video_frame_sample', 'ensure_user', 'extract_by_suffix', 'extract_docx', 'extract_legacy_doc', 'extract_pdf', 'extract_pptx', 'extracted_plain_text', 'inspect_docx_body_xml', 'inspect_docx_paragraph', 'inspect_docx_table_matches', 'inspect_docx_table_structure', 'inspect_legacy_xls', 'inspect_pptx', 'inspect_pptx_ooxml_text', 'is_within', 'ledger_ticket', 'load_hr_policy_lookup_module', 'load_json', 'match_post_terms', 'post_file_entries', 'require_allowed_doc_path', 'require_approved_ticket', 'stable_dump', 'validate_mm_user_id']
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import argparse
@@ -90,7 +90,7 @@ def _bounded_json_object(path: Path) -> tuple[bool, dict[str, Any] | None, str |
     if size > ADMIN_APPROVAL_KANBAN_JSON_MAX_BYTES:
         return (True, None, 'too_large')
     try:
-        data = json.loads(path.read_text(encoding='utf-8'))
+        data = json.loads(path.read_text(encoding='utf-8-sig'))
     except Exception as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return (True, None, f'invalid_json:{type(exc).__name__}')
@@ -180,7 +180,7 @@ def post_file_entries(post: dict[str, Any]) -> list[dict[str, str]]:
 def match_post_terms(post: dict[str, Any], terms: list[str]) -> tuple[str, str]:
     """Return (matched_term, matched_on) using message body and attachment filenames."""
     message_l = (post.get('message') or '').lower()
-    names_l = ' '.join((entry.get('name') or '' for entry in post_file_entries(post))).lower()
+    names_l = ' '.join(entry.get('name') or '' for entry in post_file_entries(post)).lower()
     msg_hit = ''
     file_hit = ''
     for term in terms[:12]:
@@ -456,7 +456,7 @@ def cmd_mattermost_channel_create(args: argparse.Namespace) -> None:
 
 def load_json(path: Path) -> Any:
     try:
-        return json.loads(path.read_text(encoding='utf-8'))
+        return json.loads(path.read_text(encoding='utf-8-sig'))
     except FileNotFoundError:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         fail(f'file not found: {path}')
@@ -475,7 +475,7 @@ def is_within(path: Path, root: Path) -> bool:
 def require_allowed_doc_path(path: Path) -> Path:
     p = path.resolve(strict=False)
     allowed_files = {candidate.resolve(strict=False) for candidate in DOC_ALLOWED_FILES()}
-    if p not in allowed_files and (not any((is_within(p, root) for root in DOC_ALLOWED_ROOTS()))):
+    if p not in allowed_files and (not any(is_within(p, root) for root in DOC_ALLOWED_ROOTS())):
         fail(f'path is outside approved PD One document roots: {p}')
     if not p.exists():
         fail(f'input file not found: {p}')
@@ -487,7 +487,7 @@ def ledger_ticket(ticket_id: str) -> dict[str, Any]:
     if not APPROVAL_LEDGER().exists():
         fail('approval ledger not found')
     state: dict[str, Any] | None = None
-    for line in APPROVAL_LEDGER().read_text(encoding='utf-8', errors='replace').splitlines():
+    for line in APPROVAL_LEDGER().read_text(encoding='utf-8-sig', errors='replace').splitlines():
         if not line.strip():
             continue
         try:
@@ -639,7 +639,7 @@ def extract_docx(path: Path) -> dict[str, Any]:
             raise ValueError('DOCX exceeds the 5000 paragraph extraction limit')
         indexed_paragraphs = []
         for index, paragraph in enumerate(body_wide_paragraphs):
-            text = ''.join((node.text or '' for node in paragraph.findall('.//w:t', ns)))
+            text = ''.join(node.text or '' for node in paragraph.findall('.//w:t', ns))
             if text.strip():
                 indexed_paragraphs.append({'index': index, 'text': text[:4000]})
         paragraphs = [item['text'] for item in indexed_paragraphs]
@@ -704,7 +704,7 @@ def inspect_docx_body_xml(path: Path, paragraph_indices: list[int]) -> dict[str,
         raise ValueError(f'DOCX exceeds the {DOCX_INSPECT_MAX_BYTES} byte inspection limit')
     if not paragraph_indices or len(paragraph_indices) > 20:
         raise ValueError('docx-body-xml-inspect requires 1-20 paragraph indices')
-    if any((isinstance(index, bool) or not isinstance(index, int) or index < 0 or (index > 5000) for index in paragraph_indices)):
+    if any(isinstance(index, bool) or not isinstance(index, int) or index < 0 or (index > 5000) for index in paragraph_indices):
         raise ValueError('paragraph indices must be integers from 0 through 5000')
     if len(set(paragraph_indices)) != len(paragraph_indices):
         raise ValueError('paragraph indices must be unique')
@@ -729,8 +729,8 @@ def inspect_docx_body_xml(path: Path, paragraph_indices: list[int]) -> dict[str,
     for index in paragraph_indices:
         paragraph = paragraphs[index]
         text_nodes = paragraph.findall('.//w:t', ns)
-        visible_text = ''.join((node.text or '' for node in text_nodes))
-        run_texts = [''.join((node.text or '' for node in run.findall('.//w:t', ns))) for run in paragraph.findall('.//w:r', ns)]
+        visible_text = ''.join(node.text or '' for node in text_nodes)
+        run_texts = [''.join(node.text or '' for node in run.findall('.//w:t', ns)) for run in paragraph.findall('.//w:r', ns)]
         xml = ET.tostring(paragraph, encoding='unicode')
         receipts.append({'index': index, 'text': visible_text[:4000] + ('…' if len(visible_text) > 4000 else ''), 'run_count': len(run_texts), 'runs': run_texts[:100], 'runs_truncated': len(run_texts) > 100, 'xml': xml[:5000] + ('…' if len(xml) > 5000 else ''), 'xml_truncated': len(xml) > 5000})
     return {'body_wide_paragraph_count': len(paragraphs), 'paragraphs': receipts}
@@ -752,7 +752,7 @@ def inspect_docx_table_structure(path: Path) -> dict[str, Any]:
     if b'<!DOCTYPE' in document_xml.upper() or b'<!ENTITY' in document_xml.upper():
         raise ValueError('DOCX document XML contains a forbidden declaration')
     root = ET.fromstring(document_xml)
-    all_tables = root.findall(f'.//{q('tbl')}')
+    all_tables = root.findall(f".//{q('tbl')}")
     tables: list[dict[str, Any]] = []
     cells_scanned = 0
     rows_truncated = False
@@ -772,7 +772,7 @@ def inspect_docx_table_structure(path: Path) -> dict[str, Any]:
                 if cells_scanned >= max_cells:
                     cells_truncated = True
                     break
-                text = ''.join((node.text or '' for node in cell.findall(f'.//{q('t')}')))
+                text = ''.join(node.text or '' for node in cell.findall(f".//{q('t')}"))
                 truncated = len(text) > max_text_chars
                 cell_receipts.append({'cell_index': cell_index, 'text': text[:max_text_chars] + ('…' if truncated else ''), 'text_truncated': truncated})
                 cells_scanned += 1
@@ -795,7 +795,7 @@ def inspect_docx_table_matches(path: Path, terms: list[str]) -> dict[str, Any]:
         raise ValueError('docx-table-search requires at least one non-empty term')
     if len(normalized_terms) > 8:
         raise ValueError('docx-table-search accepts at most 8 terms')
-    if any((len(term) > 128 for term in normalized_terms)):
+    if any(len(term) > 128 for term in normalized_terms):
         raise ValueError('docx-table-search terms must be at most 128 characters')
     try:
         from docx import Document
@@ -863,7 +863,7 @@ def extract_legacy_doc(path: Path) -> dict[str, Any]:
         text = data.decode(enc, errors='ignore')
         for chunk in re.findall('[^\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f]{4,}', text):
             cleaned = re.sub('[\\uf000-\\uffff]', '', chunk).strip()
-            if cleaned and any((ch.isalnum() or '一' <= ch <= '鿿' for ch in cleaned)):
+            if cleaned and any(ch.isalnum() or '一' <= ch <= '鿿' for ch in cleaned):
                 chunks.append(cleaned)
     seen: set[str] = set()
     out: list[str] = []
@@ -901,7 +901,7 @@ def _pptx_package_stats(path: Path) -> dict[str, Any]:
             if match:
                 slide_names.append((int(match.group(1)), name))
         slide_names.sort(key=lambda item: item[0])
-        uncompressed = sum((info.file_size for info in archive.infolist()))
+        uncompressed = sum(info.file_size for info in archive.infolist())
     return {'slide_xml_count': len(slide_names), 'total_files': len(names), 'size_bytes': size, 'uncompressed_size_bytes': uncompressed, 'slide_xml_names': [name for _, name in slide_names[:PPTX_EXTRACT_MAX_SLIDES]], 'slides_truncated': len(slide_names) > PPTX_EXTRACT_MAX_SLIDES}
 
 def _extract_pptx_stdlib(path: Path, stats: dict[str, Any]) -> dict[str, Any]:
@@ -1203,7 +1203,7 @@ def _legacy_xls_sheet_attrs(sheet: Any) -> dict[str, Any]:
         if name.startswith('_'):
             continue
         lower = name.lower()
-        if not any((token in lower for token in ('print', 'page', 'zoom', 'fit', 'margin', 'protect', 'pane', 'window'))):
+        if not any(token in lower for token in ('print', 'page', 'zoom', 'fit', 'margin', 'protect', 'pane', 'window')):
             continue
         try:
             value = getattr(sheet, name)
@@ -1215,7 +1215,7 @@ def _legacy_xls_sheet_attrs(sheet: Any) -> dict[str, Any]:
         attrs[name] = _legacy_xls_jsonable(value)
     if hasattr(sheet, 'visibility'):
         try:
-            attrs['visibility'] = _legacy_xls_jsonable(getattr(sheet, 'visibility'))
+            attrs['visibility'] = _legacy_xls_jsonable(sheet.visibility)
         except Exception:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
     return dict(sorted(attrs.items()))
@@ -1333,7 +1333,7 @@ def inspect_legacy_xls(path: Path, *, sheet: str | None=None, max_sheets: int=10
                 logging.getLogger('pd_one_ops').exception('pd one command failed')
                 partial = True
                 reports.append({'status': 'error', 'name': name, 'index': idx, 'error': str(exc)})
-        status = 'partial' if partial or any((item.get('status') != 'ok' for item in reports)) else 'ok'
+        status = 'partial' if partial or any(item.get('status') != 'ok' for item in reports) else 'ok'
         return {'status': status, 'capability': 'pd_one_legacy_xls_inspect', 'input': str(path), 'file': file_meta, 'ole': ole_info, 'workbook': {'datemode': int(getattr(book, 'datemode', 0)), 'sheet_count': len(sheet_names), 'sheet_names': sheet_names[:50], 'sheet_names_truncated': len(sheet_names) > 50, 'sheet_filter': sheet.strip() if sheet else None, 'max_sheets': int(max_sheets), 'inspected_sheet_count': len(reports), 'inspected_sheets_truncated': bool(sheet is None and len(selected_indexes) < len(sheet_names)), 'max_nonempty_cells': int(max_nonempty_cells), 'max_merged_cells': int(max_merged_cells)}, 'sheets': reports, 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True, 'legacy_xls_only': True, 'bounded_sheet_preview': True}}
     finally:
         try:
@@ -1350,14 +1350,14 @@ def extracted_plain_text(extracted: dict[str, Any]) -> str:
         if isinstance(table, list):
             for row in table:
                 if isinstance(row, list):
-                    parts.extend((str(cell) for cell in row))
+                    parts.extend(str(cell) for cell in row)
     for slide in extracted.get('slides') or []:
         if isinstance(slide, dict):
-            parts.extend((str(t) for t in slide.get('texts') or []))
+            parts.extend(str(t) for t in slide.get('texts') or [])
     for page in extracted.get('pages') or []:
         if isinstance(page, dict):
             parts.append(str(page.get('text') or ''))
-    return '\n'.join((p for p in parts if p)).strip()
+    return '\n'.join(p for p in parts if p).strip()
 ANNOUNCEMENT_SIGNALS = {'公告': 3, 'announcement': 3, '文號': 2, '發文單位': 2, '受文單位': 2, '知會單位': 2, '發文日期': 2, '主旨': 2, '核准': 1, '審核': 1, '承辦': 1, 'pro-design co': 2}
 REWARD_DISCIPLINE_SIGNALS = {'行政懲處': 5, '懲處': 4, '獎懲': 4, '員工獎懲辦法': 5, '申誡': 4, '小過': 4, '大過': 4, '嘉獎': 4, '記功': 4, 'disciplinary': 4, 'discipline': 4, 'demerit': 4, 'reprimand': 4, 'reward': 3}
 
@@ -1396,7 +1396,7 @@ def cmd_doc_extract(args: argparse.Namespace) -> None:
     result = {'status': 'ok', 'capability': 'pd_one_doc_extract', 'input': str(path), 'type': suffix, 'extracted': extracted}
     if args.out:
         out = Path(args.out).resolve(strict=False)
-        if not any((is_within(out, root) for root in DOC_ALLOWED_ROOTS())):
+        if not any(is_within(out, root) for root in DOC_ALLOWED_ROOTS()):
             fail(f'output path is outside approved roots: {out}')
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(stable_dump(result), encoding='utf-8')
@@ -1406,13 +1406,13 @@ def cmd_doc_extract(args: argparse.Namespace) -> None:
 def cmd_artifact_base64_encode(args: argparse.Namespace) -> None:
     """Base64-encode one bounded local media artifact from approved roots."""
     path = Path(args.input).resolve(strict=False)
-    if not any((is_within(path, root) for root in ARTIFACT_BASE64_ALLOWED_ROOTS())):
+    if not any(is_within(path, root) for root in ARTIFACT_BASE64_ALLOWED_ROOTS()):
         fail(f'path is outside approved PD One artifact roots: {path}')
     if not path.is_file():
         fail(f'artifact is not a regular file: {path}')
     suffix = path.suffix.lower()
     if suffix not in ARTIFACT_BASE64_ALLOWED_SUFFIXES:
-        fail(f'supported artifact types: {', '.join(sorted(ARTIFACT_BASE64_ALLOWED_SUFFIXES))}')
+        fail(f"supported artifact types: {', '.join(sorted(ARTIFACT_BASE64_ALLOWED_SUFFIXES))}")
     size = path.stat().st_size
     if size > ARTIFACT_BASE64_MAX_BYTES:
         fail(f'artifact exceeds {ARTIFACT_BASE64_MAX_BYTES} byte limit: {size}')
@@ -1469,7 +1469,7 @@ def cmd_video_frame_sample(args: argparse.Namespace) -> None:
     if not is_within(source, VIDEO_FRAME_INPUT_ROOT()):
         fail(f'video is outside the approved cache root: {source}')
     if not source.is_file() or source.suffix.lower() not in VIDEO_FRAME_ALLOWED_SUFFIXES:
-        fail(f'input must be a regular cached video ({', '.join(sorted(VIDEO_FRAME_ALLOWED_SUFFIXES))}): {source}')
+        fail(f"input must be a regular cached video ({', '.join(sorted(VIDEO_FRAME_ALLOWED_SUFFIXES))}): {source}")
     source_size = source.stat().st_size
     if source_size <= 0 or source_size > VIDEO_FRAME_MAX_SOURCE_BYTES:
         fail(f'video size must be 1-{VIDEO_FRAME_MAX_SOURCE_BYTES} bytes: {source_size}')
@@ -1480,7 +1480,7 @@ def cmd_video_frame_sample(args: argparse.Namespace) -> None:
         fail('ffprobe and ffmpeg are required')
     probe_cmd = [ffprobe, '-v', 'error', '-show_entries', 'format=duration,size:stream=codec_type,codec_name,width,height,r_frame_rate', '-of', 'json', str(source)]
     try:
-        probe_proc = subprocess.run(probe_cmd, text=True, capture_output=True, shell=False, timeout=30)
+        probe_proc = subprocess.run(probe_cmd, check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=30)
     except subprocess.TimeoutExpired:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         fail('ffprobe timed out after 30 seconds')
@@ -1510,7 +1510,7 @@ def cmd_video_frame_sample(args: argparse.Namespace) -> None:
         temp_path = output_dir / f'.frame_{index}.{os.getpid()}.tmp.jpg'
         command = [ffmpeg, '-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-ss', f'{timestamp:.6f}', '-i', str(source), '-frames:v', '1', '-q:v', '2', str(temp_path)]
         try:
-            proc = subprocess.run(command, text=True, capture_output=True, shell=False, timeout=60)
+            proc = subprocess.run(command, check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=60)
         except subprocess.TimeoutExpired:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             temp_path.unlink(missing_ok=True)
@@ -1541,7 +1541,7 @@ def cmd_svg_artifact_inspect(args: argparse.Namespace) -> None:
         nonlocal data, elements, embedded_png_count, failures, image_receipts, images, invalid_text_y_count, path, required, root, size, text_y_values
         'Validate bounded structural/text invariants for one local SVG artifact.'
         path = Path(args.input).resolve(strict=False)
-        if not any((is_within(path, root) for root in ARTIFACT_BASE64_ALLOWED_ROOTS())):
+        if not any(is_within(path, root) for root in ARTIFACT_BASE64_ALLOWED_ROOTS()):
             fail(f'path is outside approved PD One artifact roots: {path}')
         if not path.is_file() or path.suffix.lower() != '.svg':
             fail(f'input must be a regular .svg file: {path}')
@@ -1571,9 +1571,9 @@ def cmd_svg_artifact_inspect(args: argparse.Namespace) -> None:
         required = list(args.required_text or [])
         if len(required) > SVG_INSPECT_MAX_REQUIRED_TEXTS:
             fail(f'at most {SVG_INSPECT_MAX_REQUIRED_TEXTS} required-text values are allowed')
-        if any((not term or len(term) > SVG_INSPECT_MAX_REQUIRED_TEXT_CHARS for term in required)):
+        if any(not term or len(term) > SVG_INSPECT_MAX_REQUIRED_TEXT_CHARS for term in required):
             fail(f'required-text values must be 1-{SVG_INSPECT_MAX_REQUIRED_TEXT_CHARS} characters')
-        visible_text = '\n'.join((part.strip() for part in root.itertext() if part.strip()))
+        visible_text = '\n'.join(part.strip() for part in root.itertext() if part.strip())
         missing = [term for term in required if term not in visible_text]
         images = [element for element in elements if element.tag == f'{{{svg_ns}}}image']
         if len(images) > SVG_INSPECT_MAX_IMAGES:
@@ -1618,7 +1618,7 @@ def cmd_svg_artifact_inspect(args: argparse.Namespace) -> None:
                 failures.append(f'maximum text y {max(text_y_values)} is not below {args.max_text_y_exclusive}')
         if args.expected_image_box:
             expected_box_values = args.expected_image_box.split(',')
-            if len(expected_box_values) != 4 or any((not value for value in expected_box_values)):
+            if len(expected_box_values) != 4 or any(not value for value in expected_box_values):
                 fail('--expected-image-box must be x,y,width,height')
             expected_box = dict(zip(('x', 'y', 'width', 'height'), expected_box_values))
             embedded_boxes = [item['box'] for item in image_receipts if item['embedded_png']]
@@ -1666,16 +1666,16 @@ def _validate_artifact_identity_glob(pattern: str) -> str:
     text = str(pattern or '').strip()
     if not text or len(text) > ARTIFACT_IDENTITY_MAX_GLOB_CHARS:
         fail('glob pattern is missing or too long')
-    if any((marker in text for marker in ('/', '\\', '..', '**'))):
+    if any(marker in text for marker in ('/', '\\', '..', '**')):
         fail('glob pattern must stay in the selected directory')
     return text
 
 def cmd_artifact_identity_inventory(args: argparse.Namespace) -> None:
     """List bounded artifact identities and optionally peek one file magic."""
     root = Path(args.root).resolve(strict=False)
-    if root.is_symlink() or any((parent.is_symlink() for parent in root.parents if str(parent).startswith(str(ROOT())))):
+    if root.is_symlink() or any(parent.is_symlink() for parent in root.parents if str(parent).startswith(str(ROOT()))):
         fail('artifact root must not be a symlink')
-    if not any((is_within(root, allowed) for allowed in ARTIFACT_IDENTITY_INPUT_ROOTS())):
+    if not any(is_within(root, allowed) for allowed in ARTIFACT_IDENTITY_INPUT_ROOTS()):
         fail(f'path is outside approved PD One artifact roots: {root}')
     if not root.is_dir() or root.is_symlink():
         fail(f'root must be a regular directory: {root}')

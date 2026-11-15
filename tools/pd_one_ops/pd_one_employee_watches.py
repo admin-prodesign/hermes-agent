@@ -4,14 +4,17 @@ from __future__ import annotations
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import argparse
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # Linux file locks; this host is nemo
 import json
 import os
 import re
 import sys
 import unicodedata
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from pathlib import Path
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -48,13 +51,13 @@ class WatchError(Exception):
         self.payload = payload
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 def _today_taipei() -> str:
     return datetime.now(TAIPEI).date().isoformat()
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    return dt.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 def emit(payload: dict[str, Any], code: int=0) -> int:
     from tools.pd_one_ops.hr_guard import guard_hr_payload
@@ -74,7 +77,7 @@ def _tokens(text: str) -> list[str]:
 def _load_policy(user_id: str) -> dict[str, Any]:
     path = POLICY_CACHE() / f'{user_id}.json'
     try:
-        data = json.loads(path.read_text(encoding='utf-8'))
+        data = json.loads(path.read_text(encoding='utf-8-sig'))
     except Exception:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return {}
@@ -118,11 +121,11 @@ def _latest_schedule_path() -> Path:
 
 def load_schedule(path: Optional[Path]=None) -> dict[str, Any]:
     schedule_path = path or _latest_schedule_path()
-    data = json.loads(schedule_path.read_text(encoding='utf-8'))
+    data = json.loads(schedule_path.read_text(encoding='utf-8-sig'))
     rows = data.get('rows') if isinstance(data, dict) else None
     if not isinstance(rows, list):
         raise WatchError({'status': 'error', 'error': 'schedule_invalid', 'message': 'Schedule snapshot has no rows list.'})
-    mtime = datetime.fromtimestamp(schedule_path.stat().st_mtime, tz=timezone.utc)
+    mtime = datetime.fromtimestamp(schedule_path.stat().st_mtime, tz=UTC)
     age = (_now() - mtime).total_seconds()
     catalog: dict[str, str] = {}
     for row in rows:
@@ -157,7 +160,7 @@ def resolve_item(query: str, schedule: dict[str, Any]) -> dict[str, Any]:
         if MOLD_RE.fullmatch(label):
             continue
         product_tokens = set(_tokens(label))
-        if not all((token in product_tokens or token in _normalize(label) for token in tokens)):
+        if not all(token in product_tokens or token in _normalize(label) for token in tokens):
             continue
         scored.append((len(label), label))
     unique_labels = sorted({label for _length, label in scored}, key=lambda item: (len(item), item))
@@ -226,9 +229,9 @@ def _public_watch(watch: dict[str, Any], *, admin: bool) -> dict[str, Any]:
     return out
 
 def _new_watch_id(now: datetime) -> str:
-    return f'PDWATCH-{now.astimezone(TAIPEI).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}'
+    return f"PDWATCH-{now.astimezone(TAIPEI).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
 
-def create_watch(*, query: str, sender_id: str, origin_channel_id: str, origin_root_id: str, expires_days: int=DEFAULT_EXPIRE_DAYS, store_path: Path=None, schedule_path: Optional[Path]=None) -> dict[str, Any]:
+def create_watch(*, query: str, sender_id: str, origin_channel_id: str, origin_root_id: str, expires_days: int=DEFAULT_EXPIRE_DAYS, store_path: Path | None=None, schedule_path: Optional[Path]=None) -> dict[str, Any]:
     if store_path is None:
         store_path = STORE_PATH()
     sender = resolve_sender_id(sender_id)
@@ -267,7 +270,7 @@ def create_watch(*, query: str, sender_id: str, origin_channel_id: str, origin_r
         handle.close()
     return {'status': 'ok', 'watch_created': True, 'watch': _public_watch(watch, admin=sender_is_admin(sender)), 'source_path': schedule['path'], 'source_mtime': schedule['mtime'], 'source_stale': schedule['stale'], 'message': 'Watch created. PD One will reply in this thread when the item is scheduled.'}
 
-def list_watches(*, sender_id: str, store_path: Path=None) -> dict[str, Any]:
+def list_watches(*, sender_id: str, store_path: Path | None=None) -> dict[str, Any]:
     if store_path is None:
         store_path = STORE_PATH()
     sender = resolve_sender_id(sender_id)
@@ -282,7 +285,7 @@ def list_watches(*, sender_id: str, store_path: Path=None) -> dict[str, Any]:
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         handle.close()
 
-def cancel_watch(*, sender_id: str, watch_id: str, store_path: Path=None) -> dict[str, Any]:
+def cancel_watch(*, sender_id: str, watch_id: str, store_path: Path | None=None) -> dict[str, Any]:
     if store_path is None:
         store_path = STORE_PATH()
     sender = resolve_sender_id(sender_id)
@@ -330,12 +333,12 @@ def _notify_message(watch: dict[str, Any], matches: list[dict[str, Any]]) -> str
     label = (watch.get('resolved') or {}).get('item_label') or watch.get('query')
     lines = []
     for hit in matches[:3]:
-        lines.append(f'- {hit['date']} · {hit['machine']} · {hit['product']} · {hit.get('quantity') or '?'}')
+        lines.append(f"- {hit['date']} · {hit['machine']} · {hit['product']} · {hit.get('quantity') or '?'}")
     body_en = f'{mention} {label} is now on the production schedule.\n' + '\n'.join(lines) + '\nThis one-shot watch is complete.'
     body_zh = f'{mention} **{label}** 已出現在生管排程。\n' + '\n'.join(lines) + '\n此為一次性通知，監看已結束。'
     return f'{body_zh}\n\n{body_en}'
 
-def poll_watches(*, store_path: Path=None, schedule_path: Optional[Path]=None, send: bool=True) -> dict[str, Any]:
+def poll_watches(*, store_path: Path | None=None, schedule_path: Optional[Path]=None, send: bool=True) -> dict[str, Any]:
     if store_path is None:
         store_path = STORE_PATH()
     schedule = load_schedule(schedule_path)

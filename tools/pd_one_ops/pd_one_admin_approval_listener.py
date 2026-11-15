@@ -23,18 +23,18 @@ def DEFAULT_ANDY_USER_ID():
 def DEFAULT_ADMIN_CHANNEL_ID():
     return site_text('PDONE_ADMIN_ALERT_CHANNEL_ID')
 TICKET_ID_PATTERN = 'PDAPP-\\d{8}-[A-Z0-9]{8}'
-STRICT_STANDALONE_ADMIN_DECISION_RE = re.compile(f'^admin\\s*[:：]\\s*(approve|reject)\\s+({TICKET_ID_PATTERN})$', re.I)
+STRICT_STANDALONE_ADMIN_DECISION_RE = re.compile(f'^admin\\s*[:：]\\s*(approve|reject)\\s+({TICKET_ID_PATTERN})$', re.IGNORECASE)
 STRICT_BILINGUAL_ADMIN_DECISION_RE = re.compile(f'^管理員\\s*[:：]\\s*(核准|駁回)\\s+({TICKET_ID_PATTERN})$')
 BILINGUAL_AUTOEDIT_MARKER = '<!-- bilingual-autoedit:v1 -->'
 ALLOWED_EDIT_NORMALIZATIONS = {'bilingual-autoedit:v1', 'mention-translation:v1'}
 MENTION_TOKEN_RE = re.compile('(?:^|\\s)@[A-Za-z0-9._-]+')
 BOT_USERNAME_ALIASES = ('pdone', 'pd_one_bot')
 BOT_MENTION_PATTERN = '@(?:' + '|'.join(re.escape(name) for name in BOT_USERNAME_ALIASES) + ')'
-EXPLICIT_APPROVE_RE = re.compile(f'^(?:admin\\s*[:：]\\s*)?(?:approve|核准|批准|同意|通過)\\s+({TICKET_ID_PATTERN})(?:\\s+{BOT_MENTION_PATTERN})?(?:\\s+with:\\s+(.+))?$', re.I)
-EXPLICIT_REJECT_RE = re.compile(f'^(?:admin\\s*[:：]\\s*)?(?:reject|駁回|拒絕|不同意|不核准|否決)\\s+({TICKET_ID_PATTERN})(?:\\s+{BOT_MENTION_PATTERN})?(?::\\s+(.+))?$', re.I)
-BARE_RE = re.compile('^(approve|reject)$', re.I)
-COMMENT_RE = re.compile('<!--.*?-->', re.S)
-TRANSLATION_BLOCK_RE = re.compile('\\n\\s*---\\s*\\n\\s*\\*\\*Translation\\s*/\\s*翻譯(?:\\s*\\([^)]*\\))?\\s*:\\*\\*.*$', re.I | re.S)
+EXPLICIT_APPROVE_RE = re.compile(f'^(?:admin\\s*[:：]\\s*)?(?:approve|核准|批准|同意|通過)\\s+({TICKET_ID_PATTERN})(?:\\s+{BOT_MENTION_PATTERN})?(?:\\s+with:\\s+(.+))?$', re.IGNORECASE)
+EXPLICIT_REJECT_RE = re.compile(f'^(?:admin\\s*[:：]\\s*)?(?:reject|駁回|拒絕|不同意|不核准|否決)\\s+({TICKET_ID_PATTERN})(?:\\s+{BOT_MENTION_PATTERN})?(?::\\s+(.+))?$', re.IGNORECASE)
+BARE_RE = re.compile('^(approve|reject)$', re.IGNORECASE)
+COMMENT_RE = re.compile('<!--.*?-->', re.DOTALL)
+TRANSLATION_BLOCK_RE = re.compile('\\n\\s*---\\s*\\n\\s*\\*\\*Translation\\s*/\\s*翻譯(?:\\s*\\([^)]*\\))?\\s*:\\*\\*.*$', re.IGNORECASE | re.DOTALL)
 APPROVAL_BARE_LINES = {'approve', 'approved', 'approval granted', 'i approve', 'yes approved', 'ok approved', 'okay approved', '已核准', '核准', '同意', '已同意', '批准', '已批准', '通過', '已通過', '准許', '已准許'}
 REJECTION_BARE_LINES = {'reject', 'rejected', 'rejection denied', 'deny', 'denied', 'not approved', 'do not approve', 'i reject', 'no', '駁回', '拒絕', '不同意', '不核准', '未核准', '否決', '不批准'}
 
@@ -71,9 +71,9 @@ def _bare_line_decision(line: str) -> str | None:
         return 'approved'
     approval_patterns = ['^approved(?:\\s+by\\s+andy)?$', '^approval\\s+(?:is\\s+)?(?:granted|approved)$', '^andy\\s+approved$', '^i\\s+(?:approve|approved)\\s*(?:this|it)?$', '^(?:已)?(?:核准|批准|同意|通過|准許)(?:此|這個|這項)?(?:申請|請求|需求|事項)?$']
     rejection_patterns = ['^(?:not\\s+approved|approval\\s+denied|request\\s+denied)$', '^i\\s+(?:reject|rejected|deny|denied)\\s*(?:this|it)?$', '^(?:不|未)(?:核准|批准|同意|通過|准許)(?:此|這個|這項)?(?:申請|請求|需求|事項)?$', '^(?:已)?(?:駁回|拒絕|否決)(?:此|這個|這項)?(?:申請|請求|需求|事項)?$']
-    if any((re.match(pattern, normalized, re.I) for pattern in rejection_patterns)):
+    if any(re.match(pattern, normalized, re.IGNORECASE) for pattern in rejection_patterns):
         return 'rejected'
-    if any((re.match(pattern, normalized, re.I) for pattern in approval_patterns)):
+    if any(re.match(pattern, normalized, re.IGNORECASE) for pattern in approval_patterns):
         return 'approved'
     return None
 
@@ -196,7 +196,7 @@ def _policy_surface_allowed(admin_policy: dict[str, Any] | None, event: dict[str
     access = as_string(entry.get('access') if isinstance(entry, dict) else entry).lower()
     return bool(access) and access not in {'deny', 'denied', 'disabled', 'none', 'never'}
 
-def validate_event(ledger: ApprovalLedger, event: dict[str, Any], *, andy_user_id: str=None, admin_channel_id: str=None, admin_policy: dict[str, Any] | None=None) -> dict[str, Any]:
+def validate_event(ledger: ApprovalLedger, event: dict[str, Any], *, andy_user_id: str | None=None, admin_channel_id: str | None=None, admin_policy: dict[str, Any] | None=None) -> dict[str, Any]:
     """Validate a Mattermost approval decision without mutating the ledger."""
     if andy_user_id is None:
         andy_user_id = DEFAULT_ANDY_USER_ID()
@@ -247,10 +247,10 @@ def validate_event(ledger: ApprovalLedger, event: dict[str, Any], *, andy_user_i
     if event.get('edited') and (strict or {}).get('normalization') not in ALLOWED_EDIT_NORMALIZATIONS:
         return {'ok': False, 'status': 'ignored', 'reason': 'edited_message_without_existing_decision', 'ticket_id': ticket_id}
     if as_string(ticket.get('status')).lower() != 'pending':
-        return {'ok': False, 'status': 'ignored', 'reason': f'ticket_not_pending:{ticket.get('status')}', 'ticket_id': ticket_id}
+        return {'ok': False, 'status': 'ignored', 'reason': f"ticket_not_pending:{ticket.get('status')}", 'ticket_id': ticket_id}
     return {'ok': True, 'status': 'validated', 'ticket_id': ticket_id, 'decision': parsed['decision'], 'instructions': parsed.get('instructions') or '', 'decision_post_id': post_id, 'actor_user_id': actor_user_id, 'binding': binding, 'idempotent_replay': False, 'ticket': ticket}
 
-def handle_event(ledger: ApprovalLedger, event: dict[str, Any], *, andy_user_id: str=None, admin_channel_id: str=None, admin_policy: dict[str, Any] | None=None) -> dict[str, Any]:
+def handle_event(ledger: ApprovalLedger, event: dict[str, Any], *, andy_user_id: str | None=None, admin_channel_id: str | None=None, admin_policy: dict[str, Any] | None=None) -> dict[str, Any]:
     if andy_user_id is None:
         andy_user_id = DEFAULT_ANDY_USER_ID()
     if admin_channel_id is None:
@@ -284,7 +284,7 @@ def load_event(value: str) -> dict[str, Any]:
         return json.load(sys.stdin)
     path = Path(value)
     if path.exists():
-        return json.loads(path.read_text(encoding='utf-8'))
+        return json.loads(path.read_text(encoding='utf-8-sig'))
     return json.loads(value)
 
 def main(argv: list[str] | None=None) -> int:

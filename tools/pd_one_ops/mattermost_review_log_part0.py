@@ -4,7 +4,7 @@ No LLM decisions live here: given a Mattermost user id / log payload, this scrip
 resolves stable identifiers and appends/reads the Google Sheets review_log.
 """
 from __future__ import annotations
-__all__ = ['_PdReturn', '_PdHandled', '_PdUnset', '_PdUnset', '_PdLazyMod', '_PdLazyAttr', 'requests', 'SHEET_ID', 'SHEET_TAB', 'BOT_USERNAME', 'BOT_USERNAME_ALIASES', 'BOT_MENTION_PATTERN', 'GOG_ACCOUNT', 'ADMIN_ALERT_CHANNEL_ID', 'MATTERMOST_APPROVAL_ALERT_TARGET', 'HERMES_PROFILE_ROOT', 'HERMES_BIN', 'APP_ENV', 'GOG_BIN', 'REVIEW_LOG_TRANSLATION_MODEL', 'RESPONSE_QUALITY_MODEL', 'MATTERMOST_ENV_FILES', 'STATE_PATH', 'DM_SCAN_STATE_PATH', 'DM_SCAN_LOCK_PATH', 'INTERACTION_SCAN_STATE_PATH', 'INTERACTION_SCAN_LOCK_PATH', 'ATTACHMENT_SCAN_STATE_PATH', 'ATTACHMENT_SCAN_LOCK_PATH', 'APP_API', 'HEADERS', 'RESPONSE_QUALITY_HEADERS', 'QUALITY_STATUSES', 'BASE_HEADER_COUNT', 'LEGACY_NOTE_FIELD_MAP', 'AUTH_DEBUG_NOTE_FIELDS', 'NOTE_TAG_COLUMNS', 'PROTECTED_FORMULA_COLUMNS', 'run', 'hermes_env', 'run_hermes_utility', 'send_mattermost_alert', 'load_key_value_file', 'mattermost_file_env', 'gateway_pid', 'gateway_process_env', 'gateway_env', 'mattermost_user', 'mattermost_context', 'mattermost_post_link', 'appsheet_find_employee', 'appsheet_find_employee_by_company_email', 'resolve_user', 'sheet_values', 'col_letter', 'review_log_headers', 'row_dict', 'canonical_record', 'row_for_headers', 'review_log_id_for_record', 'ensure_review_log_id', 'writable_header_segments', 'sheet_range_for_columns', 'sheet_update_commands_for_record_rows', 'missing_review_log_headers', 'missing_response_quality_headers', 'ensure_review_log_headers', 'ensure_response_quality_headers', 'changed_update_commands_for_records', 'plan_quality_backfill_updates', 'quality_backfill_rows', 'plan_mattermost_user_post_link_updates', 'mattermost_user_post_link_backfill_rows', 'timestamp_utc_to_tpe', 'has_cjk', 'request_summary_has_english_translation', 'translate_chinese_text', 'google_translate_text', 'translate_chinese_request_summary', 'translate_chinese_reply_summary', 'enrich_request_summary_with_translation', 'split_request_english', 'append_field', 'parse_note_fields', 'structure_review_log_row', 'permission_blocked_value', 'has_closure_evidence', 'normalize_permission_followup', 'normalize_review_log_row', 'existing_review_log_keys', 'append_row', 'newest_first_rows', 'row_record', 'review_alert_reason', 'mattermost_post', 'recommended_review_action', 'notify_review_alerts', 'is_recordable_review_row', 'append_rows', 'sort_review_log_desc', 'load_auth_policies', 'auth_lookup_failed', 'resolve_auth', 'is_profiled_dm_enabled', 'bool_note', 'auth_note_tags', 'summarize_dm', 'summarize_interaction', 'redact_sensitive_text', 'truncate_text', 'utc_now_text', 'normalize_quality_status', 'quality_result', 'response_quality_needs_follow_up', 'extract_json_object', 'normalize_response_quality_result', 'response_quality_agent_text', 'is_likely_project_list_progress_update', 'PROJECT_LIST_PROMPT_MARKERS', 'is_project_list_prompt_text', 'preceding_same_channel_other_party_is_project_list_prompt', 'is_reply_to_project_list_prompt', 'is_project_list_workflow_continuation', 'record_quality_evidence_text', 'is_internal_operator_chatter', 'project_list_outcome_evidence', 'deterministic_response_quality', 'summarize_reply_text_for_quality', 'mattermost_post_by_id', 'channel_posts_after', 'channel_posts_before', 'original_reply_text_for_quality', 'build_response_quality_prompt', 'review_response_quality_with_agent', 'classify_response_quality', 'is_answered_dm_question_audit', 'apply_response_quality_to_record', 'summarize_reply_locally', 'summarize_pd_one_response', 'row_with_fields', 'channel_label', 'note_source_tags', 'NO_DM_FALLBACK_MARKERS', 'INTERIM_BOT_REPLY_MARKERS', 'is_interim_bot_reply', 'APPROVAL_GATED_REPLY_MARKERS', 'setup_refusal_bot_replies_after', 'approval_gated_bot_replies_after', 'normal_bot_replies_after', 'bot_reply_ids', 'should_capture_channel_interaction', 'review_row_for_dm_post', 'review_row_for_channel_post', 'attachment_type_from_name', 'mattermost_file_info', 'dm_other_user_id', 'review_row_for_attachment_sent', 'cmd_lookup_user', 'cmd_append', 'configure_scan_translation', 'cmd_scan_dms', '_scan_dms_locked', 'post_mentions_bot']
+__all__ = ['ADMIN_ALERT_CHANNEL_ID', 'APPROVAL_GATED_REPLY_MARKERS', 'APP_API', 'APP_ENV', 'ATTACHMENT_SCAN_LOCK_PATH', 'ATTACHMENT_SCAN_STATE_PATH', 'AUTH_DEBUG_NOTE_FIELDS', 'BASE_HEADER_COUNT', 'BOT_MENTION_PATTERN', 'BOT_USERNAME', 'BOT_USERNAME_ALIASES', 'DM_SCAN_LOCK_PATH', 'DM_SCAN_STATE_PATH', 'GOG_ACCOUNT', 'GOG_BIN', 'HEADERS', 'HERMES_BIN', 'HERMES_PROFILE_ROOT', 'INTERACTION_SCAN_LOCK_PATH', 'INTERACTION_SCAN_STATE_PATH', 'INTERIM_BOT_REPLY_MARKERS', 'LEGACY_NOTE_FIELD_MAP', 'MATTERMOST_APPROVAL_ALERT_TARGET', 'MATTERMOST_ENV_FILES', 'NOTE_TAG_COLUMNS', 'NO_DM_FALLBACK_MARKERS', 'PROJECT_LIST_PROMPT_MARKERS', 'PROTECTED_FORMULA_COLUMNS', 'QUALITY_STATUSES', 'RESPONSE_QUALITY_HEADERS', 'RESPONSE_QUALITY_MODEL', 'REVIEW_LOG_TRANSLATION_MODEL', 'SHEET_ID', 'SHEET_TAB', 'STATE_PATH', '_PdHandled', '_PdLazyAttr', '_PdLazyMod', '_PdReturn', '_PdUnset', '_PdUnset', '_scan_dms_locked', 'append_field', 'append_row', 'append_rows', 'apply_response_quality_to_record', 'approval_gated_bot_replies_after', 'appsheet_find_employee', 'appsheet_find_employee_by_company_email', 'attachment_type_from_name', 'auth_lookup_failed', 'auth_note_tags', 'bool_note', 'bot_reply_ids', 'build_response_quality_prompt', 'canonical_record', 'changed_update_commands_for_records', 'channel_label', 'channel_posts_after', 'channel_posts_before', 'classify_response_quality', 'cmd_append', 'cmd_lookup_user', 'cmd_scan_dms', 'col_letter', 'configure_scan_translation', 'deterministic_response_quality', 'dm_other_user_id', 'enrich_request_summary_with_translation', 'ensure_response_quality_headers', 'ensure_review_log_headers', 'ensure_review_log_id', 'existing_review_log_keys', 'extract_json_object', 'gateway_env', 'gateway_pid', 'gateway_process_env', 'google_translate_text', 'has_cjk', 'has_closure_evidence', 'hermes_env', 'is_answered_dm_question_audit', 'is_interim_bot_reply', 'is_internal_operator_chatter', 'is_likely_project_list_progress_update', 'is_profiled_dm_enabled', 'is_project_list_prompt_text', 'is_project_list_workflow_continuation', 'is_recordable_review_row', 'is_reply_to_project_list_prompt', 'load_auth_policies', 'load_key_value_file', 'mattermost_context', 'mattermost_file_env', 'mattermost_file_info', 'mattermost_post', 'mattermost_post_by_id', 'mattermost_post_link', 'mattermost_user', 'mattermost_user_post_link_backfill_rows', 'missing_response_quality_headers', 'missing_review_log_headers', 'newest_first_rows', 'normal_bot_replies_after', 'normalize_permission_followup', 'normalize_quality_status', 'normalize_response_quality_result', 'normalize_review_log_row', 'note_source_tags', 'notify_review_alerts', 'original_reply_text_for_quality', 'parse_note_fields', 'permission_blocked_value', 'plan_mattermost_user_post_link_updates', 'plan_quality_backfill_updates', 'post_mentions_bot', 'preceding_same_channel_other_party_is_project_list_prompt', 'project_list_outcome_evidence', 'quality_backfill_rows', 'quality_result', 'recommended_review_action', 'record_quality_evidence_text', 'redact_sensitive_text', 'request_summary_has_english_translation', 'requests', 'resolve_auth', 'resolve_user', 'response_quality_agent_text', 'response_quality_needs_follow_up', 'review_alert_reason', 'review_log_headers', 'review_log_id_for_record', 'review_response_quality_with_agent', 'review_row_for_attachment_sent', 'review_row_for_channel_post', 'review_row_for_dm_post', 'row_dict', 'row_for_headers', 'row_record', 'row_with_fields', 'run', 'run_hermes_utility', 'send_mattermost_alert', 'setup_refusal_bot_replies_after', 'sheet_range_for_columns', 'sheet_update_commands_for_record_rows', 'sheet_values', 'should_capture_channel_interaction', 'sort_review_log_desc', 'split_request_english', 'structure_review_log_row', 'summarize_dm', 'summarize_interaction', 'summarize_pd_one_response', 'summarize_reply_locally', 'summarize_reply_text_for_quality', 'timestamp_utc_to_tpe', 'translate_chinese_reply_summary', 'translate_chinese_request_summary', 'translate_chinese_text', 'truncate_text', 'utc_now_text', 'writable_header_segments']
 
 class _PdReturn:
     __slots__ = ('value',)
@@ -65,7 +65,10 @@ class _PdLazyAttr:
         return getattr(self._load(), name)
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import argparse
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # Linux file locks; this host is nemo
 import hashlib
 import json
 import os
@@ -73,7 +76,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from pathlib import Path
 from typing import Any
 import mattermost_policy_lookup
@@ -150,7 +153,7 @@ def run(cmd: list[str], *, input_text: str | None=None, timeout: int=90) -> str:
     from tools.pd_one_ops.launch import checked_argv
     cmd = checked_argv(cmd)
     try:
-        proc = subprocess.run(cmd, input=input_text, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=timeout)
+        proc = subprocess.run(cmd, input=input_text, text=True, encoding="utf-8", errors="replace", capture_output=True, check=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         cmd_text = ' '.join(cmd)
         raise SystemExit(f'Command timed out after {timeout}s: {cmd_text}') from exc
@@ -172,7 +175,7 @@ def run_hermes_utility(prompt: str, *, timeout: int=90) -> str:
     from tools.pd_one_ops.launch import checked_argv
     cmd = checked_argv([HERMES_BIN(), '--profile', 'pdone', '-t', 'bot_room', '--ignore-rules', '-z', prompt])
     try:
-        proc = subprocess.run(cmd, cwd=str(HERMES_PROFILE_ROOT()), env=hermes_env(), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=timeout)
+        proc = subprocess.run(cmd, cwd=str(HERMES_PROFILE_ROOT()), env=hermes_env(), text=True, encoding="utf-8", errors="replace", capture_output=True, check=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         raise SystemExit(f'Hermes utility-agent timed out after {timeout}s') from exc
     except subprocess.CalledProcessError as exc:
@@ -189,7 +192,7 @@ def send_mattermost_alert(message: str) -> str:
 
 def load_key_value_file(path: Path) -> dict[str, str]:
     data: dict[str, str] = {}
-    for line in path.read_text(encoding='utf-8').splitlines():
+    for line in path.read_text(encoding='utf-8-sig').splitlines():
         line = line.strip()
         if not line or line.startswith('#') or '=' not in line:
             continue
@@ -220,7 +223,7 @@ def gateway_pid() -> str | None:
     would abort scanners before they can fall back to /proc discovery.
     """
     try:
-        proc = subprocess.run(['systemctl', '--user', 'show', 'hermes-gateway-pdone.service', '-p', 'MainPID', '--value'], text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False, timeout=10)
+        proc = subprocess.run(['systemctl', '--user', 'show', 'hermes-gateway-pdone.service', '-p', 'MainPID', '--value'], text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False, timeout=10)
         pid = proc.stdout.strip() if proc.returncode == 0 else ''
         if pid and pid != '0' and Path(f'/proc/{pid}/environ').exists():
             return pid
@@ -230,7 +233,7 @@ def gateway_pid() -> str | None:
         if not proc.name.isdigit():
             continue
         try:
-            _comm = (proc / 'comm').read_text(encoding='utf-8', errors='ignore').strip()
+            _comm = (proc / 'comm').read_text(encoding='utf-8-sig', errors='ignore').strip()
             cmdline = (proc / 'cmdline').read_bytes().replace(b'\x00', b' ').decode(errors='ignore')
         except Exception:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
@@ -370,7 +373,7 @@ def review_log_id_for_record(record: dict[str, str]) -> str:
     post_id = str(record.get('mattermost_post_id') or '').strip()
     if post_id:
         return f'RL-{ts}-{post_id[:8]}'
-    key = '|'.join((str(record.get(k) or '') for k in ['timestamp_utc', 'user_id', 'channel_id', 'category', 'request_summary']))
+    key = '|'.join(str(record.get(k) or '') for k in ['timestamp_utc', 'user_id', 'channel_id', 'category', 'request_summary'])
     digest = hashlib.sha1(key.encode('utf-8')).hexdigest()[:10]
     return f'RL-{ts}-{digest}'
 
@@ -508,7 +511,7 @@ def quality_backfill_rows(days: int, *, limit: int | None=None, missing_only: bo
     if not values:
         return (live_headers, [])
     headers = [str(h).strip() for h in values[0]]
-    start_dt = datetime.now(timezone.utc) - timedelta(days=days)
+    start_dt = datetime.now(UTC) - timedelta(days=days)
     candidates: list[tuple[int, dict[str, str]]] = []
     for row_number, row in enumerate(values[1:], start=2):
         record = row_dict(headers, row)
@@ -575,7 +578,7 @@ def mattermost_user_post_link_backfill_rows(*, limit: int | None=None) -> tuple[
 def timestamp_utc_to_tpe(ts: str) -> str:
     """Convert review_log UTC ISO timestamp to Taiwan local time text."""
     try:
-        dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+        dt = datetime.fromisoformat(ts)
     except ValueError:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return ''
@@ -585,7 +588,7 @@ def has_cjk(text: str) -> bool:
     return bool(re.search('[\\u3400-\\u9fff]', text or ''))
 
 def request_summary_has_english_translation(summary: str) -> bool:
-    return bool(re.search('(?:^|\\n)English:\\s*\\S', summary or '', flags=re.I))
+    return bool(re.search('(?:^|\\n)English:\\s*\\S', summary or '', flags=re.IGNORECASE))
 
 def translate_chinese_text(text: str, *, prompt: str) -> str:
     """Use the lightweight summarizer agent to translate Chinese audit text."""
@@ -648,7 +651,7 @@ def split_request_english(summary: str) -> tuple[str, str]:
     """Return (summary_without_english_line, english_translation)."""
     if not summary:
         return ('', '')
-    match = re.search('(?:^|\\n)English:\\s*(.+)\\s*$', summary, flags=re.I | re.S)
+    match = re.search('(?:^|\\n)English:\\s*(.+)\\s*$', summary, flags=re.IGNORECASE | re.DOTALL)
     if not match:
         return (summary, '')
     return (summary[:match.start()].rstrip(), match.group(1).strip())
@@ -717,7 +720,7 @@ def permission_blocked_value(notes: str) -> str:
 
 def has_closure_evidence(row: list[str]) -> bool:
     text = ' '.join([row[HEADERS.index('review_status')] if len(row) > HEADERS.index('review_status') else '', row[HEADERS.index('reason')] if len(row) > HEADERS.index('reason') else '', row[HEADERS.index('notes')] if len(row) > HEADERS.index('notes') else '']).lower()
-    return any((term in text for term in ['closed after andy', 'andy confirmed', 'approved applicable profile/role setup', 'answered_after_access_confirmed', 'access_confirmed:', 'current_policy_verified:', 'followup_answer_sent_post_id:', 'answer_logged_row:', 'closed 2026-']))
+    return any(term in text for term in ['closed after andy', 'andy confirmed', 'approved applicable profile/role setup', 'answered_after_access_confirmed', 'access_confirmed:', 'current_policy_verified:', 'followup_answer_sent_post_id:', 'answer_logged_row:', 'closed 2026-'])
 
 def normalize_permission_followup(row: list[str]) -> list[str]:
     """Keep follow-up visibility aligned with permission blockers.
@@ -795,15 +798,15 @@ def review_alert_reason(record: dict[str, str]) -> str:
         return 'out_of_scope'
     if category in {'onboarding_dm', 'setup_needed', 'unprofiled_user'}:
         return 'profile_setup_needed'
-    if any((term in haystack for term in ['unknown/unprofiled', 'unprofiled user', 'not set up', 'setup-needed', 'profile set up'])):
+    if any(term in haystack for term in ['unknown/unprofiled', 'unprofiled user', 'not set up', 'setup-needed', 'profile set up']):
         return 'profile_setup_needed'
     if category in {'permission_change', 'scope_change', 'access_request', 'privilege_request', 'data_unavailable_access_review'}:
         return 'permission_change'
     if category in {'risky_request', 'blocked_tool_request', 'build_edit_scope_review', 'approval_gated_request'}:
         return 'risky_or_blocked_employee_request'
-    if any((term in haystack for term in ['additional privileges', 'permission change', 'scope change', 'access request', 'data access', 'tool access', 'dm enablement', 'approval authority', 'approval required', 'andy approval', 'vice president approval'])):
+    if any(term in haystack for term in ['additional privileges', 'permission change', 'scope change', 'access request', 'data access', 'tool access', 'dm enablement', 'approval authority', 'approval required', 'andy approval', 'vice president approval']):
         return 'permission_change'
-    if any((term in haystack for term in ['approval-gated', 'approval gated', 'risky request', 'blocked tool', 'blocked by tool', 'build/edit', 'build edit', 'employee assistant feels too limited'])):
+    if any(term in haystack for term in ['approval-gated', 'approval gated', 'risky request', 'blocked tool', 'blocked by tool', 'build/edit', 'build edit', 'employee assistant feels too limited']):
         return 'risky_or_blocked_employee_request'
     return ''
 
@@ -825,7 +828,7 @@ def recommended_review_action(record: dict[str, str], reason: str) -> str:
     if reason == 'profile_setup_needed':
         return 'Recommended: approve setup only after confirming the employee identity, role, and DM scope; then add/update the Mattermost profile policy and send the standard onboarding intro.'
     if reason == 'permission_change':
-        if any((term in summary for term in ['扣憑', 'withholding', 'tax', '薪資', 'payroll', 'hr'])):
+        if any(term in summary for term in ['扣憑', 'withholding', 'tax', '薪資', 'payroll', 'hr']):
             return 'Recommended: approve only a narrow Finance/HR-provided source scope for a draft/internal worksheet; do not approve payroll-wide lookup, filing, external send, or source-data edits without a separate approval.'
         if category == 'data_unavailable_access_review' or 'data unavailable' in response_type:
             return 'Recommended: decide whether a specific source owner/data source should be approved. If yes, approve a narrow read-only/source-provided scope; if no source exists, close as data unavailable.'
@@ -844,7 +847,7 @@ def notify_review_alerts(rows: list[list[str]]) -> int:
     lines = ['## 🚨 Approval-gated employee request', '', f'- **New immediate alert item(s):** **{len(records)}**', '- **Policy:** notify Owner immediately; keep digest as overview only.']
     for record, reason in records[:8]:
         who = record.get('user_label') or record.get('user_id') or 'unknown user'
-        name = ' / '.join((x for x in [record.get('name_zh_tw', ''), record.get('name_en', '')] if x))
+        name = ' / '.join(x for x in [record.get('name_zh_tw', ''), record.get('name_en', '')] if x)
         if name:
             who = f'{who} ({name})'
         channel = record.get('channel_name') or record.get('channel_id') or 'unknown channel'
@@ -856,7 +859,7 @@ def notify_review_alerts(rows: list[list[str]]) -> int:
             label = 'Risky/blocked employee request'
         else:
             label = 'Out of scope'
-        lines.append(f'- `{record.get('timestamp_utc', '')}` — **{label}** — **{channel}** — **{who}**: {record.get('request_summary', '')}')
+        lines.append(f"- `{record.get('timestamp_utc', '')}` — **{label}** — **{channel}** — **{who}**: {record.get('request_summary', '')}")
         lines.append(f'  - **Recommended next step:** {recommended_review_action(record, reason)}')
     if len(records) > 8:
         lines.append(f'- …and {len(records) - 8} more item(s).')
@@ -946,9 +949,9 @@ def bool_note(value: Any) -> str:
     return 'unknown'
 
 def auth_note_tags(auth: dict[str, Any], *, employee_facing_reply_type: str) -> str:
-    parts = [f'auth_lookup_sender_id:{auth.get('mattermostUserId', '')}', f'auth_profile_found:{bool_note(auth.get('found'))}', f'auth_dm_enabled:{bool_note(auth.get('dmEnabled'))}', f'auth_source_hash:{auth.get('sourceHash', 'unknown') or 'unknown'}', f'auth_decision:{auth.get('decision', 'unknown') or 'unknown'}', f'employee_facing_reply_type:{employee_facing_reply_type}']
+    parts = [f"auth_lookup_sender_id:{auth.get('mattermostUserId', '')}", f"auth_profile_found:{bool_note(auth.get('found'))}", f"auth_dm_enabled:{bool_note(auth.get('dmEnabled'))}", f"auth_source_hash:{auth.get('sourceHash', 'unknown') or 'unknown'}", f"auth_decision:{auth.get('decision', 'unknown') or 'unknown'}", f'employee_facing_reply_type:{employee_facing_reply_type}']
     if auth.get('authFailureReason'):
-        parts.append(f'auth_failure_reason:{auth.get('authFailureReason')}')
+        parts.append(f"auth_failure_reason:{auth.get('authFailureReason')}")
     return '; '.join(parts)
 
 def summarize_dm(text: str) -> str:
@@ -977,7 +980,7 @@ def truncate_text(text: str, limit: int) -> str:
     return compact
 
 def utc_now_text() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
 
 def normalize_quality_status(value: str) -> str:
     status = (value or '').strip().lower().replace(' ', '_').replace('-', '_')
@@ -988,7 +991,7 @@ def quality_result(status: str, flags: list[str] | str, reason: str, *, reviewer
         flag_text = flags
     else:
         clean_flags = [re.sub('[^a-z0-9_]+', '_', str(flag).strip().lower()).strip('_') for flag in flags]
-        flag_text = ' | '.join((flag for flag in clean_flags if flag))
+        flag_text = ' | '.join(flag for flag in clean_flags if flag)
     return {'response_quality_status': normalize_quality_status(status), 'response_quality_flags': truncate_text(flag_text, 240), 'response_quality_reason': truncate_text(reason, 300), 'response_quality_reviewer': reviewer, 'response_quality_reviewed_at': reviewed_at or utc_now_text()}
 
 def response_quality_needs_follow_up(status: str) -> bool:
@@ -1013,7 +1016,7 @@ def normalize_response_quality_result(raw: str) -> dict[str, str]:
     status = normalize_quality_status(str(data.get('status') or ''))
     raw_status = str(data.get('status') or '').strip().lower()
     if status == 'error' and raw_status not in QUALITY_STATUSES:
-        return quality_result('error', ['reviewer_invalid_status'], f'Quality reviewer returned invalid status: {data.get('status')!r}.', reviewer=RESPONSE_QUALITY_MODEL)
+        return quality_result('error', ['reviewer_invalid_status'], f"Quality reviewer returned invalid status: {data.get('status')!r}.", reviewer=RESPONSE_QUALITY_MODEL)
     raw_flags = data.get('flags') or []
     flags = raw_flags if isinstance(raw_flags, list) else [str(raw_flags)]
     reason = str(data.get('reason') or 'No reviewer reason provided.')
@@ -1041,22 +1044,22 @@ def response_quality_agent_text(raw: str) -> str:
 
 def is_likely_project_list_progress_update(record: dict[str, str]) -> bool:
     text = str(record.get('request_summary') or '').lower()
-    if any((term in text for term in ['no update', '沒有更新'])):
+    if any(term in text for term in ['no update', '沒有更新']):
         return True
     if re.search('\\d{1,2}/\\d{1,2}', text):
         return True
     if '?' in text or '？' in text:
         return False
-    if re.search(f'[\\"“”\']\\s*(請|麻煩|可以|能否|可否|請問|提供|please|can you|could you|{BOT_MENTION_PATTERN})', text, flags=re.I):
+    if re.search(f'[\\"“”\']\\s*(請|麻煩|可以|能否|可否|請問|提供|please|can you|could you|{BOT_MENTION_PATTERN})', text, flags=re.IGNORECASE):
         return False
-    if any((term in text for term in ['已', '安排', '完成', '改善', '開單', '試模', '驗證', '加工', '回復', '回覆', 'done', 'completed', 'arranged', 'updated', 'progress'])):
+    if any(term in text for term in ['已', '安排', '完成', '改善', '開單', '試模', '驗證', '加工', '回復', '回覆', 'done', 'completed', 'arranged', 'updated', 'progress']):
         return True
     return bool(text.strip())
 PROJECT_LIST_PROMPT_MARKERS = ('專案追蹤更新', 'project list update', '請回覆這個項目的最新進度', 'please reply with the latest progress for this item')
 
 def is_project_list_prompt_text(message: str) -> bool:
     text = (message or '').casefold()
-    return any((marker.casefold() in text for marker in PROJECT_LIST_PROMPT_MARKERS))
+    return any(marker.casefold() in text for marker in PROJECT_LIST_PROMPT_MARKERS)
 
 def preceding_same_channel_other_party_is_project_list_prompt(post: dict[str, Any]) -> bool:
     """Treat a plain DM as a Project List reply when the other party's last message is the prompt.
@@ -1128,21 +1131,21 @@ def is_project_list_workflow_continuation(record: dict[str, str]) -> bool:
     return has_project_list_prompt and is_likely_project_list_progress_update(record)
 
 def record_quality_evidence_text(record: dict[str, str]) -> str:
-    return '\n'.join((str(record.get(key) or '') for key in ('reply_summary', 'answer_sources', 'notes', 'request_summary'))).casefold()
+    return '\n'.join(str(record.get(key) or '') for key in ('reply_summary', 'answer_sources', 'notes', 'request_summary')).casefold()
 
 def is_internal_operator_chatter(record: dict[str, str]) -> bool:
     text = record_quality_evidence_text(record)
     markers = ('self-improvement review', 'patched skill.md', 'updated skill.md', 'tool call:', 'tool output:', 'skill_manage(', 'skill_view(')
-    return any((marker in text for marker in markers))
+    return any(marker in text for marker in markers)
 
 def project_list_outcome_evidence(record: dict[str, str]) -> str | None:
     """Accept verified source evidence or an explicitly verified no-write dedupe."""
     text = record_quality_evidence_text(record)
     verified_markers = ('project_list_write_verified', 'source_write_verified', 'history_entry_verified', 'writeback_verified')
-    if any((marker in text for marker in verified_markers)):
+    if any(marker in text for marker in verified_markers):
         return 'verified_write'
     dedupe_markers = ('intentional_duplicate_suppressed', 'unchanged_dedupe_verified')
-    if any((marker in text for marker in dedupe_markers)):
+    if any(marker in text for marker in dedupe_markers):
         return 'intentional_dedupe'
     return None
 
@@ -1152,7 +1155,7 @@ def deterministic_response_quality(record: dict[str, str]) -> dict[str, str] | N
     access_status = (record.get('access_status') or '').strip().lower()
     reply_summary = (record.get('reply_summary') or '').strip().lower()
     flags: list[str] = []
-    if not any((record.get(key) for key in ('category', 'request_summary', 'reply_summary', 'assistant_response_type'))):
+    if not any(record.get(key) for key in ('category', 'request_summary', 'reply_summary', 'assistant_response_type')):
         return quality_result('not_reviewed', ['empty_review_record'], 'No reviewable request or reply evidence was present.', reviewer='deterministic')
     if is_internal_operator_chatter(record):
         return quality_result('poor_quality', ['internal_operator_chatter', 'employee_visible_debug_output'], 'The employee-visible reply exposed internal tool, skill, or self-improvement activity instead of a useful response.', reviewer='deterministic')
@@ -1179,7 +1182,7 @@ def deterministic_response_quality(record: dict[str, str]) -> dict[str, str] | N
     return None
 
 def summarize_reply_text_for_quality(posts: list[dict[str, Any]]) -> str:
-    text = '\n\n'.join((str(post.get('message') or '').strip() for post in posts if str(post.get('message') or '').strip()))
+    text = '\n\n'.join(str(post.get('message') or '').strip() for post in posts if str(post.get('message') or '').strip())
     max_chars = int(site_text('REVIEW_LOG_RESPONSE_QUALITY_MAX_REPLY_CHARS') or '8000')
     return truncate_text(text, max_chars)
 
@@ -1208,7 +1211,7 @@ def channel_posts_before(channel_id: str, post_id: str, *, per_page: int=40) -> 
 def original_reply_text_for_quality(record: dict[str, str]) -> str | None:
     ids_text = ' '.join([record.get('answer_sources', ''), record.get('notes', '')])
     reply_ids: list[str] = []
-    for match in re.findall('bot_reply_ids:([a-z0-9,]+)', ids_text, flags=re.I):
+    for match in re.findall('bot_reply_ids:([a-z0-9,]+)', ids_text, flags=re.IGNORECASE):
         reply_ids.extend([part for part in match.split(',') if part])
     posts: list[dict[str, Any]] = []
     for reply_id in dict.fromkeys(reply_ids):
@@ -1254,7 +1257,7 @@ def review_response_quality_with_agent(record: dict[str, str]) -> dict[str, str]
         result = normalize_response_quality_result(response_quality_agent_text(out))
         result['response_quality_reviewer'] = model
         if not original_reply and 'summary_only_review' not in result['response_quality_flags']:
-            result['response_quality_flags'] = ' | '.join((x for x in [result['response_quality_flags'], 'summary_only_review'] if x))
+            result['response_quality_flags'] = ' | '.join(x for x in [result['response_quality_flags'], 'summary_only_review'] if x)
         return result
     except SystemExit:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
@@ -1304,7 +1307,7 @@ def summarize_pd_one_response(replies: list[dict[str, Any]], *, fallback: str=''
     local = summarize_reply_locally(replies)
     if not local:
         return fallback
-    raw_text = redact_sensitive_text('\n\n'.join((str(reply.get('message') or '').strip() for reply in replies if str(reply.get('message') or '').strip())))
+    raw_text = redact_sensitive_text('\n\n'.join(str(reply.get('message') or '').strip() for reply in replies if str(reply.get('message') or '').strip()))
     if len(' '.join(raw_text.split())) <= 260:
         return local
     if site_text('REVIEW_LOG_REPLY_SUMMARY').lower() in {'0', 'false', 'no'}:
@@ -1344,7 +1347,7 @@ INTERIM_BOT_REPLY_MARKERS = ('redirected current run', "i'll adjust using your c
 def is_interim_bot_reply(text: str) -> bool:
     """Return True for Hermes mid-turn steer/progress bubbles, not employee answers."""
     lowered = (text or '').lower()
-    return any((marker in lowered for marker in INTERIM_BOT_REPLY_MARKERS))
+    return any(marker in lowered for marker in INTERIM_BOT_REPLY_MARKERS)
 APPROVAL_GATED_REPLY_MARKERS = ('審核需求', '系統逾時', '送審時逾時', '未確認成功', '不能直接讀取或處理原始資料', '不能直接讀取或整理原始資料', '不可直接存取', '不在可讀取或翻譯範圍', '不能開啟或翻譯', 'discipline records / private personnel records', '需要副總', '需要 andy', '需要andy', '請求核准', '請協助核准', '核准後', '開權限或核准', '核准修正', '不能直接替你寫入', '權限不含', '若 andy 或有權限', 'dangerous command requires approval', 'authorization required', 'approval required', 'request_approval')
 
 def setup_refusal_bot_replies_after(posts: dict[str, Any], bot_user_id: str, post: dict[str, Any], *, window_ms: int=5 * 60 * 1000) -> list[dict[str, Any]]:
@@ -1366,7 +1369,7 @@ def setup_refusal_bot_replies_after(posts: dict[str, Any], bot_user_id: str, pos
         if created <= start or created > start + window_ms:
             continue
         text = (candidate.get('message') or '').lower()
-        if any((marker.lower() in text for marker in NO_DM_FALLBACK_MARKERS)):
+        if any(marker.lower() in text for marker in NO_DM_FALLBACK_MARKERS):
             out.append(candidate)
     return sorted(out, key=lambda x: int(x.get('create_at') or 0))
 
@@ -1384,7 +1387,7 @@ def approval_gated_bot_replies_after(posts: dict[str, Any], bot_user_id: str, po
         if created <= start or created > start + window_ms:
             continue
         text = (candidate.get('message') or '').lower()
-        if any((marker.lower() in text for marker in APPROVAL_GATED_REPLY_MARKERS)):
+        if any(marker.lower() in text for marker in APPROVAL_GATED_REPLY_MARKERS):
             out.append(candidate)
     return sorted(out, key=lambda x: int(x.get('create_at') or 0))
 
@@ -1415,9 +1418,9 @@ def normal_bot_replies_after(posts: dict[str, Any], bot_user_id: str, post: dict
         if require_same_thread and root and candidate.get('root_id') and (candidate_root != root):
             continue
         text = (candidate.get('message') or '').lower()
-        if any((marker.lower() in text for marker in NO_DM_FALLBACK_MARKERS)):
+        if any(marker.lower() in text for marker in NO_DM_FALLBACK_MARKERS):
             continue
-        if any((marker.lower() in text for marker in APPROVAL_GATED_REPLY_MARKERS)):
+        if any(marker.lower() in text for marker in APPROVAL_GATED_REPLY_MARKERS):
             continue
         if is_interim_bot_reply(text):
             continue
@@ -1425,7 +1428,7 @@ def normal_bot_replies_after(posts: dict[str, Any], bot_user_id: str, post: dict
     return sorted(out, key=lambda x: int(x.get('create_at') or 0))
 
 def bot_reply_ids(replies: list[dict[str, Any]]) -> str:
-    return ','.join((str(r.get('id', '')) for r in replies if r.get('id')))
+    return ','.join(str(r.get('id', '')) for r in replies if r.get('id'))
 
 def should_capture_channel_interaction(*, mentioned: bool, in_pd_one_thread: bool, has_normal_bot_reply: bool) -> bool:
     """Return whether scan-interactions should write a channel review_log row.
@@ -1443,7 +1446,7 @@ def review_row_for_dm_post(channel: dict[str, Any], post: dict[str, Any], user: 
     username = user.get('mattermost_username') or post.get('user_id') or 'unknown'
     email = user.get('mattermost_email') or ''
     user_label = f'{username} <{email}>' if email else username
-    ts = datetime.fromtimestamp(post['create_at'] / 1000, timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    ts = datetime.fromtimestamp(post['create_at'] / 1000, UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
     ts_tpe = timestamp_utc_to_tpe(ts)
     lookup_ok = bool(user.get('appsheet_lookup_succeeded'))
     lang = user.get('language') or 'unknown'
@@ -1508,13 +1511,13 @@ def review_row_for_dm_post(channel: dict[str, Any], post: dict[str, Any], user: 
         review_status = 'open'
         employee_facing_reply_type = 'setup'
         source_tags = note_source_tags(data_sources='Mattermost DM message plus Mattermost user/profile metadata', permission_blocked='yes profile/setup not enabled', blocked_sources='requested operational sources not evaluated by scanner backstop')
-    return row_with_fields([ts, ts_tpe, 'mattermost', channel.get('id', ''), f'DM: {username} <> {BOT_USERNAME}', post.get('user_id', ''), user_label, user.get('name_zh_tw', ''), user.get('name_en', ''), user.get('resolved_person_id', ''), category, summarize_dm(post.get('message', '')), assistant_response_type, reason, follow_up_needed, review_status, f'identity_source:AppSheet HR_Employees via Mattermost email; identity_lookup_succeeded:{str(lookup_ok).lower()}; language:{lang}; interaction_source:Mattermost DM post; {source_tags}; {auth_note_tags(auth, employee_facing_reply_type=employee_facing_reply_type)}; mattermost_post_id:{post.get('id', '')}'], reply_summary=reply_summary, mattermost_user_post_link=mattermost_post_link(post.get('id', '')))
+    return row_with_fields([ts, ts_tpe, 'mattermost', channel.get('id', ''), f'DM: {username} <> {BOT_USERNAME}', post.get('user_id', ''), user_label, user.get('name_zh_tw', ''), user.get('name_en', ''), user.get('resolved_person_id', ''), category, summarize_dm(post.get('message', '')), assistant_response_type, reason, follow_up_needed, review_status, f"identity_source:AppSheet HR_Employees via Mattermost email; identity_lookup_succeeded:{str(lookup_ok).lower()}; language:{lang}; interaction_source:Mattermost DM post; {source_tags}; {auth_note_tags(auth, employee_facing_reply_type=employee_facing_reply_type)}; mattermost_post_id:{post.get('id', '')}"], reply_summary=reply_summary, mattermost_user_post_link=mattermost_post_link(post.get('id', '')))
 
 def review_row_for_channel_post(channel: dict[str, Any], post: dict[str, Any], user: dict[str, Any], *, reason: str, normal_bot_replies: list[dict[str, Any]] | None=None, approval_gated_replies: list[dict[str, Any]] | None=None) -> list[str]:
     username = user.get('mattermost_username') or post.get('user_id') or 'unknown'
     email = user.get('mattermost_email') or ''
     user_label = f'{username} <{email}>' if email else username
-    ts = datetime.fromtimestamp(post['create_at'] / 1000, timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    ts = datetime.fromtimestamp(post['create_at'] / 1000, UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
     ts_tpe = timestamp_utc_to_tpe(ts)
     lookup_ok = bool(user.get('appsheet_lookup_succeeded'))
     lang = user.get('language') or 'unknown'
@@ -1545,7 +1548,7 @@ def review_row_for_channel_post(channel: dict[str, Any], post: dict[str, Any], u
         follow_up_needed = 'yes'
         review_status = 'open'
         source_tags = note_source_tags(data_sources='Mattermost channel post/thread only (scanner backstop; run session source collector for reply tool trail)', permission_blocked='yes no Mattermost bot reply evidence found by scanner', blocked_sources='employee-facing answer not verified; needs replay/corrective response if no session delivery exists')
-    return row_with_fields([ts, ts_tpe, 'mattermost', channel.get('id', ''), channel_label(channel), post.get('user_id', ''), user_label, user.get('name_zh_tw', ''), user.get('name_en', ''), user.get('resolved_person_id', ''), category, summarize_interaction(post.get('message', ''), prefix='User interacted with PD One in Mattermost channel'), assistant_response_type, reason, follow_up_needed, review_status, f'identity_source:AppSheet HR_Employees via Mattermost email; identity_lookup_succeeded:{str(lookup_ok).lower()}; language:{lang}; interaction_source:Mattermost channel post/thread; {source_tags}; mattermost_post_id:{post.get('id', '')}; root_id:{post.get('root_id', '')}'], reply_summary=reply_summary, mattermost_user_post_link=mattermost_post_link(post.get('id', '')))
+    return row_with_fields([ts, ts_tpe, 'mattermost', channel.get('id', ''), channel_label(channel), post.get('user_id', ''), user_label, user.get('name_zh_tw', ''), user.get('name_en', ''), user.get('resolved_person_id', ''), category, summarize_interaction(post.get('message', ''), prefix='User interacted with PD One in Mattermost channel'), assistant_response_type, reason, follow_up_needed, review_status, f"identity_source:AppSheet HR_Employees via Mattermost email; identity_lookup_succeeded:{str(lookup_ok).lower()}; language:{lang}; interaction_source:Mattermost channel post/thread; {source_tags}; mattermost_post_id:{post.get('id', '')}; root_id:{post.get('root_id', '')}"], reply_summary=reply_summary, mattermost_user_post_link=mattermost_post_link(post.get('id', '')))
 
 def attachment_type_from_name(name: str, mime: str='') -> str:
     lower = (name or '').lower()
@@ -1592,7 +1595,7 @@ def review_row_for_attachment_sent(channel: dict[str, Any], post: dict[str, Any]
     username = user.get('mattermost_username') or user.get('mattermost_user_id') or 'unknown'
     email = user.get('mattermost_email') or ''
     user_label = f'{username} <{email}>' if email else username
-    ts = datetime.fromtimestamp(post['create_at'] / 1000, timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    ts = datetime.fromtimestamp(post['create_at'] / 1000, UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
     ts_tpe = timestamp_utc_to_tpe(ts)
     lookup_ok = bool(user.get('appsheet_lookup_succeeded'))
     lang = user.get('language') or 'unknown'
@@ -1604,10 +1607,10 @@ def review_row_for_attachment_sent(channel: dict[str, Any], post: dict[str, Any]
         typ = attachment_type_from_name(name, mime)
         types.append(typ)
         size = info.get('size') or ''
-        file_bits.append(f'{name} ({typ}{(', ' + str(size) + ' bytes' if size else '')})')
+        file_bits.append(f"{name} ({typ}{(', ' + str(size) + ' bytes' if size else '')})")
     type_text = ','.join(sorted(set(types))) or 'unknown'
     channel_name = f'DM: {username} <> {BOT_USERNAME}' if channel.get('type') == 'D' else channel_label(channel)
-    return row_with_fields([ts, ts_tpe, 'mattermost', channel.get('id', ''), channel_name, user.get('mattermost_user_id', ''), user_label, user.get('name_zh_tw', ''), user.get('name_en', ''), user.get('resolved_person_id', ''), 'attachment_sent', f'PD One sent Mattermost attachment(s): {type_text}', 'attachment_sent', 'Mattermost bot post included file attachment(s); deterministic scanner captured delivery for audit', 'no', 'closed', f'attachment_type:{type_text}; files:{' | '.join(file_bits)}; identity_source:AppSheet HR_Employees via Mattermost email; identity_lookup_succeeded:{str(lookup_ok).lower()}; language:{lang}; delivery_source:Mattermost bot post/file_ids; {note_source_tags(data_sources='Mattermost bot post/file_ids', permission_blocked='no')}; mattermost_post_id:{post.get('id', '')}; root_id:{post.get('root_id', '')}'], reply_summary=f'PD One sent Mattermost attachment(s): {type_text} ({truncate_text(' | '.join(file_bits), 220)})')
+    return row_with_fields([ts, ts_tpe, 'mattermost', channel.get('id', ''), channel_name, user.get('mattermost_user_id', ''), user_label, user.get('name_zh_tw', ''), user.get('name_en', ''), user.get('resolved_person_id', ''), 'attachment_sent', f'PD One sent Mattermost attachment(s): {type_text}', 'attachment_sent', 'Mattermost bot post included file attachment(s); deterministic scanner captured delivery for audit', 'no', 'closed', f"attachment_type:{type_text}; files:{' | '.join(file_bits)}; identity_source:AppSheet HR_Employees via Mattermost email; identity_lookup_succeeded:{str(lookup_ok).lower()}; language:{lang}; delivery_source:Mattermost bot post/file_ids; {note_source_tags(data_sources='Mattermost bot post/file_ids', permission_blocked='no')}; mattermost_post_id:{post.get('id', '')}; root_id:{post.get('root_id', '')}"], reply_summary=f"PD One sent Mattermost attachment(s): {type_text} ({truncate_text(' | '.join(file_bits), 220)})")
 
 def cmd_lookup_user(args: argparse.Namespace) -> None:
     print(json.dumps(resolve_user(args.user_id), ensure_ascii=False, indent=2))
@@ -1618,8 +1621,8 @@ def cmd_append(args: argparse.Namespace) -> None:
     email = user.get('mattermost_email') or ''
     user_label = f'{username} <{email}>' if email else username
     channel_name = args.channel_name or (f'DM: {username} <> {BOT_USERNAME}' if args.channel_id.startswith('user:') or args.dm else '')
-    ts = args.timestamp_utc or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
-    row = [ts, timestamp_utc_to_tpe(ts), 'mattermost', args.channel_id, channel_name, args.user_id, user_label, user.get('name_zh_tw', ''), user.get('name_en', ''), user.get('resolved_person_id', ''), args.category, args.request_summary, args.assistant_response_type, args.reason, args.follow_up_needed, args.review_status, args.notes or f'identity_source:AppSheet HR_Employees via Mattermost email; identity_lookup_succeeded:{str(user.get('appsheet_lookup_succeeded')).lower()}; language:{user.get('language') or 'unknown'}; evidence_source:manual_append_args; {note_source_tags(data_sources=args.data_sources or 'manual_append_not_specified', permission_blocked=args.permission_blocked or 'not_specified', blocked_sources=args.blocked_sources)}']
+    ts = args.timestamp_utc or datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    row = [ts, timestamp_utc_to_tpe(ts), 'mattermost', args.channel_id, channel_name, args.user_id, user_label, user.get('name_zh_tw', ''), user.get('name_en', ''), user.get('resolved_person_id', ''), args.category, args.request_summary, args.assistant_response_type, args.reason, args.follow_up_needed, args.review_status, args.notes or f"identity_source:AppSheet HR_Employees via Mattermost email; identity_lookup_succeeded:{str(user.get('appsheet_lookup_succeeded')).lower()}; language:{user.get('language') or 'unknown'}; evidence_source:manual_append_args; {note_source_tags(data_sources=args.data_sources or 'manual_append_not_specified', permission_blocked=args.permission_blocked or 'not_specified', blocked_sources=args.blocked_sources)}"]
     print(json.dumps(append_row(row), ensure_ascii=False, indent=2))
 
 def configure_scan_translation(args: argparse.Namespace) -> None:
@@ -1653,7 +1656,7 @@ def _scan_dms_locked(args: argparse.Namespace) -> None:
     scan_state: dict[str, Any] = {}
     if DM_SCAN_STATE_PATH().exists():
         try:
-            scan_state = json.loads(DM_SCAN_STATE_PATH().read_text(encoding='utf-8'))
+            scan_state = json.loads(DM_SCAN_STATE_PATH().read_text(encoding='utf-8-sig'))
         except Exception:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             scan_state = {}
@@ -1667,7 +1670,7 @@ def _scan_dms_locked(args: argparse.Namespace) -> None:
     for channel in channels_resp.json():
         if channel.get('type') != 'D':
             continue
-        posts_resp = requests.get(f'{base}/api/v4/channels/{channel['id']}/posts', headers=headers, params={'per_page': args.per_page}, timeout=30)
+        posts_resp = requests.get(f"{base}/api/v4/channels/{channel['id']}/posts", headers=headers, params={'per_page': args.per_page}, timeout=30)
         posts_resp.raise_for_status()
         posts_body = posts_resp.json()
         posts = posts_body.get('posts', {})
@@ -1682,7 +1685,7 @@ def _scan_dms_locked(args: argparse.Namespace) -> None:
                 continue
             if post_id in existing_post_ids:
                 continue
-            ts = datetime.fromtimestamp(create_at / 1000, timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+            ts = datetime.fromtimestamp(create_at / 1000, UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
             if (ts, user_id, channel.get('id', '')) in existing_events:
                 continue
             if user_id not in auth_cache:
@@ -1709,7 +1712,7 @@ def _scan_dms_locked(args: argparse.Namespace) -> None:
         return
     result = append_rows(rows)
     DM_SCAN_STATE_PATH().parent.mkdir(parents=True, exist_ok=True)
-    DM_SCAN_STATE_PATH().write_text(json.dumps({'lastScannedAtMs': max_seen_ms, 'lastScannedAtUtc': datetime.fromtimestamp(max_seen_ms / 1000, timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z') if max_seen_ms else '', 'lastRunAtUtc': datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z'), 'lastAppended': len(rows)}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    DM_SCAN_STATE_PATH().write_text(json.dumps({'lastScannedAtMs': max_seen_ms, 'lastScannedAtUtc': datetime.fromtimestamp(max_seen_ms / 1000, UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z') if max_seen_ms else '', 'lastRunAtUtc': datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z'), 'lastAppended': len(rows)}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(json.dumps({'scanned': True, 'appended': len(rows), 'sheet': result}, ensure_ascii=False, indent=2))
 
 def post_mentions_bot(post: dict[str, Any], me: dict[str, Any]) -> bool:

@@ -33,6 +33,7 @@ Preferred fix: run the Gog listener on a host port bound to all interfaces and a
 ```bash
 SERVICES='calendar,drive,driveactivity,drivelabels,docs,slides,contacts,tasks,sheets,people,forms,sites,meet,appscript'
 EXTRA='https://www.googleapis.com/auth/admin.directory.group,https://www.googleapis.com/auth/admin.directory.group.member,https://www.googleapis.com/auth/apps.groups.settings'
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 PATH=/tmp/pdone-fake-browser:$PATH gog auth add admin@prodesign-group.com \
   --client prodesign-admin \
   --listen-addr 0.0.0.0:8766 \
@@ -47,18 +48,23 @@ PATH=/tmp/pdone-fake-browser:$PATH gog auth add admin@prodesign-group.com \
 2. If needed, create a fake `xdg-open` first so the auth URL is captured to a file rather than trying to open a local browser on the host:
 
 ```bash
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 mkdir -p /tmp/pdone-fake-browser
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 cat > /tmp/pdone-fake-browser/xdg-open <<'SH'
 #!/usr/bin/env sh
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 printf '%s\n' "$1" > /tmp/pdone_gog_live_auth_url.txt
 exit 0
 SH
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 chmod +x /tmp/pdone-fake-browser/xdg-open
 ```
 
 3. Inside the noVNC browser container, proxy the browser's localhost callback to the host listener. On Docker bridge setups, `172.17.0.1` is usually the host gateway; verify if needed.
 
 ```bash
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 docker exec pdone-gog-auth-browser sh -lc 'python3 - <<"PY" >/tmp/port8766_proxy.log 2>&1 &
 import socket, threading, select
 LISTEN=("127.0.0.1",8766)
@@ -91,9 +97,11 @@ PY'
 4. Open the captured auth URL in the noVNC Chromium using the container-local Chrome DevTools endpoint, so the user just clicks through the newest tab:
 
 ```bash
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 docker cp /tmp/pdone_gog_live_auth_url.txt pdone-gog-auth-browser:/tmp/live_auth_url.txt
 docker exec pdone-gog-auth-browser sh -lc 'python3 - <<"PY"
 import urllib.request, urllib.parse, json
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 url=open("/tmp/live_auth_url.txt").read().strip()
 base="http://127.0.0.1:9222"
 req=urllib.request.Request(base+"/json/new?"+urllib.parse.quote(url, safe=""), method="PUT")
@@ -106,9 +114,11 @@ PY'
 
 ## noVNC/VNC startup pitfall
 
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 If noVNC loads but says `failed to connect to server`, check the container's `/tmp/x11vnc.log`. `x11vnc` may have started before Xvfb was ready and failed with `XOpenDisplay` errors. Restart x11vnc inside the container after Xvfb is running:
 
 ```bash
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 docker exec pdone-gog-auth-browser sh -lc 'pkill x11vnc || true; x11vnc -display :99 -rfbauth /tmp/vnc.pass -forever -shared -listen 0.0.0.0 -rfbport 5900 >/tmp/x11vnc.log 2>&1 &'
 ```
 

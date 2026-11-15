@@ -3,7 +3,7 @@
 xAI returns HTTP 403 (not 401) with "unauthenticated:bad-credentials" when
 an OAuth2 access token has expired.  These tests verify:
 
-1. _is_auth_error detects xAI 403 as an auth failure
+1. the aux error policy reads xAI's 403 as a refreshable auth failure
 2. _recoverable_pool_provider maps api.x.ai to xai-oauth
 3. _refresh_provider_credentials includes xai-oauth refresh logic
 4. _auth_refresh_provider_for_route maps auto + api.x.ai to xai-oauth so
@@ -14,19 +14,15 @@ an OAuth2 access token has expired.  These tests verify:
 import pytest
 
 
-# ── _is_auth_error ──────────────────────────────────────────────────────────
-
-def _import_is_auth_error():
-    from agent.auxiliary_client import _is_auth_error
-    return _is_auth_error
-
+# ── auth refresh decision ───────────────────────────────────────────────────
 
 class TestIsAuthErrorXaiOauth403:
-    """Verify _is_auth_error correctly identifies xAI's 403 bad-credentials."""
+    """The shared classifier reads xAI's 403 bad-credentials as a refreshable auth failure."""
 
     @pytest.fixture(autouse=True)
     def _import(self):
-        self.is_auth_error = _import_is_auth_error()
+        from agent.auxiliary_error_policy import auth_refresh, classify_attempt
+        self.is_auth_error = lambda exc: auth_refresh(classify_attempt(exc, "xai-oauth"))
 
     def test_xai_403_bad_credentials_is_auth_error(self):
         """The exact error xAI returns for expired OAuth tokens."""
@@ -199,7 +195,7 @@ class TestRetrySameProviderDropsStaleApiKey:
             "final_model": "grok-4.6",
         }
         kind, args, kw = _ladder_step_call(
-            _LadderStep("retry_same_provider", ("xai-oauth", "grok-4.6")),
+            _LadderStep("retry_same_provider", ("xai-oauth", "grok-4.6", ())),
             Req(),
             retry_kwargs,
             {},
@@ -208,5 +204,6 @@ class TestRetrySameProviderDropsStaleApiKey:
         assert args == ()
         assert kw["resolved_provider"] == "xai-oauth"
         assert kw["resolved_model"] == "grok-4.6"
+        assert kw["repairs"] == ()
         assert kw["resolved_api_key"] is None
         assert retry_kwargs["resolved_api_key"] == "expired-bearer"

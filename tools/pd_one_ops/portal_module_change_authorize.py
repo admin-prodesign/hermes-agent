@@ -28,7 +28,7 @@ def GRANTS_PATH():
 IN_SCOPE_CHANGE_CLASS = 'in_scope_module_product'
 REDIRECT_SENTINEL = 'redirect_to_department_channel'
 
-def load_grants(path: Path=None) -> dict[str, Any]:
+def load_grants(path: Path | None=None) -> dict[str, Any]:
     if path is None:
         path = GRANTS_PATH()
     data = load_json(path)

@@ -55,7 +55,7 @@ def load_runtime_model(path: Path | None = None) -> dict[str, str]:
         return out
     try:
         in_model = False
-        for raw in config_path.read_text(encoding="utf-8").splitlines():
+        for raw in config_path.read_text(encoding="utf-8-sig").splitlines():
             if raw.startswith("model:"):
                 in_model = True
                 continue
@@ -334,7 +334,7 @@ except Exception as exc:
         env["PYTHONPATH"] = os.pathsep.join(dict.fromkeys(paths))
     try:
         cp = subprocess.run(
-            [sys.executable, "-c", code],
+            [sys.executable, "-c", code], check=False,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

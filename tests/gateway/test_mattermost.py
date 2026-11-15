@@ -2,6 +2,7 @@
 import json
 import os
 import time
+from types import SimpleNamespace
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 
@@ -298,6 +299,23 @@ class TestMattermostWebSocketParsing:
         # @mention is stripped from the message text
         assert msg_event.text == "Hello from Matrix!"
         assert msg_event.message_id == "post_abc"
+
+    @pytest.mark.asyncio
+    async def test_known_peer_bot_is_marked_on_the_inbound_source(self):
+        """Regression for #137027: configured peer bots must enter the loop guard."""
+        self.adapter.config.extra["bot_users"] = ["peer_bot"]
+        self.adapter._download_attachments = AsyncMock(return_value=([], []))
+        post_data = {
+            "id": "post_from_peer", "user_id": "peer_bot", "channel_id": "dm_456", "message": "ping",
+        }
+        event = {
+            "event": "posted",
+            "data": {"post": json.dumps(post_data), "channel_type": "D", "sender_name": "@peer"},
+        }
+
+        await self.adapter._handle_ws_event(event)
+
+        assert self.adapter.handle_message.await_args.args[0].source.is_bot is True
 
 
     @pytest.mark.asyncio
@@ -877,6 +895,45 @@ class TestMultiplexProfileScope:
             assert "MATTERMOST_REQUIRE_MENTION" not in os.environ
 
 
+def test_bot_turn_does_not_publish_runtime_status():
+    """#137027: a provider-fallback diagnostic must not become a peer-bot message."""
+    from gateway.run_turn_runner import TurnRunner
+
+    turn_runner = object.__new__(TurnRunner)
+    turn_runner._schedule = MagicMock()
+    turn_runner._ctx = SimpleNamespace(
+        mute_notification_reply=False,
+        source=SimpleNamespace(platform=Platform.MATTERMOST, is_bot=True),
+        _status_adapter=object(),
+        _run_still_current=lambda: True,
+        user_config={},
+        _status_chat_id="dm_456",
+        _status_thread_metadata=None,
+        _cleanup_progress=False,
+    )
+
+    turn_runner._status_callback_sync("warn", "⚠️ Model fallback: unavailable")
+
+    turn_runner._schedule.assert_not_called()
+
+
+def test_configured_mattermost_bot_is_authorized(monkeypatch):
+    """#137027: peer bots use Mattermost's registered bot-admission policy."""
+    from gateway.run import GatewayRunner
+    from gateway.session import SessionSource
+
+    for name in ("MATTERMOST_ALLOW_BOTS", "MATTERMOST_ALLOWED_USERS", "GATEWAY_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS"):
+        monkeypatch.delenv(name, raising=False)
+    runner = object.__new__(GatewayRunner)
+    runner.pairing_store = SimpleNamespace(is_approved=lambda *_a, **_kw: False)
+    source = SessionSource(
+        platform=Platform.MATTERMOST, chat_id="dm_456", chat_type="dm", user_id="peer_bot",
+        user_name="Peer Bot", is_bot=True,
+    )
+
+    assert runner._is_user_authorized(source) is False
+    monkeypatch.setenv("MATTERMOST_ALLOW_BOTS", "mentions")
+    assert runner._is_user_authorized(source) is True
 
 class TestMattermostProgressRouting:
     def test_root_post_progress_uses_triggering_post_as_thread_root(self):
@@ -1031,7 +1088,7 @@ class TestMattermostAutoThreadRootHeading:
             {"message": "##### 出貨延遲檢討 / Shipping Delay Review\n\nCan someone look at this?"},
         )
         # No @mention in the reply, so the normal agent path should still be skipped.
-        assert getattr(self.adapter.handle_message, "call_count") == 0
+        assert self.adapter.handle_message.call_count == 0
 
     @pytest.mark.asyncio
     async def test_own_thread_reply_adds_heading_but_does_not_reenter_agent(self):
@@ -1055,7 +1112,7 @@ class TestMattermostAutoThreadRootHeading:
             "posts/root_post/patch",
             {"message": "##### 使用者問題 / User Question\n\nUntitled user question"},
         )
-        assert getattr(self.adapter.handle_message, "call_count") == 0
+        assert self.adapter.handle_message.call_count == 0
 
     @pytest.mark.asyncio
     async def test_thread_reply_updates_existing_non_bilingual_heading(self):

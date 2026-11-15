@@ -53,6 +53,7 @@ Current live Apps Script editor/project for `PD One - AppSheet Data Mirror`:
 A Drive file named `PD One AppSheet Data Mirror Sync - Code.gs` may exist as a source-copy/backup, but updating that file alone does **not** update the live script editor. Patch the live Apps Script project with `projects.updateContent`, then read it back with `gog appscript content "$SCRIPT_ID"` and verify the exact changelog/selector strings.
 
 ## Verification recipe
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 1. Run a syntax check against a temporary JS copy, e.g. `node --check /tmp/data_mirror_sync_check.js`.
 2. Unit-check selector output for both array and legacy string inputs. Expected examples:
    - `FILTER("ActivityLog", OR([Timestamp] >= DATETIME("..."), [Last Updated] >= DATETIME("...")))`

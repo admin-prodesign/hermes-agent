@@ -33,6 +33,7 @@ Use OpenClaw health rather than broad status/log sweeps during normal chat paths
 
 ```bash
 cd /home/prodesign/.openclaw/workspace
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 /home/prodesign/.npm-global/bin/openclaw health --json > /tmp/openclaw-health.json
 ```
 
@@ -42,6 +43,7 @@ If health reports event-loop/cpu/memory/disk pressure, do safe triage before ale
 uptime
 ps -eo pid,ppid,comm,%cpu,%mem,etime,args --sort=-%cpu | head -12
 ps -eo pid,ppid,comm,%cpu,%mem,rss,etime,args --sort=-%mem | head -12
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 df -h / /home /tmp 2>/dev/null
 for f in /proc/pressure/cpu /proc/pressure/memory /proc/pressure/io; do echo "-- $f"; cat "$f"; done
 ```

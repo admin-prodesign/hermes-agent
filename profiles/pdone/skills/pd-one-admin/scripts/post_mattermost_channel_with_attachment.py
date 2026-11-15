@@ -23,7 +23,7 @@ import requests
 
 TOOLS = Path('/home/prodesign/.hermes/profiles/pdone/tools')
 sys.path.insert(0, str(TOOLS))
-from mattermost_review_log import mattermost_context, mattermost_post_link  # noqa: E402
+from mattermost_review_log import mattermost_context, mattermost_post_link
 
 
 def main() -> None:
@@ -37,7 +37,7 @@ def main() -> None:
 
     channel_id = args.channel_id.strip()
     message_path = Path(args.message_file)
-    message = message_path.read_text(encoding='utf-8')
+    message = message_path.read_text(encoding='utf-8-sig')
     attachment = Path(args.attachment) if args.attachment else None
 
     base, _token, headers, me = mattermost_context()

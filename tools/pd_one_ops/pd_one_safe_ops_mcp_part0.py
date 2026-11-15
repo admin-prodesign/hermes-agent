@@ -1,6 +1,6 @@
 """MCP server exposing PD One safe operations as typed tools."""
 from __future__ import annotations
-__all__ = ['_PdReturn', '_PdHandled', '_PdUnset', '_PdUnset', 'SAFE_OPS', 'FUNCTION_TWIN_DISPATCHER', 'FUNCTION_TWIN_NAMES', 'EMPLOYEE_WATCHES', 'MEDIA_OPS', 'GOOGLE_DOCS_DOCUMENT_OPS', 'GOOGLE_GROUP_OWNER_OPS', 'TYPHOON_AUTOMATION_LIVE_CONFIRMATION', 'ADMIN_APPROVAL_DECISION_LIVE_CONFIRMATION', 'PYTHON_DOCX_REPAIR_TICKET_ID', 'PYTHON_DOCX_REPAIR_CONFIRMATION', 'OLLAMA_EMBEDDING_UNIT', 'OLLAMA_EMBEDDING_PORT', 'OLLAMA_EMBEDDING_CONTAINER', 'OLLAMA_EMBEDDING_PEER_CONTAINER', 'OLLAMA_EMBEDDING_WATCHDOG_UNIT', 'OLLAMA_EMBEDDING_WATCHDOG_MAX_JOURNAL_TAIL_LINES', 'SYSSTAT_SUMMARY_MAX_HOURS', 'AUDIT', 'APPSHEET_RECORD_OPS', 'APPSHEET_SCHEMA_MAP', 'APPSHEET_ENV_FILES', 'APPSHEET_LIVE_CONFIRMATION', 'APPSHEET_BULK_MAX_ROWS', 'APPSHEET_HR_EMPLOYEE_ALLOWED_FIELDS', 'APPSHEET_HR_EMPLOYEE_READBACK_FIELDS', 'APPS_SCRIPT_LIVE_CONFIRMATION', 'APPS_SCRIPT_ALLOWED_PROJECTS', 'GOG_CREDS', 'APPS_SCRIPT_RECEIPTS', 'SCHEDULER_PROJECT', 'SCHEDULER_SCRIPT', 'SCHEDULER_PYTHON', 'WORKER_SCHEDULING_RECEIPTS', 'WORKER_SCHEDULING_GROUPS', 'WORKER_SCHEDULING_LIVE_CONFIRMATION', 'WORKER_SCHEDULING_LEGACY_LIVE_CONFIRMATION', 'WORKER_SCHEDULING_LIVE_CONFIRMATION_REQUIREMENT', 'WORKER_SCHEDULING_SOURCE_CONFIRMATION', 'SOURCE_SPREADSHEET_ID', 'DEST_SPREADSHEET_ID', 'RAW_REQUEST_SHEET', 'MONTHLY_SOURCE_SHEET', 'SCHEDULING_RULES_SHEET', 'SCHEDULING_RULES_VALUES', 'GOG', 'run_json', '_json_result', '_load_google_docs_document_ops_module', '_load_google_group_owner_ops_module', '_utc_stamp', '_validate_worker_scheduling_groups', '_worker_scheduling_command', '_tail_file', '_run_worker_scheduling_command', '_pid_is_running', '_start_worker_scheduling_job', '_poll_worker_scheduling_job', '_approved_existing_worker_path', '_load_shift_scheduler_module', '_resolve_generated_schedule_report', 'worker_scheduling_write_generated_schedule_from_report', '_approved_output_dir', '_gog_cmd', '_run_cmd', '_gog_get', '_gog_notes', '_extract_values', '_column_name', '_canonical_date', '_write_receipt', 'pd_one_capability_registry', 'pd_one_sheets_get_range', 'pd_one_cached_sheet_json_search', 'pd_one_cached_dest_rest_count', 'pd_one_google_drive_parent_chain', 'pd_one_google_drive_search_files', 'pd_one_sheets_batch_update', 'pd_one_bounded_sheet_cell_write', 'pd_one_sheets_append', 'pd_one_sheets_header_update_row', 'pd_one_dangerous_command_audit', 'pd_one_ecrn_approval_pilot_status', 'pd_one_ecrn_approval_pilot_check', 'pd_one_google_group_members', 'pd_one_google_group_owner_enforcement', 'pd_one_google_docs_metadata_inspect', 'pd_one_google_docs_document_ops', 'pd_one_google_group_change_apply', 'pd_one_smb_unc_content_search', 'pd_one_sqlsrv_windows_acl_read', 'pd_one_google_group_change_dry_run', 'pd_one_auth_browser_status', 'pd_one_sysstat_summary', 'pd_one_numeric_summary', 'pd_one_text_metrics', 'pd_one_disk_space_summary', 'pd_one_local_process_listener_inspect', 'pd_one_user_process_snapshot', 'pd_one_python_package_dry_run', 'pd_one_python_media_stack_status', 'pd_one_python_cad_stack_status', 'pd_one_step_geometry_inspect', 'pd_one_step_printability_analyze', 'pd_one_cad_runtime_status', 'pd_one_python_docx_dependency_repair', 'pd_one_timezone_snapshot', 'pd_one_protected_portal_origin_probe', 'pd_one_timestamp_to_epoch', 'pd_one_epoch_milliseconds_to_iso', 'pd_one_sheets_serial_column_convert', 'pd_one_ollama_embedding_triage', 'pd_one_ollama_embedding_watchdog_triage', 'pd_one_mattermost_channel_lookup', 'pd_one_mattermost_channel_post_audit', 'pd_one_admin_alert_source_audit', 'pd_one_mattermost_channel_setup', 'pd_one_mattermost_channel_create', 'pd_one_admin_approval_request', 'pd_one_admin_approval_list_open', 'pd_one_admin_approval_decide', 'pd_one_approval_ticket_status', 'pd_one_admin_approval_kanban_status', 'pd_one_hermes_result_messages_summary', 'pd_one_json_artifact_inspect', 'pd_one_local_file_search', 'pd_one_mattermost_member_search', 'pd_one_yammer_archive_search', 'pd_one_policy_change_dry_run', 'worker_scheduling_execute', 'worker_scheduling_audit_rest_requests', 'worker_scheduling_correct_raw_request_dates', 'worker_scheduling_source_setup', 'worker_scheduling_sync_source_rollover', 'worker_scheduling_closeout_processed_requests', 'IM_SCHEDULING_GATES', 'IM_SCHEDULING_PROFILE', '_im_scheduling_receipt_path', 'worker_scheduling_review_im_scheduling', 'worker_scheduling', '_load_apps_script_content', '_export_gog_refresh_token', '_google_access_token', '_google_api_json']
+__all__ = ['ADMIN_APPROVAL_DECISION_LIVE_CONFIRMATION', 'APPSHEET_BULK_MAX_ROWS', 'APPSHEET_ENV_FILES', 'APPSHEET_HR_EMPLOYEE_ALLOWED_FIELDS', 'APPSHEET_HR_EMPLOYEE_READBACK_FIELDS', 'APPSHEET_LIVE_CONFIRMATION', 'APPSHEET_RECORD_OPS', 'APPSHEET_SCHEMA_MAP', 'APPS_SCRIPT_ALLOWED_PROJECTS', 'APPS_SCRIPT_LIVE_CONFIRMATION', 'APPS_SCRIPT_RECEIPTS', 'AUDIT', 'DEST_SPREADSHEET_ID', 'EMPLOYEE_WATCHES', 'FUNCTION_TWIN_DISPATCHER', 'FUNCTION_TWIN_NAMES', 'GOG', 'GOG_CREDS', 'GOOGLE_DOCS_DOCUMENT_OPS', 'GOOGLE_GROUP_OWNER_OPS', 'IM_SCHEDULING_GATES', 'IM_SCHEDULING_PROFILE', 'MEDIA_OPS', 'MONTHLY_SOURCE_SHEET', 'OLLAMA_EMBEDDING_CONTAINER', 'OLLAMA_EMBEDDING_PEER_CONTAINER', 'OLLAMA_EMBEDDING_PORT', 'OLLAMA_EMBEDDING_UNIT', 'OLLAMA_EMBEDDING_WATCHDOG_MAX_JOURNAL_TAIL_LINES', 'OLLAMA_EMBEDDING_WATCHDOG_UNIT', 'PYTHON_DOCX_REPAIR_CONFIRMATION', 'PYTHON_DOCX_REPAIR_TICKET_ID', 'RAW_REQUEST_SHEET', 'SAFE_OPS', 'SCHEDULER_PROJECT', 'SCHEDULER_PYTHON', 'SCHEDULER_SCRIPT', 'SCHEDULING_RULES_SHEET', 'SCHEDULING_RULES_VALUES', 'SOURCE_SPREADSHEET_ID', 'SYSSTAT_SUMMARY_MAX_HOURS', 'TYPHOON_AUTOMATION_LIVE_CONFIRMATION', 'WORKER_SCHEDULING_GROUPS', 'WORKER_SCHEDULING_LEGACY_LIVE_CONFIRMATION', 'WORKER_SCHEDULING_LIVE_CONFIRMATION', 'WORKER_SCHEDULING_LIVE_CONFIRMATION_REQUIREMENT', 'WORKER_SCHEDULING_RECEIPTS', 'WORKER_SCHEDULING_SOURCE_CONFIRMATION', '_PdHandled', '_PdReturn', '_PdUnset', '_PdUnset', '_approved_existing_worker_path', '_approved_output_dir', '_canonical_date', '_column_name', '_export_gog_refresh_token', '_extract_values', '_gog_cmd', '_gog_get', '_gog_notes', '_google_access_token', '_google_api_json', '_im_scheduling_receipt_path', '_json_result', '_load_apps_script_content', '_load_google_docs_document_ops_module', '_load_google_group_owner_ops_module', '_load_shift_scheduler_module', '_pid_is_running', '_poll_worker_scheduling_job', '_resolve_generated_schedule_report', '_run_cmd', '_run_worker_scheduling_command', '_start_worker_scheduling_job', '_tail_file', '_utc_stamp', '_validate_worker_scheduling_groups', '_worker_scheduling_command', '_write_receipt', 'pd_one_admin_alert_source_audit', 'pd_one_admin_approval_decide', 'pd_one_admin_approval_kanban_status', 'pd_one_admin_approval_list_open', 'pd_one_admin_approval_request', 'pd_one_approval_ticket_status', 'pd_one_auth_browser_status', 'pd_one_bounded_sheet_cell_write', 'pd_one_cached_dest_rest_count', 'pd_one_cached_sheet_json_search', 'pd_one_cad_runtime_status', 'pd_one_capability_registry', 'pd_one_dangerous_command_audit', 'pd_one_disk_space_summary', 'pd_one_ecrn_approval_pilot_check', 'pd_one_ecrn_approval_pilot_status', 'pd_one_epoch_milliseconds_to_iso', 'pd_one_google_docs_document_ops', 'pd_one_google_docs_metadata_inspect', 'pd_one_google_drive_parent_chain', 'pd_one_google_drive_search_files', 'pd_one_google_group_change_apply', 'pd_one_google_group_change_dry_run', 'pd_one_google_group_members', 'pd_one_google_group_owner_enforcement', 'pd_one_hermes_result_messages_summary', 'pd_one_json_artifact_inspect', 'pd_one_local_file_search', 'pd_one_local_process_listener_inspect', 'pd_one_mattermost_channel_create', 'pd_one_mattermost_channel_lookup', 'pd_one_mattermost_channel_post_audit', 'pd_one_mattermost_channel_setup', 'pd_one_mattermost_member_search', 'pd_one_numeric_summary', 'pd_one_ollama_embedding_triage', 'pd_one_ollama_embedding_watchdog_triage', 'pd_one_policy_change_dry_run', 'pd_one_protected_portal_origin_probe', 'pd_one_python_cad_stack_status', 'pd_one_python_docx_dependency_repair', 'pd_one_python_media_stack_status', 'pd_one_python_package_dry_run', 'pd_one_sheets_append', 'pd_one_sheets_batch_update', 'pd_one_sheets_get_range', 'pd_one_sheets_header_update_row', 'pd_one_sheets_serial_column_convert', 'pd_one_smb_unc_content_search', 'pd_one_sqlsrv_windows_acl_read', 'pd_one_step_geometry_inspect', 'pd_one_step_printability_analyze', 'pd_one_sysstat_summary', 'pd_one_text_metrics', 'pd_one_timestamp_to_epoch', 'pd_one_timezone_snapshot', 'pd_one_user_process_snapshot', 'pd_one_yammer_archive_search', 'run_json', 'worker_scheduling', 'worker_scheduling_audit_rest_requests', 'worker_scheduling_closeout_processed_requests', 'worker_scheduling_correct_raw_request_dates', 'worker_scheduling_execute', 'worker_scheduling_review_im_scheduling', 'worker_scheduling_source_setup', 'worker_scheduling_sync_source_rollover', 'worker_scheduling_write_generated_schedule_from_report']
 
 class _PdReturn:
     __slots__ = ('value',)
@@ -33,7 +33,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -144,7 +144,7 @@ def run_json(args: list[str], timeout: int=120, env: dict[str, str] | None=None)
         argv = checked_argv(args)
     except MissingExternalConfig as exc:
         return json.dumps(_missing_config_result(exc), ensure_ascii=False)
-    proc = subprocess.run(argv, text=True, capture_output=True, shell=False, timeout=timeout, env=child_env() if env is None else env)
+    proc = subprocess.run(argv, check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=timeout, env=child_env() if env is None else env)
     if proc.returncode != 0:
         return json.dumps({'status': 'error', 'returncode': proc.returncode, 'stderr': proc.stderr[-2000:], 'stdout': proc.stdout[-2000:]}, ensure_ascii=False)
     out = proc.stdout.strip() or '{}'
@@ -185,7 +185,7 @@ def _load_google_group_owner_ops_module() -> Any:
     return module
 
 def _utc_stamp() -> str:
-    return datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    return datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
 
 def _validate_worker_scheduling_groups(solve_groups: Optional[list[str]]) -> list[str]:
     groups = solve_groups or []
@@ -216,11 +216,11 @@ def _worker_scheduling_command(*, action: str, solve_groups: Optional[list[str]]
         out_dir = Path(output_dir)
         allowed_roots = [Path(resolve_configured_path('~/.hermes/profiles/pdone/tmp')), SCHEDULER_PROJECT() / 'tmp', Path(resolve_configured_path('~/.hermes/profiles/pdone/legacy-openclaw/workspace/tmp'))]
         resolved = out_dir.resolve()
-        if not any((str(resolved).startswith(str(root.resolve()) + os.sep) or resolved == root.resolve() for root in allowed_roots)):
+        if not any(str(resolved).startswith(str(root.resolve()) + os.sep) or resolved == root.resolve() for root in allowed_roots):
             raise ValueError('output_dir must be under the approved PD One tmp/scheduler receipt roots')
     else:
         WORKER_SCHEDULING_RECEIPTS().mkdir(parents=True, exist_ok=True)
-        suffix = action if not groups else f'{action}_{'_'.join(groups)}'
+        suffix = action if not groups else f"{action}_{'_'.join(groups)}"
         out_dir = WORKER_SCHEDULING_RECEIPTS() / f'{_utc_stamp()}_{suffix}'
     cmd = [str(SCHEDULER_PYTHON()), str(SCHEDULER_SCRIPT()), '--gog-account', site_text('PDONE_EMAIL_ADMIN'), '--output-dir', str(out_dir)]
     if stdout_summary_only:
@@ -241,7 +241,7 @@ def _worker_scheduling_command(*, action: str, solve_groups: Optional[list[str]]
 
 def _tail_file(path: Path, limit: int=4000) -> str:
     try:
-        return path.read_text(encoding='utf-8', errors='replace')[-limit:]
+        return path.read_text(encoding='utf-8-sig', errors='replace')[-limit:]
     except FileNotFoundError:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return ''
@@ -260,13 +260,13 @@ def _run_worker_scheduling_command(cmd: list[str], out_dir: Path, timeout_second
     stdout_path = out_dir / 'mcp-scheduler-stdout.log'
     stderr_path = out_dir / 'mcp-scheduler-stderr.log'
     with stdout_path.open('w', encoding='utf-8') as stdout_f, stderr_path.open('w', encoding='utf-8') as stderr_f:
-        proc = subprocess.Popen(cmd, cwd=SCHEDULER_PROJECT(), env=env, text=True, stdout=stdout_f, stderr=stderr_f, shell=False, start_new_session=True)
+        proc = subprocess.Popen(cmd, cwd=SCHEDULER_PROJECT(), env=env, text=True, encoding="utf-8", errors="replace", stdout=stdout_f, stderr=stderr_f, shell=False, start_new_session=True)  # detached-spawn: ok — scheduler child must outlive the MCP call; the parent kills the group on timeout
         try:
             proc.wait(timeout=timeout_seconds)
         except subprocess.TimeoutExpired:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             try:
-                os.killpg(proc.pid, signal.SIGKILL)
+                os.killpg(proc.pid, signal.SIGKILL)  # windows-footgun: ok — Linux process group of a nemo scheduler child
             except ProcessLookupError:
                 logging.getLogger('pd_one_ops').exception('pd one command failed')
             try:
@@ -276,7 +276,7 @@ def _run_worker_scheduling_command(cmd: list[str], out_dir: Path, timeout_second
             summary = None
             if summary_path.exists():
                 try:
-                    summary = json.loads(summary_path.read_text(encoding='utf-8'))
+                    summary = json.loads(summary_path.read_text(encoding='utf-8-sig'))
                 except Exception as parse_exc:
                     logging.getLogger('pd_one_ops').exception('pd one command failed')
                     summary = {'parse_error': str(parse_exc)}
@@ -286,7 +286,7 @@ def _run_worker_scheduling_command(cmd: list[str], out_dir: Path, timeout_second
     summary = None
     if summary_path.exists():
         try:
-            summary = json.loads(summary_path.read_text(encoding='utf-8'))
+            summary = json.loads(summary_path.read_text(encoding='utf-8-sig'))
         except Exception as exc:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             summary = {'parse_error': str(exc)}
@@ -294,7 +294,7 @@ def _run_worker_scheduling_command(cmd: list[str], out_dir: Path, timeout_second
 
 def _pid_is_running(pid: int) -> bool:
     try:
-        os.kill(pid, 0)
+        os.kill(pid, 0)  # windows-footgun: ok — Linux liveness probe for a nemo scheduler child
         return True
     except ProcessLookupError:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
@@ -314,7 +314,7 @@ def _start_worker_scheduling_job(cmd: list[str], out_dir: Path, timeout_seconds:
     stdout_f = stdout_path.open('w', encoding='utf-8')
     stderr_f = stderr_path.open('w', encoding='utf-8')
     try:
-        proc = subprocess.Popen(cmd, cwd=SCHEDULER_PROJECT(), env=env, text=True, stdout=stdout_f, stderr=stderr_f, shell=False, start_new_session=True)
+        proc = subprocess.Popen(cmd, cwd=SCHEDULER_PROJECT(), env=env, text=True, encoding="utf-8", errors="replace", stdout=stdout_f, stderr=stderr_f, shell=False, start_new_session=True)  # detached-spawn: ok — scheduler child must outlive the MCP call; the parent kills the group on timeout
     finally:
         stdout_f.close()
         stderr_f.close()
@@ -332,7 +332,7 @@ def _poll_worker_scheduling_job(output_dir: str, wait_seconds: int=0) -> str:
     job = {}
     if job_path.exists():
         try:
-            job = json.loads(job_path.read_text(encoding='utf-8'))
+            job = json.loads(job_path.read_text(encoding='utf-8-sig'))
         except Exception as exc:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             job = {'parse_error': str(exc)}
@@ -345,7 +345,7 @@ def _poll_worker_scheduling_job(output_dir: str, wait_seconds: int=0) -> str:
     summary = None
     if summary_path.exists():
         try:
-            summary = json.loads(summary_path.read_text(encoding='utf-8'))
+            summary = json.loads(summary_path.read_text(encoding='utf-8-sig'))
         except Exception as exc:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             summary = {'parse_error': str(exc)}
@@ -360,7 +360,7 @@ def _approved_existing_worker_path(path_text: str, *, required_name: str | None=
         raise ValueError('path is required')
     path = Path(path_text).expanduser().resolve()
     allowed_roots = [Path(resolve_configured_path('~/.hermes/profiles/pdone/tmp')), SCHEDULER_PROJECT() / 'tmp', Path(resolve_configured_path('~/.hermes/profiles/pdone/legacy-openclaw/workspace/tmp'))]
-    if not any((str(path).startswith(str(root.resolve()) + os.sep) or path == root.resolve() for root in allowed_roots)):
+    if not any(str(path).startswith(str(root.resolve()) + os.sep) or path == root.resolve() for root in allowed_roots):
         raise ValueError('path must be under an approved PD One tmp/scheduler receipt root')
     if required_name and path.name != required_name:
         raise ValueError(f'path must point to {required_name}')
@@ -408,7 +408,7 @@ def worker_scheduling_write_generated_schedule_from_report(report_path: str, run
         'Write an already-solved generated schedule report in resumable chunks; never runs OR-Tools.'
         try:
             report = _approved_existing_worker_path(report_path, required_name='generated-schedule-report.json')
-            generated_schedule_result = json.loads(report.read_text(encoding='utf-8'))
+            generated_schedule_result = json.loads(report.read_text(encoding='utf-8-sig'))
             groups = _validate_worker_scheduling_groups(run_groups)
             live = not dry_run
             if live and confirm_live_write not in {WORKER_SCHEDULING_LIVE_CONFIRMATION, WORKER_SCHEDULING_LEGACY_LIVE_CONFIRMATION}:
@@ -422,7 +422,7 @@ def worker_scheduling_write_generated_schedule_from_report(report_path: str, run
         runs = generated_schedule_result.get('runs') or []
         selected_runs = [run for run in runs if not groups or run.get('run_group') in groups]
         eligible_runs = [run for run in selected_runs if run.get('generated_schedule', {}).get('solver', {}).get('status') in {'OPTIMAL', 'FEASIBLE'}]
-        plan = {'status': 'ok', 'dry_run': not live, 'source_report_path': str(report), 'selected_run_groups': [run.get('run_group') for run in selected_runs], 'eligible_run_groups': [run.get('run_group') for run in eligible_runs], 'ineligible_runs': [{'run_group': run.get('run_group'), 'status': run.get('status'), 'solver_status': run.get('generated_schedule', {}).get('solver', {}).get('status') if run.get('generated_schedule') else None} for run in selected_runs if run not in eligible_runs], 'candidate_schedule_cell_updates': sum((int(run.get('generated_schedule', {}).get('summary', {}).get('candidate_schedule_cell_updates') or 0) for run in eligible_runs)), 'safety': {'does_not_run_solver': True, 'live_write_requested': live, 'live_write_confirmation_required': WORKER_SCHEDULING_LIVE_CONFIRMATION_REQUIREMENT, 'shell_used': False, 'resumable_chunks': True}}
+        plan = {'status': 'ok', 'dry_run': not live, 'source_report_path': str(report), 'selected_run_groups': [run.get('run_group') for run in selected_runs], 'eligible_run_groups': [run.get('run_group') for run in eligible_runs], 'ineligible_runs': [{'run_group': run.get('run_group'), 'status': run.get('status'), 'solver_status': run.get('generated_schedule', {}).get('solver', {}).get('status') if run.get('generated_schedule') else None} for run in selected_runs if run not in eligible_runs], 'candidate_schedule_cell_updates': sum(int(run.get('generated_schedule', {}).get('summary', {}).get('candidate_schedule_cell_updates') or 0) for run in eligible_runs), 'safety': {'does_not_run_solver': True, 'live_write_requested': live, 'live_write_confirmation_required': WORKER_SCHEDULING_LIVE_CONFIRMATION_REQUIREMENT, 'shell_used': False, 'resumable_chunks': True}}
         _write_receipt(out_dir, 'mcp-write-generated-schedule-from-report-plan.json', plan)
         if not live:
             return _PdReturn(_json_result({**plan, 'output_dir': str(out_dir), 'max_format_batches_per_call': max_format_batches_per_call}))
@@ -453,7 +453,7 @@ def worker_scheduling_write_generated_schedule_from_report(report_path: str, run
                         actions.append({'source_row_number': record['source_row_number'], 'source_name': record['source_name'], 'target_tab': record['target_tab'], 'matched_row_number': record['matched_row_number'], 'kind': update['kind'], 'day': update.get('day'), 'a1': update['a1'], 'current_value': update.get('current_value', ''), 'intended_value': update.get('intended_value', ''), 'background_kind': update.get('background_kind', 'clear'), 'background_format': update.get('background_format') or module.SCHEDULER_BG_CLEAR})
                 return actions
             if state_path.exists():
-                state = json.loads(state_path.read_text(encoding='utf-8'))
+                state = json.loads(state_path.read_text(encoding='utf-8-sig'))
             else:
                 actions = build_actions()
                 indexed_actions = [{**action, '_action_index': i, '_value_changed': str(action['current_value']).strip() != str(action['intended_value']).strip()} for i, action in enumerate(actions)]
@@ -467,7 +467,7 @@ def worker_scheduling_write_generated_schedule_from_report(report_path: str, run
                 value_end = min(value_start + max_value_batches_per_call, len(value_batches))
                 for idx in range(value_start, value_end):
                     batch = value_batches[idx]
-                    target_range = f'{module.quote_sheet_title(batch['target_tab'])}!{batch['a1_range']}'
+                    target_range = f"{module.quote_sheet_title(batch['target_tab'])}!{batch['a1_range']}"
                     attempts = 0
                     while True:
                         attempts += 1
@@ -506,7 +506,7 @@ def worker_scheduling_write_generated_schedule_from_report(report_path: str, run
             format_results = list(state.get('format_batch_results') or [])
             for idx in range(start, end):
                 batch = state['format_batches'][idx]
-                target_range = f'{module.quote_sheet_title(batch['target_tab'])}!{batch['a1_range']}'
+                target_range = f"{module.quote_sheet_title(batch['target_tab'])}!{batch['a1_range']}"
                 attempts = 0
                 while True:
                     attempts += 1
@@ -531,12 +531,12 @@ def worker_scheduling_write_generated_schedule_from_report(report_path: str, run
                 _write_receipt(out_dir, 'mcp-write-generated-schedule-from-report-receipt.json', receipt)
                 return _PdReturn(_json_result(receipt))
             value_results = [state['value_results_by_index'][str(i)] for i in range(len(state.get('actions') or []))]
-            format_failures = sum((1 for result in state.get('format_batch_results') or [] if result.get('status') == 'failed'))
-            value_failures = sum((1 for result in value_results if result.get('status') == 'failed'))
+            format_failures = sum(1 for result in state.get('format_batch_results') or [] if result.get('status') == 'failed')
+            value_failures = sum(1 for result in value_results if result.get('status') == 'failed')
             touched_rows = {(result.get('target_tab'), result.get('matched_row_number')) for result in value_results if result.get('status') == 'written'}
-            write_result = {'generated_at': datetime.now().isoformat(timespec='seconds'), 'run_group': generated.get('run_group'), 'run_group_label': module.RUN_GROUP_LABELS.get(generated.get('run_group'), generated.get('run_group')), 'mode': 'generated_schedule_write_complete' if not (value_failures or format_failures) else 'generated_schedule_write_partial_with_failures', 'summary': {'candidate_write_action_count': len(value_results), 'value_write_batch_count': len(state.get('value_batches') or []), 'format_write_batch_count': len(state.get('format_batches') or []), 'cells_written': sum((1 for result in value_results if result.get('status') == 'written')), 'cells_unchanged': sum((1 for result in value_results if result.get('status') == 'unchanged')), 'rows_written': len(touched_rows), 'failed_updates': value_failures + format_failures}, 'actions': value_results, 'format_batches': state.get('format_batch_results') or []}
+            write_result = {'generated_at': datetime.now().isoformat(timespec='seconds'), 'run_group': generated.get('run_group'), 'run_group_label': module.RUN_GROUP_LABELS.get(generated.get('run_group'), generated.get('run_group')), 'mode': 'generated_schedule_write_complete' if not (value_failures or format_failures) else 'generated_schedule_write_partial_with_failures', 'summary': {'candidate_write_action_count': len(value_results), 'value_write_batch_count': len(state.get('value_batches') or []), 'format_write_batch_count': len(state.get('format_batches') or []), 'cells_written': sum(1 for result in value_results if result.get('status') == 'written'), 'cells_unchanged': sum(1 for result in value_results if result.get('status') == 'unchanged'), 'rows_written': len(touched_rows), 'failed_updates': value_failures + format_failures}, 'actions': value_results, 'format_batches': state.get('format_batch_results') or []}
             write_runs = [{'run_group': run.get('run_group'), 'run_group_label': run.get('run_group_label'), 'status': 'written' if not write_result['summary']['failed_updates'] else 'write_failed', 'write': write_result}]
-            generated_schedule_write_result = {'generated_at': datetime.now().isoformat(timespec='seconds'), 'mode': 'split_generated_schedule_write_from_existing_report_resumable', 'source_report_path': str(report), 'summary': {'groups_written': sum((1 for item in write_runs if item.get('status') == 'written')), 'groups_with_write_failures': sum((1 for item in write_runs if item.get('status') == 'write_failed')), 'groups_skipped': 0}, 'runs': write_runs}
+            generated_schedule_write_result = {'generated_at': datetime.now().isoformat(timespec='seconds'), 'mode': 'split_generated_schedule_write_from_existing_report_resumable', 'source_report_path': str(report), 'summary': {'groups_written': sum(1 for item in write_runs if item.get('status') == 'written'), 'groups_with_write_failures': sum(1 for item in write_runs if item.get('status') == 'write_failed'), 'groups_skipped': 0}, 'runs': write_runs}
             _write_receipt(out_dir, 'generated-schedule-write-report.json', generated_schedule_write_result)
             verification = module.verify_generated_schedule_write_report(tool, {**generated_schedule_result, 'runs': [run]}, generated_schedule_write_result, dest_spreadsheet_id=module.DEST_SPREADSHEET_ID)
             _write_receipt(out_dir, 'generated-schedule-write-verification-report.json', verification)
@@ -558,7 +558,7 @@ def _approved_output_dir(output_dir: Optional[str], suffix: str) -> Path:
         out_dir = Path(output_dir)
         allowed_roots = [Path(resolve_configured_path('~/.hermes/profiles/pdone/tmp')), SCHEDULER_PROJECT() / 'tmp', Path(resolve_configured_path('~/.hermes/profiles/pdone/legacy-openclaw/workspace/tmp'))]
         resolved = out_dir.resolve()
-        if not any((str(resolved).startswith(str(root.resolve()) + os.sep) or resolved == root.resolve() for root in allowed_roots)):
+        if not any(str(resolved).startswith(str(root.resolve()) + os.sep) or resolved == root.resolve() for root in allowed_roots):
             raise ValueError('output_dir must be under the approved PD One tmp/scheduler receipt roots')
         out_dir.mkdir(parents=True, exist_ok=True)
         return out_dir
@@ -567,7 +567,7 @@ def _approved_output_dir(output_dir: Optional[str], suffix: str) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
 
-def _gog_cmd(*parts: str, account: str=None, json_mode: bool=True, dry_run: bool=False) -> list[str]:
+def _gog_cmd(*parts: str, account: str | None=None, json_mode: bool=True, dry_run: bool=False) -> list[str]:
     if account is None:
         account = site_text('PDONE_EMAIL_ADMIN')
     cmd = [str(GOG() if GOG().exists() else 'gog')]
@@ -588,7 +588,7 @@ def _run_cmd(args: list[str], timeout: int=120) -> dict[str, Any]:
     except MissingExternalConfig as exc:
         return {**_missing_config_result(exc), 'command': [str(arg) for arg in args]}
     try:
-        proc = subprocess.run(args, env=env, text=True, capture_output=True, shell=False, timeout=timeout)
+        proc = subprocess.run(args, check=False, env=env, text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return {'status': 'error', 'error': 'timeout', 'timeout_seconds': timeout, 'stdout_tail': (exc.stdout or '')[-2000:], 'stderr_tail': (exc.stderr or '')[-2000:], 'command': args}
@@ -602,12 +602,12 @@ def _run_cmd(args: list[str], timeout: int=120) -> dict[str, Any]:
             payload = {'raw_stdout': out[-4000:]}
     return {'status': 'ok' if proc.returncode == 0 else 'error', 'returncode': proc.returncode, 'payload': payload, 'stdout_tail': proc.stdout[-4000:], 'stderr_tail': proc.stderr[-4000:], 'command': args}
 
-def _gog_get(spreadsheet_id: str, cell_range: str, account: str=None, timeout: int=120) -> dict[str, Any]:
+def _gog_get(spreadsheet_id: str, cell_range: str, account: str | None=None, timeout: int=120) -> dict[str, Any]:
     if account is None:
         account = site_text('PDONE_EMAIL_ADMIN')
     return _run_cmd(_gog_cmd('sheets', 'get', spreadsheet_id, cell_range, account=account), timeout=timeout)
 
-def _gog_notes(spreadsheet_id: str, cell_range: str, account: str=None, timeout: int=120) -> dict[str, Any]:
+def _gog_notes(spreadsheet_id: str, cell_range: str, account: str | None=None, timeout: int=120) -> dict[str, Any]:
     if account is None:
         account = site_text('PDONE_EMAIL_ADMIN')
     return _run_cmd(_gog_cmd('sheets', 'notes', spreadsheet_id, cell_range, account=account), timeout=timeout)
@@ -638,7 +638,7 @@ def _canonical_date(value: Any) -> str:
         except Exception:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
     parts = text.replace('/', '-').split('-')
-    if len(parts) == 3 and all((part.isdigit() for part in parts)):
+    if len(parts) == 3 and all(part.isdigit() for part in parts):
         y, m, d = parts
         if len(y) == 4:
             return f'{int(y):04d}-{int(m):02d}-{int(d):02d}'
@@ -939,7 +939,7 @@ def pd_one_text_metrics(text: str) -> str:
 def pd_one_disk_space_summary(low_risk_bytes: int=0, medium_risk_bytes: int=0, additional_bytes: int=0) -> str:
     """Read root disk capacity and project bounded reclaim estimates without cleanup."""
     values = (int(low_risk_bytes), int(medium_risk_bytes), int(additional_bytes))
-    if any((value < 0 or value > 50 * 1024 ** 3 for value in values)):
+    if any(value < 0 or value > 50 * 1024 ** 3 for value in values):
         raise ValueError('each reclaim estimate must be between 0 and 50 GiB')
     return run_json([sys.executable, str(SAFE_OPS()), 'disk-space-summary', '--low-risk-bytes', str(values[0]), '--medium-risk-bytes', str(values[1]), '--additional-bytes', str(values[2])], timeout=20)
 
@@ -1425,7 +1425,7 @@ def worker_scheduling_correct_raw_request_dates(row_number: int, old_dates: list
         receipt = {'status': 'error', 'error': 'old_dates_not_found', 'missing_old_dates': sorted(remaining), 'row_name': current_name, 'date_cells': date_cells, 'before': before}
         _write_receipt(out_dir, 'mcp-correct-raw-request-dates-receipt.json', receipt)
         return _json_result(receipt)
-    note = note_text or f'Changed after coordinating with {worker_name or current_name}: requested dates moved from {', '.join(old_canon)} to {', '.join(new_canon)}.'
+    note = note_text or f"Changed after coordinating with {worker_name or current_name}: requested dates moved from {', '.join(old_canon)} to {', '.join(new_canon)}."
     write_results = []
     note_results = []
     if live:
@@ -1437,8 +1437,8 @@ def worker_scheduling_correct_raw_request_dates(row_number: int, old_dates: list
     after_notes = _gog_notes(SOURCE_SPREADSHEET_ID(), edited_range) if live else None
     formula_check = _gog_get(SOURCE_SPREADSHEET_ID(), f"'{RAW_REQUEST_SHEET}'!U{row}:V{row}") if live else None
     formula_values = _extract_values(formula_check or {}) if formula_check else []
-    formula_regression = any(('#VALUE' in str(v) or '#REF' in str(v) for r in formula_values for v in r))
-    receipt = {'status': 'ok' if not formula_regression and all((r.get('status') == 'ok' for r in write_results + note_results)) else 'error', 'dry_run': not live, 'row_number': row, 'row_name': current_name, 'updates_planned': updates, 'note_text': note, 'before': before, 'write_results': write_results, 'note_results': note_results, 'after_values': after_values, 'after_notes': after_notes, 'formula_check': formula_check, 'formula_regression_detected': formula_regression, 'receipt_path': str(out_dir / 'mcp-correct-raw-request-dates-receipt.json'), 'safety': {'live_write_requested': live, 'live_write_confirmation_required': WORKER_SCHEDULING_SOURCE_CONFIRMATION, 'old_value_match_required': True, 'notes_required': True, 'shell_used': False}}
+    formula_regression = any('#VALUE' in str(v) or '#REF' in str(v) for r in formula_values for v in r)
+    receipt = {'status': 'ok' if not formula_regression and all(r.get('status') == 'ok' for r in write_results + note_results) else 'error', 'dry_run': not live, 'row_number': row, 'row_name': current_name, 'updates_planned': updates, 'note_text': note, 'before': before, 'write_results': write_results, 'note_results': note_results, 'after_values': after_values, 'after_notes': after_notes, 'formula_check': formula_check, 'formula_regression_detected': formula_regression, 'receipt_path': str(out_dir / 'mcp-correct-raw-request-dates-receipt.json'), 'safety': {'live_write_requested': live, 'live_write_confirmation_required': WORKER_SCHEDULING_SOURCE_CONFIRMATION, 'old_value_match_required': True, 'notes_required': True, 'shell_used': False}}
     _write_receipt(out_dir, 'mcp-correct-raw-request-dates-receipt.json', receipt)
     return _json_result(receipt)
 
@@ -1547,7 +1547,7 @@ def _im_scheduling_receipt_path(receipt_path: Optional[str], output_dir: Optiona
     if not candidates:
         raise ValueError('receipt_path or output_dir is required')
     resolved = candidates[0].resolve()
-    if not any((resolved == root.resolve() or str(resolved).startswith(str(root.resolve()) + os.sep) for root in allowed_roots)):
+    if not any(resolved == root.resolve() or str(resolved).startswith(str(root.resolve()) + os.sep) for root in allowed_roots):
         raise ValueError('receipt_path/output_dir must be under approved worker-scheduling receipt roots')
     if not resolved.exists():
         raise FileNotFoundError(f'receipt not found: {resolved}')
@@ -1570,7 +1570,7 @@ def worker_scheduling_review_im_scheduling(gate: str, target_month: str, receipt
     if group and group not in WORKER_SCHEDULING_GROUPS:
         return _json_result({'status': 'error', 'error': 'invalid_solve_group', 'solve_group': group, 'allowed_groups': sorted(WORKER_SCHEDULING_GROUPS), 'safety': {'read_only': True, 'shell_used': False}})
     note_text = str(notes or '').strip()[:1000]
-    prompt = f'Read-only worker-scheduling review. {IM_SCHEDULING_GATES[gate_key]}.\nTarget month: {month}\nGroup: {group or 'n/a'}\nReceipt path: {receipt}\nCaller notes: {note_text or 'n/a'}\nRead the receipt if it is a file. Do not write Google Sheets, run solvers, upload HR MAX, send Mattermost, or change Hermes config.\nReturn PASS, WARN, or BLOCK first, then concise evidence and the smallest next action for PD One.'
+    prompt = f"Read-only worker-scheduling review. {IM_SCHEDULING_GATES[gate_key]}.\nTarget month: {month}\nGroup: {group or 'n/a'}\nReceipt path: {receipt}\nCaller notes: {note_text or 'n/a'}\nRead the receipt if it is a file. Do not write Google Sheets, run solvers, upload HR MAX, send Mattermost, or change Hermes config.\nReturn PASS, WARN, or BLOCK first, then concise evidence and the smallest next action for PD One."
     hermes_bin = 'hermes'
     cmd = [hermes_bin, '-p', IM_SCHEDULING_PROFILE, '-z', prompt]
     result = _run_cmd(cmd, timeout=max(30, min(int(timeout_seconds), 180)))
@@ -1594,7 +1594,7 @@ def _payload_int(payload: dict[str, Any], key: str, default: int) -> int:
         return int(stripped)
     return int(value)
 
-def worker_scheduling(action: str, payload: Optional[dict[str, Any]]=None, dry_run: bool=True, timeout_seconds: int=420, output_dir: Optional[str]=None, confirm_live_write: Optional[Union[str, bool]]=None) -> str:
+def worker_scheduling(action: str, payload: Optional[dict[str, Any]]=None, dry_run: bool=True, timeout_seconds: int=420, output_dir: Optional[str]=None, confirm_live_write: Optional[str | bool]=None) -> str:
     """Run the monthly worker-scheduling playbook through one stable action dispatcher.
 
     Use this tool instead of adding one MCP tool per playbook step. Supported actions:
@@ -1664,7 +1664,7 @@ def worker_scheduling(action: str, payload: Optional[dict[str, Any]]=None, dry_r
 
 def _load_apps_script_content(project: dict[str, str]) -> dict[str, Any]:
     from tools.pd_one_ops.launch import checked_argv
-    proc = subprocess.run(checked_argv([GOG(), '-j', '--account', project['account'], 'appscript', 'content', project['script_id']]), text=True, capture_output=True, timeout=120, shell=False)
+    proc = subprocess.run(checked_argv([GOG(), '-j', '--account', project['account'], 'appscript', 'content', project['script_id']]), check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=120, shell=False)
     if proc.returncode != 0:
         raise RuntimeError(f'gog appscript content failed: {proc.stderr[-1000:]}')
     data = json.loads(proc.stdout or '{}')
@@ -1679,10 +1679,10 @@ def _export_gog_refresh_token(account: str) -> str:
     os.close(fd)
     try:
         from tools.pd_one_ops.launch import checked_argv
-        proc = subprocess.run(checked_argv([GOG(), 'auth', 'tokens', 'export', account, '--out', tmp, '--overwrite']), text=True, capture_output=True, timeout=60, shell=False)
+        proc = subprocess.run(checked_argv([GOG(), 'auth', 'tokens', 'export', account, '--out', tmp, '--overwrite']), check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=60, shell=False)
         if proc.returncode != 0:
             raise RuntimeError(f'gog token export failed: {proc.stderr[-1000:]}')
-        data = json.loads(Path(tmp).read_text(encoding='utf-8'))
+        data = json.loads(Path(tmp).read_text(encoding='utf-8-sig'))
         token = data.get('refresh_token') or data.get('token') or data.get('RefreshToken')
         if not token:
             raise RuntimeError('refresh token missing from gog export')
@@ -1694,7 +1694,7 @@ def _export_gog_refresh_token(account: str) -> str:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
 
 def _google_access_token(account: str) -> str:
-    creds = json.loads(GOG_CREDS().read_text(encoding='utf-8'))
+    creds = json.loads(GOG_CREDS().read_text(encoding='utf-8-sig'))
     client = creds.get('installed') or creds.get('web') or creds
     body = urllib.parse.urlencode({'client_id': client['client_id'], 'client_secret': client['client_secret'], 'refresh_token': _export_gog_refresh_token(account), 'grant_type': 'refresh_token'}).encode('utf-8')
     req = urllib.request.Request('https://oauth2.googleapis.com/token', data=body, method='POST')

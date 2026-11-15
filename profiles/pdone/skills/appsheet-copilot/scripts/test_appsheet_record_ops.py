@@ -1,6 +1,7 @@
 import importlib.util
 import sys
 from pathlib import Path
+from datetime import UTC
 
 MODULE_PATH = Path(__file__).with_name("appsheet_record_ops.py")
 spec = importlib.util.spec_from_file_location("appsheet_record_ops", MODULE_PATH)
@@ -112,7 +113,7 @@ def test_close_case_creates_completed_case_update_and_runs_parent_sync_actions()
     plan = planner(client).build("Close case AAA111: replaced fitting and pressure checked", execute=True)
 
     assert plan.intent == "change_case_status"
-    add_payload = [c[2] for c in client.calls if c[0] == "Add" and c[1] == "Case_Updates"][0]
+    add_payload = next(c[2] for c in client.calls if c[0] == "Add" and c[1] == "Case_Updates")
     assert add_payload["New Status"] == "Completed"
     assert add_payload["Update Summary"] == "replaced fitting and pressure checked"
     assert "Timestamp" in add_payload
@@ -136,7 +137,7 @@ def test_case_update_ambiguous_case_lookup_stops_with_choices():
 def test_appsheet_local_datetime_uses_taipei_wall_time():
     from datetime import datetime, timezone
 
-    assert ops.appsheet_local_datetime(datetime(2026, 5, 21, 7, 42, 0, tzinfo=timezone.utc)) == "05/21/2026 15:42:00"
+    assert ops.appsheet_local_datetime(datetime(2026, 5, 21, 7, 42, 0, tzinfo=UTC)) == "05/21/2026 15:42:00"
 
 
 if __name__ == "__main__":

@@ -24,10 +24,11 @@ from cron.jobs import _ensure_cron_dir
 from pathlib import Path
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
+from hermes_cli._startup_fast import project_root_str
 from hermes_cli._subprocess_compat import windows_hide_flags
 
 if TYPE_CHECKING:
-    from cron.scheduler import _CancelEventLike
+    from cron.cancellation import _CancelEventLike
 
 # Log-record parity with the origin module.
 logger = logging.getLogger("cron.scheduler")
@@ -270,7 +271,7 @@ def _apply_cron_script_runtime_env(
     if user_python and argv:
         _prepend_python_bin(env, Path(argv[0]))
     else:
-        _prepend_python_bin(env, _resolve_release_python(Path(__file__).resolve().parents[1]))
+        _prepend_python_bin(env, _resolve_release_python(Path(project_root_str())))
     if _script_wants_cwa_tls(path):
         _apply_cwa_tls_env(env)
 
@@ -571,6 +572,7 @@ def _run_job_script(
         # or stderr raises UnicodeDecodeError in communicate() and fails the whole run,
         # discarding the output (#105582; the Windows branch decodes lossily per #45099).
         popen_kwargs: dict[str, Any] = {
+            # detached-spawn: ok — awaited; cancel and timeout tree-kill the group
             "start_new_session": True,
             "errors": "replace",
         }
@@ -609,7 +611,8 @@ def _run_job_script(
             if cancel_event is not None and cancel_event.is_set():
                 _terminate_cron_script_tree(proc)
                 _drain_script_pipes(proc)
-                return False, "Script cancelled because cron fire ownership was lost"
+                from cron.cancellation import cancel_reason
+                return False, f"Script cancelled: {cancel_reason(cancel_event)}"
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 _terminate_cron_script_tree(proc)

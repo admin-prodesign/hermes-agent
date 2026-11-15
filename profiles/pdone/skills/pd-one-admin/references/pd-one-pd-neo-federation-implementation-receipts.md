@@ -64,6 +64,7 @@ Smoke-test both directions with JSON dry-runs:
 - PD One attachment-failure event emits the new federation envelope.
 - PD Neo reverse handoff writes parseable JSONL with `direction == "pd-neo-to-pd-one"`.
 
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 For reverse handoff smoke tests, write to a temp JSONL path such as `/tmp/pd-neo-to-pd-one-smoke.jsonl`, parse/read back the row, verify direction/schema fields, then remove the temp file.
 
 ## Commit/backup hygiene

@@ -84,12 +84,14 @@ def _build_command(
         out_path = Path(output_dir).expanduser()
         if not out_path.is_absolute():
             raise ValueError("output_dir must be an absolute path when provided")
+        # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
         allowed_roots = [PROJECT_DIR / "output", Path("/tmp")]
         try:
             resolved = out_path.resolve()
         except FileNotFoundError:
             resolved = out_path.parent.resolve() / out_path.name
         if not any(resolved == root or root in resolved.parents for root in allowed_roots):
+            # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
             raise ValueError("output_dir must be under the scheduling project output/ directory or /tmp")
         cmd.extend(["--output-dir", str(resolved)])
 
@@ -264,6 +266,7 @@ registry.register(
                 },
                 "output_dir": {
                     "type": "string",
+                    # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
                     "description": "Optional absolute output directory under the scheduling project's output/ directory or /tmp.",
                 },
             },

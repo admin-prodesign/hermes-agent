@@ -94,7 +94,7 @@ def _text(value: Any) -> str:
     return '' if value is None else str(value).strip()
 
 def _nonempty(row: Iterable[Any]) -> bool:
-    return any((value not in (None, '') for value in row))
+    return any(value not in (None, '') for value in row)
 
 def _read_nonempty_rows(workbook: Any, sheet_name: str) -> list[list[Any]]:
     if sheet_name not in workbook.sheetnames:
@@ -180,7 +180,7 @@ def _masterbatch_tables(workbook: Any) -> dict[str, tuple[list[str], list[list[A
         if not re.fullmatch('T\\d+', sheet_name):
             continue
         rows = _read_nonempty_rows(workbook, sheet_name)
-        header_index = next((index for index, row in enumerate(rows) if any((_text(value) == '顏色' for value in row))), None)
+        header_index = next((index for index, row in enumerate(rows) if any(_text(value) == '顏色' for value in row)), None)
         if header_index is None:
             continue
         if measurement_header is None:
@@ -286,7 +286,7 @@ def build_workbook(output_path: Path) -> dict[str, Any]:
 def check_sources() -> dict[str, Any]:
     workbooks, metadata = _load_sources()
     try:
-        ordered, model = _build_model(workbooks, metadata)
+        _ordered, model = _build_model(workbooks, metadata)
     finally:
         for workbook in workbooks.values():
             workbook.close()

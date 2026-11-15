@@ -19,7 +19,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from appsheet_record_ops import AppSheetClient  # noqa: E402
+from appsheet_record_ops import AppSheetClient
 
 DEFAULT_ENV = "/home/prodesign/.openclaw/workspace/projects/AppSheet/keydrop/prototype-app.env"
 DEFAULT_SHEET_ID = "1n4UtbJkXb_JfrrEt8eeBb_CCgGsPvsr3r7Zmkwbf7NU"

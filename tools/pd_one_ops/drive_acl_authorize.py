@@ -97,7 +97,7 @@ def resolve_identity(*, identity_cache: dict[str, Any], mattermost_user_id: str=
         raise AuthDenied('unknown_mattermost_user')
     return matches[0]
 
-def authorize(file_id: str, *, mattermost_user_id: str='', mattermost_username: str='', account: str=None, identity_cache: dict[str, Any] | None=None, group_cache: dict[str, Any] | None=None, permissions: list[dict[str, Any]] | None=None, file_name: str | None=None, runner: Any=subprocess.run, now: Any=None) -> dict[str, Any]:
+def authorize(file_id: str, *, mattermost_user_id: str='', mattermost_username: str='', account: str | None=None, identity_cache: dict[str, Any] | None=None, group_cache: dict[str, Any] | None=None, permissions: list[dict[str, Any]] | None=None, file_name: str | None=None, runner: Any=subprocess.run, now: Any=None) -> dict[str, Any]:
     access = _PdUnset
     emails = _PdUnset
     group_email = _PdUnset

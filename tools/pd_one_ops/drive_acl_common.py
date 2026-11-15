@@ -7,7 +7,7 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +38,7 @@ EMAIL_RE = re.compile('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
 EMAIL_FIND_RE = re.compile('[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}')
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
 
 def parse_iso(value: str) -> datetime | None:
     text = str(value or '').strip()
@@ -96,15 +96,15 @@ def atomic_write_0600(path: Path, payload: dict[str, Any]) -> None:
     os.chmod(path, 384)
 
 def load_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding='utf-8'))
+    return json.loads(path.read_text(encoding='utf-8-sig'))
 
 def cache_age_seconds(generated_at_utc: str, *, now: datetime | None=None) -> float | None:
     generated = parse_iso(generated_at_utc)
     if generated is None:
         return None
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     if generated.tzinfo is None:
-        generated = generated.replace(tzinfo=timezone.utc)
+        generated = generated.replace(tzinfo=UTC)
     return max(0.0, (current - generated).total_seconds())
 
 def validate_identity_cache(data: dict[str, Any], *, now: datetime | None=None) -> dict[str, Any]:
@@ -121,7 +121,7 @@ def validate_identity_cache(data: dict[str, Any], *, now: datetime | None=None) 
         raise ValueError('identity cache users missing')
     return data
 
-def load_identity_cache(path: Path=None, *, now: datetime | None=None) -> dict[str, Any]:
+def load_identity_cache(path: Path | None=None, *, now: datetime | None=None) -> dict[str, Any]:
     if path is None:
         path = IDENTITY_CACHE_PATH()
     if not path.is_file():
@@ -160,7 +160,7 @@ def requester_emails(identity: dict[str, Any]) -> set[str]:
     for key in ('companyEmails', 'googleAccountEmails'):
         values = identity.get(key) or []
         if isinstance(values, list):
-            emails.update((normalize_email(item) for item in values))
+            emails.update(normalize_email(item) for item in values)
     emails.discard('')
     return emails
 

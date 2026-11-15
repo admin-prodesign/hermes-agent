@@ -53,8 +53,8 @@ def authorize_requester(requester_user_id: str) -> dict[str, Any]:
     requester_user_id = str(requester_user_id or '').strip()
     if not requester_user_id:
         raise PermissionError('exact requester_user_id is required')
-    users = json.loads(POLICY_USERS().read_text(encoding='utf-8'))
-    roles = json.loads(POLICY_ROLES().read_text(encoding='utf-8'))
+    users = json.loads(POLICY_USERS().read_text(encoding='utf-8-sig'))
+    roles = json.loads(POLICY_ROLES().read_text(encoding='utf-8-sig'))
     policy = _load_policy_module().resolve_user(requester_user_id, users, roles, None)
     if not policy.get('active'):
         raise PermissionError('requester is not an active exact-match PD One profile')
@@ -126,7 +126,7 @@ def search_units(units: list[dict[str, Any]], query: str, *, max_results: int=12
     return matches[:max_results]
 
 def _run_json(command: list[str], *, timeout: int) -> dict[str, Any]:
-    proc = subprocess.run(command, text=True, capture_output=True, timeout=timeout, check=False)
+    proc = subprocess.run(command, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=timeout, check=False)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or 'command failed').strip()
         raise RuntimeError(detail[:1200])
@@ -141,7 +141,7 @@ def _run_json(command: list[str], *, timeout: int) -> dict[str, Any]:
 def _download_document(document: dict[str, str], target: Path) -> dict[str, Any]:
     file_id = document['file_id']
     metadata = _run_json(['gog', 'drive', 'get', file_id, '--account', ACCOUNT(), '--json', '--results-only', '--fields', 'id,name,mimeType,modifiedTime,md5Checksum,size', '--no-input'], timeout=60)
-    proc = subprocess.run(['gog', 'drive', 'download', file_id, '--account', ACCOUNT(), '--out', str(target), '--overwrite', '--no-input'], text=True, capture_output=True, timeout=120, check=False)
+    proc = subprocess.run(['gog', 'drive', 'download', file_id, '--account', ACCOUNT(), '--out', str(target), '--overwrite', '--no-input'], text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=120, check=False)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or 'download failed').strip()
         raise RuntimeError(detail[:1200])
@@ -157,7 +157,7 @@ def lookup_hr_policy(requester_user_id: str, query: str, *, document_keys: list[
     terms = parse_query_terms(query)
     max_results = max(1, min(int(max_results), MAX_RESULTS))
     selected_keys = document_keys or list(HR_POLICY_DOCUMENTS())
-    selected_keys = list(dict.fromkeys((str(key).strip() for key in selected_keys if str(key).strip())))
+    selected_keys = list(dict.fromkeys(str(key).strip() for key in selected_keys if str(key).strip()))
     if not selected_keys:
         raise ValueError('at least one document key is required')
     unknown = sorted(set(selected_keys) - set(HR_POLICY_DOCUMENTS()))

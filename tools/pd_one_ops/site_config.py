@@ -52,7 +52,8 @@ def _profile_config_dir(home_section: dict[str, Any]) -> Path | None:
             return None
     except OSError:
         return None
-    return folder if (folder / "config.yaml").is_file() else None
+    from hermes_cli.config_backend import config_exists
+    return folder if config_exists(folder / "config.yaml") else None
 
 
 def _section_under(home: Path) -> dict[str, Any]:

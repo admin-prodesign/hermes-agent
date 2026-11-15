@@ -22,7 +22,7 @@ HERMES_BACKUP = Path("/home/prodesign/hermes-backup")
 
 SECRET_KEYS = {"token", "api_key", "apikey", "secret", "password", "authorization"}
 SECRET_PATTERNS = [
-    re.compile(r"(Bearer\s+)[A-Za-z0-9._~+/=-]+", re.I),
+    re.compile(r"(Bearer\s+)[A-Za-z0-9._~+/=-]+", re.IGNORECASE),
     re.compile(r"(gh[opsu]_[A-Za-z0-9_]{8})[A-Za-z0-9_]+"),
     re.compile(r"([A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.)[A-Za-z0-9_-]+"),
 ]
@@ -60,8 +60,7 @@ def run(
             cmd,
             cwd=str(cwd or WORKSPACE),
             text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=timeout,
             check=False,
         )
@@ -136,6 +135,7 @@ def triage() -> dict[str, Any]:
         "uptime": ["uptime"],
         "top_cpu": ["bash", "-lc", "ps -eo pid,ppid,comm,%cpu,%mem,etime,args --sort=-%cpu | head -12"],
         "top_mem": ["bash", "-lc", "ps -eo pid,ppid,comm,%cpu,%mem,rss,etime,args --sort=-%mem | head -12"],
+        # no-tmp: ok — documented nemo host path or an existing PD One artifact contract
         "disk": ["bash", "-lc", "df -h / /home /tmp 2>/dev/null"],
         "psi": ["bash", "-lc", "for f in /proc/pressure/cpu /proc/pressure/memory /proc/pressure/io; do echo -- $f; cat $f; done"],
     }

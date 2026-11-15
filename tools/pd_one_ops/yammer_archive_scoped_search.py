@@ -45,10 +45,10 @@ def _is_allowish(value: Any) -> bool:
     s = str(value or '').strip().lower()
     if not s or _is_denied(s):
         return False
-    return any((tok in s for tok in ('read', 'allow', 'summar', 'search', 'draft', 'write', 'confirm', 'create')))
+    return any(tok in s for tok in ('read', 'allow', 'summar', 'search', 'draft', 'write', 'confirm', 'create'))
 
 def load_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding='utf-8'))
+    return json.loads(path.read_text(encoding='utf-8-sig'))
 
 def load_sender_policy(sender_id: str) -> dict[str, Any]:
     cache_path = POLICY_CACHE_DIR() / f'{sender_id}.json'
@@ -66,7 +66,7 @@ def detect_domains(text: str, field: str='query') -> list[str]:
     hits: list[str] = []
     for domain, rules in DOMAIN_RULES.items():
         for pat in rules.get(field) or []:
-            if re.search(pat, text or '', re.I):
+            if re.search(pat, text or '', re.IGNORECASE):
                 hits.append(domain)
                 break
     return hits
@@ -94,13 +94,13 @@ def sanitize_fts_query(query: str) -> str:
         seen.add(key)
         tokens.append(p)
     if not tokens:
-        safe = re.sub('[^\\w\\u4e00-\\u9fff\\s\\-:./]+', ' ', q, flags=re.U)
+        safe = re.sub('[^\\w\\u4e00-\\u9fff\\s\\-:./]+', ' ', q, flags=re.UNICODE)
         safe = ' '.join(safe.split())
         return f'"{safe}"' if safe else ''
     tokens = tokens[:12]
     out: list[str] = []
     for t in tokens:
-        if any((ch in t for ch in ' -./')):
+        if any(ch in t for ch in ' -./'):
             out.append(f'"{t}"')
         else:
             out.append(t)
@@ -172,13 +172,13 @@ def classify_hit(group_name: str, excerpt: str, filename: str='') -> list[str]:
 def hit_allowed(hit_domains: list[str], scope: ScopeDecision) -> bool:
     if scope.is_admin:
         return True
-    if any((d in scope.blocked_domains for d in hit_domains)):
+    if any(d in scope.blocked_domains for d in hit_domains):
         return False
     if not hit_domains:
         return 'operations' in scope.allowed_domains
-    return any((d in scope.allowed_domains for d in hit_domains))
+    return any(d in scope.allowed_domains for d in hit_domains)
 
-def open_db(db_path: Path=None) -> sqlite3.Connection:
+def open_db(db_path: Path | None=None) -> sqlite3.Connection:
     if db_path is None:
         db_path = YAMMER_DB()
     if not db_path.exists():
@@ -209,7 +209,7 @@ def run_fts(con: sqlite3.Connection, fts_query: str, limit: int) -> list[dict[st
         results.append({'kind': 'attachment', 'messageId': r['message_id'] or '', 'threadId': r['thread_id'] or '', 'groupName': r['group_name'] or '', 'senderName': '', 'title': r['filename'] or '', 'fileName': r['filename'] or '', 'fileId': r['file_id'], 'versionId': r['version_id'], 'excerpt': excerpt})
     return results
 
-def search_yammer_archive(sender_id: str, query: str, origin_channel_id: str | None=None, max_results: int=15, db_path: Path=None) -> dict[str, Any]:
+def search_yammer_archive(sender_id: str, query: str, origin_channel_id: str | None=None, max_results: int=15, db_path: Path | None=None) -> dict[str, Any]:
     if db_path is None:
         db_path = YAMMER_DB()
     t0 = time.time()
@@ -229,7 +229,7 @@ def search_yammer_archive(sender_id: str, query: str, origin_channel_id: str | N
     if not scope.allowed:
         return {**base_payload, 'status': 'blocked', 'reason': scope.reason, 'resultCount': 0, 'results': [], 'filteredOutCount': 0, 'elapsedMs': int((time.time() - t0) * 1000)}
     high_risk = {'finance', 'payroll', 'hr_private', 'credentials_admin'}
-    if any((d in scope.blocked_domains for d in query_domains if d in high_risk)):
+    if any(d in scope.blocked_domains for d in query_domains if d in high_risk):
         blocked_hits = [d for d in query_domains if d in scope.blocked_domains]
         return {**base_payload, 'status': 'blocked', 'reason': 'query_domain_out_of_scope', 'blockedQueryDomains': blocked_hits, 'resultCount': 0, 'results': [], 'filteredOutCount': 0, 'elapsedMs': int((time.time() - t0) * 1000), 'userMessage': 'Search asks for out-of-scope domains (' + ', '.join(blocked_hits) + '). Refused without searching archive content.'}
     fts_query = sanitize_fts_query(query)

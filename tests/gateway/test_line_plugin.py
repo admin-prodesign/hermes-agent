@@ -385,7 +385,7 @@ def _reset_external_secret_cache(monkeypatch):
 
 def _install_external_secrets(monkeypatch, secrets):
     """Pretend Bitwarden (or another external source) published these names."""
-    import agent.secret_scope as secret_scope
+    from agent import secret_scope
 
     _reset_external_secret_cache(monkeypatch)
     monkeypatch.setattr(secret_scope, "build_profile_secret_scope", lambda _home: dict(secrets))
@@ -509,7 +509,7 @@ class TestPdoneLineCredentialFallback:
         assert adapter.channel_secret == "sec-pdone"
 
     def test_routed_scope_does_not_borrow_another_profiles_pdone_env(self, monkeypatch):
-        import agent.secret_scope as secret_scope
+        from agent import secret_scope
 
         _clear_line_credential_env(monkeypatch)
         _reset_external_secret_cache(monkeypatch)

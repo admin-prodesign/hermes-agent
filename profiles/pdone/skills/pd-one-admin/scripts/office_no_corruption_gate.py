@@ -229,7 +229,7 @@ def check_libreoffice(path: Path, ext: str, strict_optional: bool):
         outdir = Path(td)
         target = "pdf" if ext in {".docx", ".pptx"} else ("xlsx" if ext == ".xlsx" else "xlsm")
         cmd = [soffice, "--headless", "--nologo", "--nofirststartwizard", "--convert-to", target, "--outdir", str(outdir), str(path)]
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
+        proc = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         if proc.returncode != 0:
             fail("LibreOffice conversion failed", returncode=proc.returncode, stdout=proc.stdout[-2000:], stderr=proc.stderr[-2000:])
         outputs = [p for p in outdir.iterdir() if p.is_file()]

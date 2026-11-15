@@ -19,7 +19,9 @@ Use when the Hermes dashboard URL on `nemo.tail05d15a.ts.net` does not load, ret
    - `systemctl --user status hermes-dashboard.service --no-pager -l`
    - `ss -ltnp | grep ':8765'`
 3. Check HTTP receipts:
+   <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
    - `curl -sS --max-time 20 'https://nemo.tail05d15a.ts.net/?profile=pdone' -o /tmp/dashboard.html -w 'status=%{http_code} bytes=%{size_download} time=%{time_total}\n'`
+   <!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
    - `grep -o '<title>[^<]*</title>' /tmp/dashboard.html`
 4. If Tailscale returns 502, the dashboard backend is usually down, bound to the wrong host, or Tailscale Serve points at the wrong local target.
 

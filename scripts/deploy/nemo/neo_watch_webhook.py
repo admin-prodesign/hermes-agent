@@ -10,7 +10,7 @@ import os
 import ssl
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from typing import Any
 
 LOG = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ _logged_missing_url = False
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def iso_now(dt: datetime | None = None) -> str:

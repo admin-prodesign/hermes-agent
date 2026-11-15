@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from pathlib import Path
 
 import pytest
@@ -13,7 +13,7 @@ from gateway.pd_one_outbound_dm_workflows import (
 
 
 def utc(hours=0):
-    return (datetime(2026, 6, 11, 9, 0, tzinfo=timezone.utc) + timedelta(hours=hours)).isoformat().replace("+00:00", "Z")
+    return (datetime(2026, 6, 11, 9, 0, tzinfo=UTC) + timedelta(hours=hours)).isoformat().replace("+00:00", "Z")
 
 
 def make_registry(tmp_path: Path) -> WorkflowRegistry:

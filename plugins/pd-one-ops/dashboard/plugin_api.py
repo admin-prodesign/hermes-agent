@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any
 
@@ -34,12 +34,12 @@ def _pdone_home() -> Path:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _read_json(path: Path, default: Any) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception:
         return default
 
@@ -119,7 +119,7 @@ def _skills() -> list[dict[str, Any]]:
         category = parent_rel.parts[0] if len(parent_rel.parts) > 1 else "uncategorized"
         description = ""
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")[:3000]
+            text = path.read_text(encoding="utf-8-sig", errors="ignore")[:3000]
             for line in text.splitlines():
                 if line.startswith("description:"):
                     description = line.split(":", 1)[1].strip().strip('"')[:240]

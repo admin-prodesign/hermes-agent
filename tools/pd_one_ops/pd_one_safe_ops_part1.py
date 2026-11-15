@@ -1,5 +1,5 @@
 from __future__ import annotations
-__all__ = ['inspect_user_process_snapshot', 'cmd_user_process_snapshot', '_parse_local_process_listener_ports', '_parse_local_process_listener_pids', '_truncate_process_cmd', '_parse_ps_process_rows', '_parse_ss_listener_row', 'cmd_local_process_listener_inspect', 'cmd_python_package_dry_run', 'cmd_python_media_stack_status', '_cad_document_identity', '_module_spec_available', 'cmd_python_cad_stack_status', 'inspect_cad_runtime', 'cmd_cad_runtime_status', '_step_geometry_header', '_step_geometry_json_input', '_step_geometry_kind_counts', '_step_geometry_face_extra', '_summarize_step_inspect_payload', '_step_geometry_input', 'cmd_step_geometry_inspect', '_step_printability_json_input', '_summarize_step_printability_payload', 'cmd_step_printability_analyze', '_python_docx_runtime_readback', 'cmd_python_docx_dependency_repair', '_approved_hermes_result_path', '_result_summary_text', '_result_content_summary', 'cmd_hermes_result_messages_summary', '_json_artifact_type_name', '_json_artifact_length', '_json_artifact_key_list', '_summarize_json_artifact', '_approved_json_artifact_inspect_path', 'cmd_json_artifact_inspect', '_approved_local_file_search_path', '_validate_local_file_search_pattern', '_iter_local_file_search_files', 'cmd_local_file_search', 'cmd_sysstat_summary', 'cmd_ollama_embedding_triage', 'cmd_ollama_embedding_watchdog_triage', 'validate_mattermost_id', 'validate_mattermost_name', 'load_mattermost_review_log_module', 'mattermost_context', 'mm_request', '_mattermost_lookup_get', 'lookup_mattermost_channel', 'cmd_mattermost_channel_lookup', 'cmd_mattermost_channel_post_audit', 'cmd_admin_alert_source_audit', 'inspect_mattermost_deleted_posts', 'cmd_mattermost_deleted_posts_audit', 'MM_TITLE_TRANSLATIONS', 'MM_CATEGORY_KEYWORDS', 'propose_channel_display_name', 'fetch_channel_posts', 'mm_users_by_id', 'fetch_channel_members', 'summarize_channel', 'propose_channel_purpose', 'parse_since_ms', 'mattermost_user_membership', 'post_link', 'compact_excerpt', 'load_admin_approval_modules', 'load_admin_approval_listener_module', 'load_admin_approval_executor_module', 'kick_pdapp_direct_executor', 'load_current_mattermost_policy', 'split_csv_lines', 'verified_admin_request_source', 'andy_origin_skips_admin_ticket', 'source_explicitly_authorizes_deployment', 'DRIVE_WRITER_NO_TICKET_TYPES', 'DRIVE_WRITER_NO_TICKET_ACTION_RE', 'DRIVE_WRITER_NO_TICKET_CAP_RE', 'GOOGLE_FILE_ID_RE', 'GOOGLE_BARE_FILE_ID_RE', 'harvest_google_file_ids', '_authorize_drive_writer', 'employee_live_drive_writer_skips_admin_ticket', 'employee_message_for_approval_notify', 'cmd_admin_approval_request', 'cmd_admin_approval_list_open', 'cmd_admin_approval_decide', 'cmd_approval_ticket_status']
+__all__ = ['DRIVE_WRITER_NO_TICKET_ACTION_RE', 'DRIVE_WRITER_NO_TICKET_CAP_RE', 'DRIVE_WRITER_NO_TICKET_TYPES', 'GOOGLE_BARE_FILE_ID_RE', 'GOOGLE_FILE_ID_RE', 'MM_CATEGORY_KEYWORDS', 'MM_TITLE_TRANSLATIONS', '_approved_hermes_result_path', '_approved_json_artifact_inspect_path', '_approved_local_file_search_path', '_authorize_drive_writer', '_cad_document_identity', '_iter_local_file_search_files', '_json_artifact_key_list', '_json_artifact_length', '_json_artifact_type_name', '_mattermost_lookup_get', '_module_spec_available', '_parse_local_process_listener_pids', '_parse_local_process_listener_ports', '_parse_ps_process_rows', '_parse_ss_listener_row', '_python_docx_runtime_readback', '_result_content_summary', '_result_summary_text', '_step_geometry_face_extra', '_step_geometry_header', '_step_geometry_input', '_step_geometry_json_input', '_step_geometry_kind_counts', '_step_printability_json_input', '_summarize_json_artifact', '_summarize_step_inspect_payload', '_summarize_step_printability_payload', '_truncate_process_cmd', '_validate_local_file_search_pattern', 'andy_origin_skips_admin_ticket', 'cmd_admin_alert_source_audit', 'cmd_admin_approval_decide', 'cmd_admin_approval_list_open', 'cmd_admin_approval_request', 'cmd_approval_ticket_status', 'cmd_cad_runtime_status', 'cmd_hermes_result_messages_summary', 'cmd_json_artifact_inspect', 'cmd_local_file_search', 'cmd_local_process_listener_inspect', 'cmd_mattermost_channel_lookup', 'cmd_mattermost_channel_post_audit', 'cmd_mattermost_deleted_posts_audit', 'cmd_ollama_embedding_triage', 'cmd_ollama_embedding_watchdog_triage', 'cmd_python_cad_stack_status', 'cmd_python_docx_dependency_repair', 'cmd_python_media_stack_status', 'cmd_python_package_dry_run', 'cmd_step_geometry_inspect', 'cmd_step_printability_analyze', 'cmd_sysstat_summary', 'cmd_user_process_snapshot', 'compact_excerpt', 'employee_live_drive_writer_skips_admin_ticket', 'employee_message_for_approval_notify', 'fetch_channel_members', 'fetch_channel_posts', 'harvest_google_file_ids', 'inspect_cad_runtime', 'inspect_mattermost_deleted_posts', 'inspect_user_process_snapshot', 'kick_pdapp_direct_executor', 'load_admin_approval_executor_module', 'load_admin_approval_listener_module', 'load_admin_approval_modules', 'load_current_mattermost_policy', 'load_mattermost_review_log_module', 'lookup_mattermost_channel', 'mattermost_context', 'mattermost_user_membership', 'mm_request', 'mm_users_by_id', 'parse_since_ms', 'post_link', 'propose_channel_display_name', 'propose_channel_purpose', 'source_explicitly_authorizes_deployment', 'split_csv_lines', 'summarize_channel', 'validate_mattermost_id', 'validate_mattermost_name', 'verified_admin_request_source']
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import argparse
@@ -30,7 +30,7 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 from pathlib import Path
 from statistics import mean, median
 from typing import Any
@@ -65,7 +65,7 @@ def inspect_user_process_snapshot() -> dict[str, Any]:
         if not entry.name.isdigit():
             continue
         try:
-            status_text = (entry / 'status').read_text(encoding='utf-8', errors='replace')
+            status_text = (entry / 'status').read_text(encoding='utf-8-sig', errors='replace')
         except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             continue
@@ -85,7 +85,7 @@ def inspect_user_process_snapshot() -> dict[str, Any]:
             if not raw_cmd:
                 comm = next((line.split(':', 1)[1].strip() for line in status_text.splitlines() if line.startswith('Name:')), '')
                 raw_cmd = f'[{comm}]' if comm else ''
-            stat_text = (entry / 'stat').read_text(encoding='utf-8', errors='replace')
+            stat_text = (entry / 'stat').read_text(encoding='utf-8-sig', errors='replace')
         except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             continue
@@ -111,7 +111,7 @@ def _parse_local_process_listener_ports(raw: Any) -> list[int]:
     for value in values:
         port = _bounded_int(value, 'port', 1, 65535)
         if port not in LOCAL_PROCESS_LISTENER_PORTS:
-            allowed = ', '.join((str(item) for item in sorted(LOCAL_PROCESS_LISTENER_PORTS)))
+            allowed = ', '.join(str(item) for item in sorted(LOCAL_PROCESS_LISTENER_PORTS))
             fail(f'port {port} is not in the allowlist ({allowed})')
         if port not in ports:
             ports.append(port)
@@ -192,12 +192,12 @@ def cmd_local_process_listener_inspect(args: argparse.Namespace) -> None:
             warnings.append('ps_missing')
             processes = [{'pid': pid, 'exists': False, 'etime': '', 'cmd': '', 'status': 'error', 'error': 'binary_not_found'} for pid in pids]
         else:
-            process_probe = _probe_text([ps_bin, '-p', ','.join((str(pid) for pid in pids)), '-o', 'pid=,etime=,args='], timeout=20)
+            process_probe = _probe_text([ps_bin, '-p', ','.join(str(pid) for pid in pids), '-o', 'pid=,etime=,args='], timeout=20)
             processes = _parse_ps_process_rows(str(process_probe.get('stdout') or ''), pids)
             if process_probe.get('returncode') not in {0, 1}:
                 warnings.append('ps_probe_failed')
     overall = 'ok' if not warnings else 'partial'
-    emit({'status': overall, 'capability': 'pd_one_local_process_listener_inspect', 'ports': ports, 'pids': pids, 'listeners': listeners, 'processes': processes, 'summary': {'listener_count': len(listeners), 'listening_count': sum((1 for item in listeners if item.get('listening'))), 'missing_listener_ports': [item['port'] for item in listeners if not item.get('listening')], 'process_count': len(processes), 'running_process_count': sum((1 for item in processes if item.get('exists'))), 'missing_pids': [item['pid'] for item in processes if not item.get('exists')]}, 'warnings': warnings, 'safety': {'read_only': True, 'shell_used': False, 'bounded_inputs': True, 'allowlisted_ports_only': True, 'no_privileged_action_executed': True, 'lifecycle_changes_forbidden': True, 'source_system_writes_forbidden': True}, 'process_probe_returncode': None if process_probe is None else process_probe.get('returncode')})
+    emit({'status': overall, 'capability': 'pd_one_local_process_listener_inspect', 'ports': ports, 'pids': pids, 'listeners': listeners, 'processes': processes, 'summary': {'listener_count': len(listeners), 'listening_count': sum(1 for item in listeners if item.get('listening')), 'missing_listener_ports': [item['port'] for item in listeners if not item.get('listening')], 'process_count': len(processes), 'running_process_count': sum(1 for item in processes if item.get('exists')), 'missing_pids': [item['pid'] for item in processes if not item.get('exists')]}, 'warnings': warnings, 'safety': {'read_only': True, 'shell_used': False, 'bounded_inputs': True, 'allowlisted_ports_only': True, 'no_privileged_action_executed': True, 'lifecycle_changes_forbidden': True, 'source_system_writes_forbidden': True}, 'process_probe_returncode': None if process_probe is None else process_probe.get('returncode')})
 
 def cmd_python_package_dry_run(args: argparse.Namespace) -> None:
     """Resolve one pinned package against an approved interpreter without installing it."""
@@ -214,9 +214,9 @@ def cmd_python_package_dry_run(args: argparse.Namespace) -> None:
     if not python_path.is_absolute():
         fail('--python must be an absolute path under an approved PD One runtime root')
     lexical_python_path = Path(os.path.normpath(str(python_path)))
-    if not any((lexical_python_path == root or root in lexical_python_path.parents for root in approved_python_roots)):
+    if not any(lexical_python_path == root or root in lexical_python_path.parents for root in approved_python_roots):
         fail('--python path must be under an approved PD One runtime root')
-    if not any((is_within(resolved_python_path, root) for root in approved_python_roots)):
+    if not any(is_within(resolved_python_path, root) for root in approved_python_roots):
         fail('--python must resolve under an approved PD One runtime root')
     if not python_path.is_file() or not os.access(python_path, os.X_OK):
         fail(f'approved Python interpreter is not executable: {python_path}')
@@ -245,7 +245,7 @@ def _cad_document_identity(raw_path: str) -> dict[str, Any]:
     if candidate.is_symlink():
         fail('CAD document path must not be a symlink')
     resolved = candidate.resolve(strict=False)
-    if not any((is_within(resolved, root) for root in CAD_DOCUMENT_ROOTS())):
+    if not any(is_within(resolved, root) for root in CAD_DOCUMENT_ROOTS()):
         fail('CAD document path is outside approved cache/documents')
     suffix = resolved.suffix.lower()
     if suffix not in CAD_DOCUMENT_SUFFIXES:
@@ -308,11 +308,11 @@ def _step_geometry_header(path: Path) -> dict[str, Any]:
     if 'ISO-10303-21' not in raw or 'HEADER;' not in raw:
         fail('input does not contain an ISO-10303-21 STEP header')
     schema = ''
-    match = re.search('FILE_SCHEMA\\s*\\(\\s*\\((.*?)\\)\\s*\\)\\s*;', raw, re.I | re.S)
+    match = re.search('FILE_SCHEMA\\s*\\(\\s*\\((.*?)\\)\\s*\\)\\s*;', raw, re.IGNORECASE | re.DOTALL)
     if match:
         schema = ' '.join(match.group(1).split())[:300]
     internal_name = ''
-    match = re.search("FILE_NAME\\s*\\(\\s*'([^']*)'", raw, re.I | re.S)
+    match = re.search("FILE_NAME\\s*\\(\\s*'([^']*)'", raw, re.IGNORECASE | re.DOTALL)
     if match:
         internal_name = match.group(1)[:500]
     return {'signature_present': True, 'schema': schema, 'internal_name': internal_name}
@@ -326,7 +326,7 @@ def _step_geometry_json_input(raw_path: str) -> tuple[Path, dict[str, Any]]:
     if candidate.is_symlink():
         fail('inspect JSON path must not be a symlink')
     resolved = candidate.resolve(strict=False)
-    if not any((is_within(resolved, root) for root in STEP_GEOMETRY_INPUT_ROOTS())):
+    if not any(is_within(resolved, root) for root in STEP_GEOMETRY_INPUT_ROOTS()):
         fail(f'inspect JSON is outside approved PD One document roots: {resolved}')
     suffix = resolved.suffix.lower()
     if suffix not in STEP_GEOMETRY_JSON_SUFFIXES:
@@ -408,7 +408,7 @@ def _step_geometry_input(raw_path: str) -> tuple[Path, dict[str, Any]]:
     if candidate.is_symlink():
         fail('STEP path must not be a symlink')
     resolved = candidate.resolve(strict=False)
-    if not any((is_within(resolved, root) for root in STEP_GEOMETRY_INPUT_ROOTS())):
+    if not any(is_within(resolved, root) for root in STEP_GEOMETRY_INPUT_ROOTS()):
         fail(f'STEP path is outside approved PD One document roots: {resolved}')
     suffix = resolved.suffix.lower()
     if suffix not in STEP_GEOMETRY_SUFFIXES:
@@ -430,7 +430,7 @@ def cmd_step_geometry_inspect(args: argparse.Namespace) -> None:
     if action == 'summarize':
         source, identity = _step_geometry_json_input(args.input)
         try:
-            payload = json.loads(source.read_text(encoding='utf-8'))
+            payload = json.loads(source.read_text(encoding='utf-8-sig'))
         except json.JSONDecodeError as exc:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             fail(f'inspect JSON is not valid: {exc}')
@@ -472,7 +472,7 @@ def cmd_step_geometry_inspect(args: argparse.Namespace) -> None:
     if output_size <= 0:
         fail('inspect output is empty')
     try:
-        payload = json.loads(output.read_text(encoding='utf-8'))
+        payload = json.loads(output.read_text(encoding='utf-8-sig'))
     except json.JSONDecodeError as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         fail(f'inspect output is not valid JSON: {exc}')
@@ -489,7 +489,7 @@ def _step_printability_json_input(raw_path: str) -> tuple[Path, dict[str, Any]]:
     if candidate.is_symlink():
         fail('printability JSON path must not be a symlink')
     resolved = candidate.resolve(strict=False)
-    if not any((is_within(resolved, root) for root in STEP_GEOMETRY_INPUT_ROOTS())):
+    if not any(is_within(resolved, root) for root in STEP_GEOMETRY_INPUT_ROOTS()):
         fail(f'printability JSON is outside approved PD One document roots: {resolved}')
     suffix = resolved.suffix.lower()
     if suffix not in STEP_GEOMETRY_JSON_SUFFIXES:
@@ -526,7 +526,7 @@ def cmd_step_printability_analyze(args: argparse.Namespace) -> None:
     if action == 'summarize':
         source, identity = _step_printability_json_input(args.input)
         try:
-            payload = json.loads(source.read_text(encoding='utf-8'))
+            payload = json.loads(source.read_text(encoding='utf-8-sig'))
         except json.JSONDecodeError as exc:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             fail(f'printability JSON is not valid: {exc}')
@@ -566,7 +566,7 @@ def cmd_step_printability_analyze(args: argparse.Namespace) -> None:
     if output_size <= 0:
         fail('printability output is empty')
     try:
-        payload = json.loads(output.read_text(encoding='utf-8'))
+        payload = json.loads(output.read_text(encoding='utf-8-sig'))
     except json.JSONDecodeError as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         fail(f'printability output is not valid JSON: {exc}')
@@ -673,7 +673,7 @@ def cmd_hermes_result_messages_summary(args: argparse.Namespace) -> None:
     path = _approved_hermes_result_path(args.input)
     max_messages = _bounded_int(args.max_messages, '--max-messages', 1, HERMES_RESULT_SUMMARY_MAX_MESSAGES)
     try:
-        obj = json.loads(path.read_text(encoding='utf-8'))
+        obj = json.loads(path.read_text(encoding='utf-8-sig'))
     except Exception as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         fail(f'result artifact is not valid JSON: {exc}')
@@ -758,7 +758,7 @@ def _approved_json_artifact_inspect_path(raw_path: str) -> Path:
     resolved = path.resolve(strict=False)
     if resolved.suffix.lower() != '.json':
         fail('json-artifact-inspect only supports .json files')
-    if not any((is_within(resolved, root) for root in JSON_ARTIFACT_INSPECT_ROOTS())):
+    if not any(is_within(resolved, root) for root in JSON_ARTIFACT_INSPECT_ROOTS()):
         fail('input must be a JSON file under an approved PD One artifact root')
     if resolved.is_symlink() or not resolved.is_file():
         fail(f'input does not exist or is not a regular file: {resolved}')
@@ -784,7 +784,7 @@ def cmd_json_artifact_inspect(args: argparse.Namespace) -> None:
         size_bytes = path.stat().st_size
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         try:
-            data = json.loads(path.read_text(encoding='utf-8'))
+            data = json.loads(path.read_text(encoding='utf-8-sig'))
         except json.JSONDecodeError as exc:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             fail(f'invalid JSON in {path}: {exc}')
@@ -800,7 +800,7 @@ def _approved_local_file_search_path(raw_path: str) -> Path:
     if path.is_symlink():
         fail('symlinks are not allowed')
     resolved = path.resolve(strict=False)
-    if not any((is_within(resolved, root) for root in LOCAL_FILE_SEARCH_ROOTS())):
+    if not any(is_within(resolved, root) for root in LOCAL_FILE_SEARCH_ROOTS()):
         fail('path must stay under an approved PD One root; home-directory searches are forbidden')
     if resolved.is_symlink():
         fail('symlinks are not allowed')
@@ -810,7 +810,7 @@ def _validate_local_file_search_pattern(raw_pattern: str) -> str:
     text = str(raw_pattern or '').strip()
     if not text or len(text) > LOCAL_FILE_SEARCH_MAX_PATTERN_CHARS:
         fail(f'--pattern is required and must be at most {LOCAL_FILE_SEARCH_MAX_PATTERN_CHARS} characters')
-    if any((marker in text for marker in ('/', '\\', '..', '\x00'))):
+    if any(marker in text for marker in ('/', '\\', '..', '\x00')):
         fail('pattern must be a filename glob without path separators')
     if '**' in text:
         fail('recursive ** globs are not allowed')
@@ -867,7 +867,7 @@ def cmd_local_file_search(args: argparse.Namespace) -> None:
         if exists:
             stat = resolved.stat()
             size_bytes = stat.st_size
-            mtime_utc = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+            mtime_utc = datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat()
         path_checks.append({'path': str(resolved), 'exists': exists, 'suffix': resolved.suffix.lower(), 'size_bytes': size_bytes, 'mtime_utc': mtime_utc})
     searches: list[dict[str, Any]] = []
     walk_truncated = False
@@ -915,7 +915,7 @@ def cmd_sysstat_summary(args: argparse.Namespace) -> None:
     files = _sysstat_select_log_files(window_hours)
     if not files:
         fail(f'no sysstat log files found under {SYSSTAT_LOG_ROOT}')
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     window_start = now - timedelta(hours=window_hours)
     reports: dict[str, dict[str, Any]] = {}
     notes: list[str] = []
@@ -923,7 +923,7 @@ def cmd_sysstat_summary(args: argparse.Namespace) -> None:
         report = _sysstat_metric_report(sadf=sadf, metric_name=metric_name, sadf_args=list(sadf_args), focus_columns=list(focus_columns), files=files, window_start=window_start, window_end=now)
         reports[metric_name] = report
         if report['errors']:
-            notes.append(f'{metric_name}: {len(report['errors'])} sadf read error(s)')
+            notes.append(f"{metric_name}: {len(report['errors'])} sadf read error(s)")
         if not report['samples']:
             notes.append(f'{metric_name}: no samples in window')
     cpu_pressure_p95 = (reports['cpu_pressure']['focus'].get('%scpu-300') or {}).get('p95')
@@ -936,9 +936,9 @@ def cmd_sysstat_summary(args: argparse.Namespace) -> None:
     load15_per_cpu_p95 = load15_p95 / cpu_count if isinstance(load15_p95, (int, float)) else None
     memory_available_pct_p95 = 100.0 - mem_used_p95 if isinstance(mem_used_p95, (int, float)) else None
     checks = [{'name': 'cpu_pressure_p95', 'value': round(cpu_pressure_p95, 3) if isinstance(cpu_pressure_p95, (int, float)) else None, 'threshold': 20.0, 'state': _sysstat_state_high(cpu_pressure_p95 if isinstance(cpu_pressure_p95, (int, float)) else None, 10.0, 20.0)}, {'name': 'load15_per_cpu_p95', 'value': round(load15_per_cpu_p95, 3) if isinstance(load15_per_cpu_p95, (int, float)) else None, 'threshold': 1.75, 'state': _sysstat_state_high(load15_per_cpu_p95 if isinstance(load15_per_cpu_p95, (int, float)) else None, 1.0, 1.75)}, {'name': 'io_pressure_p95', 'value': round(io_pressure_p95, 3) if isinstance(io_pressure_p95, (int, float)) else None, 'threshold': 20.0, 'state': _sysstat_state_high(io_pressure_p95 if isinstance(io_pressure_p95, (int, float)) else None, 10.0, 20.0)}, {'name': 'memory_pressure_p95', 'value': round(mem_pressure_p95, 3) if isinstance(mem_pressure_p95, (int, float)) else None, 'threshold': 15.0, 'state': _sysstat_state_high(mem_pressure_p95 if isinstance(mem_pressure_p95, (int, float)) else None, 10.0, 15.0)}, {'name': 'memory_available_pct_p95', 'value': round(memory_available_pct_p95, 3) if isinstance(memory_available_pct_p95, (int, float)) else None, 'threshold': 15.0, 'state': _sysstat_state_low(memory_available_pct_p95 if isinstance(memory_available_pct_p95, (int, float)) else None, 25.0, 15.0)}, {'name': 'swap_used_pct_p95', 'value': round(swap_used_p95, 3) if isinstance(swap_used_p95, (int, float)) else None, 'threshold': 40.0, 'state': _sysstat_state_high(swap_used_p95 if isinstance(swap_used_p95, (int, float)) else None, 25.0, 40.0)}]
-    if any((check['state'] == 'high' for check in checks)):
+    if any(check['state'] == 'high' for check in checks):
         overall_state = 'high'
-    elif any((check['state'] == 'watch' for check in checks)):
+    elif any(check['state'] == 'watch' for check in checks):
         overall_state = 'watch'
     else:
         overall_state = 'ok'
@@ -1031,7 +1031,7 @@ def cmd_ollama_embedding_triage(args: argparse.Namespace) -> None:
     unit_active_state = str(unit_properties.get('ActiveState', ''))
     unit_result = str(unit_properties.get('Result', ''))
     overall_status = 'ok' if not warnings else 'partial'
-    payload = {'status': overall_status, 'capability': 'pd_one_ollama_embedding_triage', 'unit': {'name': unit, 'probe': unit_probe, 'active_state': unit_active_state, 'result': unit_result}, 'listener': {'port': port, 'probe': listener_probe, 'listening': bool(listener_probe.get('listening'))}, 'journal': journal_probe, 'containers': container_probes, 'summary': {'lookback_hours': lookback_hours, 'container_tail_lines': container_tail_lines, 'journal_tail_lines': journal_tail_lines, 'unit_active_state': unit_active_state, 'unit_result': unit_result, 'listener_present': bool(listener_probe.get('listening')), 'container_names': container_names, 'pattern_counts': aggregate_counts, 'matching_line_count': aggregate_matching_lines, 'sample_total': sum((len(probe.get('sample_matches', [])) for probe in sources + container_probes))}, 'signals': {'unit_failed': unit_active_state == 'failed' or unit_result in {'timeout', 'exit-code'}, 'listener_missing': not bool(listener_probe.get('listening')), 'container_errors': [probe['name'] for probe in container_probes if probe.get('status') != 'ok']}, 'warnings': warnings, 'safety': {'read_only': True, 'shell_used': False, 'bounded_calls_required': True, 'bounded_logs': True, 'no_privileged_action_executed': True, 'source_system_writes_forbidden': True}}
+    payload = {'status': overall_status, 'capability': 'pd_one_ollama_embedding_triage', 'unit': {'name': unit, 'probe': unit_probe, 'active_state': unit_active_state, 'result': unit_result}, 'listener': {'port': port, 'probe': listener_probe, 'listening': bool(listener_probe.get('listening'))}, 'journal': journal_probe, 'containers': container_probes, 'summary': {'lookback_hours': lookback_hours, 'container_tail_lines': container_tail_lines, 'journal_tail_lines': journal_tail_lines, 'unit_active_state': unit_active_state, 'unit_result': unit_result, 'listener_present': bool(listener_probe.get('listening')), 'container_names': container_names, 'pattern_counts': aggregate_counts, 'matching_line_count': aggregate_matching_lines, 'sample_total': sum(len(probe.get('sample_matches', [])) for probe in sources + container_probes)}, 'signals': {'unit_failed': unit_active_state == 'failed' or unit_result in {'timeout', 'exit-code'}, 'listener_missing': not bool(listener_probe.get('listening')), 'container_errors': [probe['name'] for probe in container_probes if probe.get('status') != 'ok']}, 'warnings': warnings, 'safety': {'read_only': True, 'shell_used': False, 'bounded_calls_required': True, 'bounded_logs': True, 'no_privileged_action_executed': True, 'source_system_writes_forbidden': True}}
     emit(payload)
 
 def cmd_ollama_embedding_watchdog_triage(args: argparse.Namespace) -> None:
@@ -1070,7 +1070,7 @@ def cmd_ollama_embedding_watchdog_triage(args: argparse.Namespace) -> None:
     else:
         overall_state = 'watch'
     summary = {'log_lines': int(journal_probe.get('log_lines', 0)), 'matching_line_count': matching_line_count, 'remote_ok_true': remote_ok_true, 'remote_ok_false': remote_ok_false, 'mode_remote': mode_remote, 'mode_local': mode_local, 'switch_events': switch_events, 'service_failures': service_failures}
-    summary_text = f'Observed {summary['log_lines']} log lines; remote_ok=True {remote_ok_true}, remote_ok=False {remote_ok_false}; mode=remote {mode_remote}, mode=local {mode_local}; switched Honcho embeddings {switch_events}; service failures {service_failures}.'
+    summary_text = f"Observed {summary['log_lines']} log lines; remote_ok=True {remote_ok_true}, remote_ok=False {remote_ok_false}; mode=remote {mode_remote}, mode=local {mode_local}; switched Honcho embeddings {switch_events}; service failures {service_failures}."
     emit({'status': 'ok' if not warnings else 'partial', 'capability': 'pd_one_ollama_embedding_watchdog_triage', 'unit': {'name': unit, 'journal_probe': journal_probe}, 'summary': summary, 'assessment': {'overall_state': overall_state, 'summary': summary_text}, 'warnings': warnings, 'safety': {'read_only': True, 'journalctl_used': True, 'bounded_window_hours': lookback_hours, 'bounded_journal_tail_lines': journal_tail_lines, 'source_system_writes_forbidden': True}})
 
 def validate_mattermost_id(value: str, label: str='id') -> str:
@@ -1132,7 +1132,7 @@ def lookup_mattermost_channel(team_name: str, channel_name: str, base: str, head
     channel_receipt: dict[str, Any] = {'status': 'not_attempted'}
     channel: dict[str, Any] = {}
     if team_receipt.get('status') == 200 and team.get('id'):
-        channel_path = f'/api/v4/teams/{team['id']}/channels/name/{channel_name}'
+        channel_path = f"/api/v4/teams/{team['id']}/channels/name/{channel_name}"
         channel_receipt, channel = _mattermost_lookup_get(base, headers, channel_path)
     statuses = [bot_receipt.get('status'), team_receipt.get('status'), channel_receipt.get('status')]
     result_status = 'ok' if statuses == [200, 200, 200] else 'partial'
@@ -1156,7 +1156,7 @@ def cmd_mattermost_channel_post_audit(args: argparse.Namespace) -> None:
     lookback_days = max(1, min(int(args.lookback_days), 30))
     max_pages = max(1, min(int(args.max_pages), 10))
     base, headers, me = mattermost_context()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff_ms = int((now - timedelta(days=lookback_days)).timestamp() * 1000)
     statuses, pages_read = ([], 0)
     posts_seen = posts_in_window = deleted_in_window = active_in_window = 0
@@ -1173,7 +1173,7 @@ def cmd_mattermost_channel_post_audit(args: argparse.Namespace) -> None:
         pages_read += 1
         if not order:
             break
-        order_ids.extend((str(post_id) for post_id in order))
+        order_ids.extend(str(post_id) for post_id in order)
         page_times = []
         for post_id in order:
             post = post_map.get(post_id) or {}
@@ -1194,7 +1194,7 @@ def cmd_mattermost_channel_post_audit(args: argparse.Namespace) -> None:
         if len(order) < 200 or (valid_times and min(valid_times) < cutoff_ms):
             break
     order_counts = collections.Counter(order_ids)
-    emit({'status': 'ok', 'capability': 'pd_one_mattermost_channel_post_audit', 'channel_id': channel_id, 'window': {'lookback_days': lookback_days, 'cutoff_epoch_ms': cutoff_ms, 'observed_at_utc': now.isoformat().replace('+00:00', 'Z')}, 'pages_read': pages_read, 'http_statuses': statuses, 'posts_seen': posts_seen, 'posts_in_window': posts_in_window, 'active_in_window': active_in_window, 'deleted_in_window': deleted_in_window, 'order_total': len(order_ids), 'unique_ids': len(order_counts), 'duplicate_ids_count': sum((1 for value in order_counts.values() if value > 1)), 'max_duplicate': max(order_counts.values(), default=0), 'observed_post_time_bounds_ms': {'oldest': oldest_ms, 'newest': newest_ms}, 'bot': {'id': me.get('id'), 'username': me.get('username')}, 'safety': {'read_only': True, 'include_deleted_requested': True, 'credentials_returned': False, 'source_system_write': False, 'external_send': False, 'message_bodies_returned': False}})
+    emit({'status': 'ok', 'capability': 'pd_one_mattermost_channel_post_audit', 'channel_id': channel_id, 'window': {'lookback_days': lookback_days, 'cutoff_epoch_ms': cutoff_ms, 'observed_at_utc': now.isoformat().replace('+00:00', 'Z')}, 'pages_read': pages_read, 'http_statuses': statuses, 'posts_seen': posts_seen, 'posts_in_window': posts_in_window, 'active_in_window': active_in_window, 'deleted_in_window': deleted_in_window, 'order_total': len(order_ids), 'unique_ids': len(order_counts), 'duplicate_ids_count': sum(1 for value in order_counts.values() if value > 1), 'max_duplicate': max(order_counts.values(), default=0), 'observed_post_time_bounds_ms': {'oldest': oldest_ms, 'newest': newest_ms}, 'bot': {'id': me.get('id'), 'username': me.get('username')}, 'safety': {'read_only': True, 'include_deleted_requested': True, 'credentials_returned': False, 'source_system_write': False, 'external_send': False, 'message_bodies_returned': False}})
 
 def cmd_admin_alert_source_audit(_args: argparse.Namespace) -> None:
     """Inventory fixed PD One Python roots for admin-alert delivery markers."""
@@ -1213,7 +1213,7 @@ def cmd_admin_alert_source_audit(_args: argparse.Namespace) -> None:
                 if path.stat().st_size > ADMIN_ALERT_SOURCE_AUDIT_MAX_FILE_BYTES:
                     oversized_files += 1
                     continue
-                content = path.read_text(encoding='utf-8', errors='replace')
+                content = path.read_text(encoding='utf-8-sig', errors='replace')
             except OSError:
                 logging.getLogger('pd_one_ops').exception('pd one command failed')
                 unreadable_files += 1
@@ -1239,7 +1239,7 @@ def inspect_mattermost_deleted_posts(channel_id: str, lookback_days: int, max_po
     safety = {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True, 'external_sends_forbidden': True, 'bounded_api_calls': 1, 'token_printed': False}
     if not base or not token:
         return {'status': 'unavailable', 'capability': capability, 'credentials_available': False, 'requested': requested, 'safety': safety}
-    cutoff_ms = int((datetime.now(timezone.utc) - timedelta(days=lookback_days)).timestamp() * 1000)
+    cutoff_ms = int((datetime.now(UTC) - timedelta(days=lookback_days)).timestamp() * 1000)
     try:
         response = requests.get(f'{base}/api/v4/channels/{channel_id}/posts', headers={'Authorization': f'Bearer {token}'}, params={'page': 0, 'per_page': max_posts, 'include_deleted': 'true'}, timeout=30)
         response.raise_for_status()
@@ -1271,7 +1271,7 @@ def propose_channel_display_name(display_name: str) -> str:
         translated = [en for zh, en in MM_TITLE_TRANSLATIONS.items() if zh in current]
     if not translated:
         return current
-    return f'{current} / {' + '.join(dict.fromkeys(translated))}'
+    return f"{current} / {' + '.join(dict.fromkeys(translated))}"
 
 def fetch_channel_posts(base: str, headers: dict[str, str], channel_id: str, max_posts: int) -> list[dict[str, Any]]:
     posts: list[dict[str, Any]] = []
@@ -1317,9 +1317,9 @@ def fetch_channel_members(base: str, headers: dict[str, str], channel_id: str) -
     return members
 
 def summarize_channel(posts: list[dict[str, Any]], users: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    text = '\n'.join((str(p.get('message') or '') for p in posts))
-    category_counts = {name: sum((text.count(kw) for kw in keywords)) for name, keywords in MM_CATEGORY_KEYWORDS.items()}
-    participant_counts = collections.Counter((str(p.get('user_id') or '') for p in posts if p.get('user_id')))
+    text = '\n'.join(str(p.get('message') or '') for p in posts)
+    category_counts = {name: sum(text.count(kw) for kw in keywords) for name, keywords in MM_CATEGORY_KEYWORDS.items()}
+    participant_counts = collections.Counter(str(p.get('user_id') or '') for p in posts if p.get('user_id'))
     top_participants = []
     for uid, count in participant_counts.most_common(12):
         u = users.get(uid, {})
@@ -1378,7 +1378,7 @@ def post_link(base: str, post_id: str) -> str:
     using /pl/<post_id> can produce links that fail for some users/teams. The
     server-supported redirect endpoint resolves the post id to the right team.
     """
-    return f'{base.rstrip('/')}/_redirect/pl/{post_id}' if post_id else ''
+    return f"{base.rstrip('/')}/_redirect/pl/{post_id}" if post_id else ''
 
 def compact_excerpt(message: str, term: str='', limit: int=420) -> str:
     text = re.sub('\\s+', ' ', message or '').strip()
@@ -1548,7 +1548,7 @@ def employee_live_drive_writer_skips_admin_ticket(*, requester_user_id: str, req
         return None
     if DRIVE_WRITER_NO_TICKET_ACTION_RE.search(requested_action or ''):
         return None
-    if any((DRIVE_WRITER_NO_TICKET_CAP_RE.search(cap or '') for cap in required_capabilities or [])):
+    if any(DRIVE_WRITER_NO_TICKET_CAP_RE.search(cap or '') for cap in required_capabilities or []):
         return None
     lookup = authorize_fn or _authorize_drive_writer
     evidence: list[dict[str, Any]] = []
@@ -1698,13 +1698,13 @@ def cmd_admin_approval_decide(args: argparse.Namespace) -> None:
         return
     try:
         base, headers, _me = mattermost_context()
-        response = requests.get(f'{base.rstrip('/')}/api/v4/posts/{decision_post_id}', headers=headers, timeout=30)
+        response = requests.get(f"{base.rstrip('/')}/api/v4/posts/{decision_post_id}", headers=headers, timeout=30)
         if response.status_code != 200:
             raise RuntimeError(f'Mattermost decision post lookup returned HTTP {response.status_code}')
         post = response.json()
         if not isinstance(post, dict) or not post.get('id'):
             raise RuntimeError('Mattermost decision post lookup returned an invalid payload')
-        channel_response = requests.get(f'{base.rstrip('/')}/api/v4/channels/{post.get('channel_id') or ''}', headers=headers, timeout=30)
+        channel_response = requests.get(f"{base.rstrip('/')}/api/v4/channels/{post.get('channel_id') or ''}", headers=headers, timeout=30)
         if channel_response.status_code != 200:
             raise RuntimeError(f'Mattermost decision channel lookup returned HTTP {channel_response.status_code}')
         channel = channel_response.json()

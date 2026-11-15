@@ -58,7 +58,7 @@ def worker_scheduling(
     dry_run: bool = True,
     timeout_seconds: int = 420,
     output_dir: Optional[str] = None,
-    confirm_live_write: Optional[Union[str, bool]] = None,
+    confirm_live_write: Optional[str | bool] = None,
 ) -> str:
     """Run the monthly worker-scheduling playbook through one stable action dispatcher.
 

@@ -46,7 +46,7 @@ import argparse
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
@@ -91,7 +91,7 @@ class OperationPlan:
 
 class AppSheetClient:
 
-    def __init__(self, env_file: str, schema_map_file: str=None) -> None:
+    def __init__(self, env_file: str, schema_map_file: str | None=None) -> None:
         if schema_map_file is None:
             schema_map_file = SCHEMA_MAP_DEFAULT()
         env = self._load_env(env_file)
@@ -110,7 +110,7 @@ class AppSheetClient:
     @staticmethod
     def _load_env(path: str) -> dict[str, str]:
         data: dict[str, str] = {}
-        for line in Path(path).read_text(encoding='utf-8').splitlines():
+        for line in Path(path).read_text(encoding='utf-8-sig').splitlines():
             line = line.strip()
             if not line or line.startswith('#') or '=' not in line:
                 continue
@@ -118,7 +118,7 @@ class AppSheetClient:
             data[key.strip()] = value.strip()
         missing = [key for key in ['APP_ID', 'APP_ACCESS_KEY'] if not data.get(key)]
         if missing:
-            raise SystemExit(f'Missing required env keys in {path}: {', '.join(missing)}')
+            raise SystemExit(f'Missing required env keys in {path}: {", ".join(missing)}')
         return data
 
     def _load_table_columns(self, schema_map_file: str) -> None:
@@ -131,7 +131,7 @@ class AppSheetClient:
         before we make a live write.
         """
         try:
-            data = json.loads(Path(schema_map_file).read_text(encoding='utf-8'))
+            data = json.loads(Path(schema_map_file).read_text(encoding='utf-8-sig'))
             tables = data.get('tables', {})
             for table_name, table in tables.items():
                 self._table_columns[table_name] = {col.get('name') for col in table.get('columns', []) if col.get('name')}
@@ -147,10 +147,10 @@ class AppSheetClient:
             return
         bad: set[str] = set()
         for row in rows:
-            bad.update((key for key in row if key not in known))
+            bad.update(key for key in row if key not in known)
         if bad:
-            preview = ', '.join(sorted(list(known))[:30])
-            raise ValueError(f'Payload for AppSheet table {table!r} contains unknown column(s): {', '.join(sorted(bad))}. Check the synced schema before writing. Known columns include: {preview}')
+            preview = ', '.join(sorted(known)[:30])
+            raise ValueError(f'Payload for AppSheet table {table!r} contains unknown column(s): {", ".join(sorted(bad))}. Check the synced schema before writing. Known columns include: {preview}')
 
     def action(self, table: str, action: str, *, rows: list[dict[str, Any]] | None=None, properties: dict[str, Any] | None=None) -> list[dict[str, Any]]:
         self._validate_payload_columns(table, rows)
@@ -166,7 +166,7 @@ class AppSheetClient:
         if not response.text.strip():
             if action != 'Find':
                 return []
-            raise RuntimeError(f'Empty response body from AppSheet for {table}/{action}. This usually means the query was too expensive, the table is poorly visible in the current context, or AppSheet returned a blank success response. Selector={(properties.get('Selector') if properties else None)}')
+            raise RuntimeError(f'Empty response body from AppSheet for {table}/{action}. This usually means the query was too expensive, the table is poorly visible in the current context, or AppSheet returned a blank success response. Selector={(properties.get("Selector") if properties else None)}')
         data = response.json()
         if isinstance(data, list):
             return data
@@ -194,7 +194,7 @@ class SchemaMap:
 
     def __init__(self, path: str) -> None:
         self.path = path
-        self.data = json.loads(Path(path).read_text(encoding='utf-8'))
+        self.data = json.loads(Path(path).read_text(encoding='utf-8-sig'))
         self.tables = self.data['tables']
         self.slices = self.data['slices']
 
@@ -207,12 +207,11 @@ class SchemaMap:
     def slice_filter_selector(self, slice_name: str) -> tuple[str, str]:
         info = self.slices[slice_name]
         row_filter = info['row_filter'] or ''
-        if row_filter.startswith('='):
-            row_filter = row_filter[1:]
-        return (info['source_table'], f'Filter({info['source_table']}, {row_filter})')
+        row_filter = row_filter.removeprefix('=')
+        return (info['source_table'], f'Filter({info["source_table"]}, {row_filter})')
 
 def iso_utc(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    return dt.astimezone(UTC).strftime('%Y-%m-%d %H:%M:%S')
 
 def appsheet_local_datetime(dt: datetime | None=None) -> str:
     """Return a DateTime string in the app's business timezone.
@@ -221,19 +220,19 @@ def appsheet_local_datetime(dt: datetime | None=None) -> str:
     Hermes (host timezone UTC) makes user-visible Case_Updates appear 8 hours
     early in Taiwan. Use Asia/Taipei wall time for operational rows.
     """
-    dt = dt or datetime.now(timezone.utc)
+    dt = dt or datetime.now(UTC)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(APP_LOCAL_TZ).strftime('%m/%d/%Y %H:%M:%S')
-CREATE_INCIDENT_RE = re.compile('create\\s+(?:a\\s+)?new\\s+incident\\s+report(?:\\s+with\\s+(?:the\\s+)?following)?\\s+description\\s*:\\s*(?P<description>.+)', re.I | re.S)
-QUERY_INCIDENTS_RE = re.compile('(?:give me|show me|list)(?:\\s+an?\\s+itemized\\s+list\\s+of)?\\s+unresolved\\s+incident\\s+reports\\s+created\\s+in\\s+the\\s+last\\s+(?P<amount>\\d+)\\s+(?P<unit>hour|hours|day|days)', re.I)
-RESOLVE_ACTIVITY_RE = re.compile('mark\\s+(?P<needle>.+?)\\s+activitylog\\s+as\\s+resolved,\\s+with\\s+troubleshooting\\s+action\\s+as\\s+(?P<action>.+)', re.I | re.S)
-UPDATE_ACTIVITY_RE = re.compile('(?:edit|update)\\s+(?P<needle>.+?)\\s+activitylog\\s+set\\s+(?P<field>.+?)\\s+to\\s+(?P<value>.+)', re.I | re.S)
-DELETE_ACTIVITY_RE = re.compile('delete\\s+(?P<needle>.+?)\\s+activitylog', re.I)
-CREATE_CASE_RE = re.compile('create\\s+(?:a\\s+)?case\\s+(?P<body>.+)', re.I | re.S)
-ADD_CASE_UPDATE_RE = re.compile('add\\s+(?:an?\\s+)?update\\s+to\\s+case\\s+(?P<needle>[^:;]+)\\s*:\\s*(?P<body>.+)', re.I | re.S)
-CLOSE_CASE_RE = re.compile('(?:close|complete|resolve)\\s+case\\s+(?P<needle>[^:;]+)\\s*:\\s*(?P<body>.+)', re.I | re.S)
-QUERY_CASES_RE = re.compile('(?:show|list|find)\\s+(?:open|unresolved)\\s+cases(?:\\s+assigned\\s+to\\s+(?P<responsible>.+?))?(?:\\s+in\\s+the\\s+last\\s+(?P<amount>\\d+)\\s+(?P<unit>day|days))?$', re.I | re.S)
+CREATE_INCIDENT_RE = re.compile('create\\s+(?:a\\s+)?new\\s+incident\\s+report(?:\\s+with\\s+(?:the\\s+)?following)?\\s+description\\s*:\\s*(?P<description>.+)', re.IGNORECASE | re.DOTALL)
+QUERY_INCIDENTS_RE = re.compile('(?:give me|show me|list)(?:\\s+an?\\s+itemized\\s+list\\s+of)?\\s+unresolved\\s+incident\\s+reports\\s+created\\s+in\\s+the\\s+last\\s+(?P<amount>\\d+)\\s+(?P<unit>hour|hours|day|days)', re.IGNORECASE)
+RESOLVE_ACTIVITY_RE = re.compile('mark\\s+(?P<needle>.+?)\\s+activitylog\\s+as\\s+resolved,\\s+with\\s+troubleshooting\\s+action\\s+as\\s+(?P<action>.+)', re.IGNORECASE | re.DOTALL)
+UPDATE_ACTIVITY_RE = re.compile('(?:edit|update)\\s+(?P<needle>.+?)\\s+activitylog\\s+set\\s+(?P<field>.+?)\\s+to\\s+(?P<value>.+)', re.IGNORECASE | re.DOTALL)
+DELETE_ACTIVITY_RE = re.compile('delete\\s+(?P<needle>.+?)\\s+activitylog', re.IGNORECASE)
+CREATE_CASE_RE = re.compile('create\\s+(?:a\\s+)?case\\s+(?P<body>.+)', re.IGNORECASE | re.DOTALL)
+ADD_CASE_UPDATE_RE = re.compile('add\\s+(?:an?\\s+)?update\\s+to\\s+case\\s+(?P<needle>[^:;]+)\\s*:\\s*(?P<body>.+)', re.IGNORECASE | re.DOTALL)
+CLOSE_CASE_RE = re.compile('(?:close|complete|resolve)\\s+case\\s+(?P<needle>[^:;]+)\\s*:\\s*(?P<body>.+)', re.IGNORECASE | re.DOTALL)
+QUERY_CASES_RE = re.compile('(?:show|list|find)\\s+(?:open|unresolved)\\s+cases(?:\\s+assigned\\s+to\\s+(?P<responsible>.+?))?(?:\\s+in\\s+the\\s+last\\s+(?P<amount>\\d+)\\s+(?P<unit>day|days))?$', re.IGNORECASE | re.DOTALL)
 
 def parse_field_segments(body: str) -> tuple[dict[str, str], str | None]:
     fields: dict[str, str] = {}
@@ -456,7 +455,7 @@ class RecordOpsPlanner:
                 except Exception as exc:
                     logging.getLogger('pd_one_ops').exception('pd one command failed')
                     sync_actions.append({'action': action_name, 'ok': False, 'error': str(exc)})
-            refreshed_parent = self.client.find('Case', f'Filter(Case, [CaseID] = "{quote(str(parent.get('CaseID')))}")')
+            refreshed_parent = self.client.find('Case', f'Filter(Case, [CaseID] = "{quote(str(parent.get("CaseID")))}")')
             execution['parent_sync_actions'] = sync_actions
             execution['parent_case_readback'] = refreshed_parent
             if not refreshed_parent or refreshed_parent[0].get('Status') != payload.get('New Status'):
@@ -468,12 +467,12 @@ class RecordOpsPlanner:
     def _plan_query_cases(self, parsed: dict[str, Any], execute: bool) -> OperationPlan:
         clauses = ['NOT(IN([Status], LIST("Completed", "Canceled", "Cancelled")))']
         if parsed.get('responsible'):
-            clauses.append(f'CONTAINS([Next Step Responsible Person], "{quote(parsed['responsible'])}")')
+            clauses.append(f'CONTAINS([Next Step Responsible Person], "{quote(parsed["responsible"])}")')
         if parsed.get('amount'):
             delta = timedelta(days=int(parsed['amount']))
-            since = datetime.now(timezone.utc) - delta
+            since = datetime.now(UTC) - delta
             clauses.append(f'[Created On] >= DATETIME("{iso_utc(since)}")')
-        selector = f'Filter(Case, AND({', '.join(clauses)}))'
+        selector = f'Filter(Case, AND({", ".join(clauses)}))'
         plan = OperationPlan(intent='query_cases', table='Case', description='List open/unresolved Cases matching the requested filters.', selector=selector, dry_run_summary={'filters': clauses})
         if execute:
             rows = self.client.find('Case', selector)
@@ -506,7 +505,7 @@ class RecordOpsPlanner:
         amount = parsed['amount']
         unit = parsed['unit']
         delta = timedelta(hours=amount) if unit.startswith('hour') else timedelta(days=amount)
-        since = datetime.now(timezone.utc) - delta
+        since = datetime.now(UTC) - delta
         selector = f'Filter(ActivityLog, AND([Category] = "Incident Report", ISBLANK([Parent ActivityLogID]), [ActivityLog Status] <> "Resolved", [Timestamp] >= DATETIME("{iso_utc(since)}")))'
         plan = OperationPlan(intent='query_unresolved_incident_reports', table='ActivityLog', description='List unresolved parent Incident Reports inside the requested time window.', selector=selector, dry_run_summary={'window_start_utc': iso_utc(since), 'filters': {'Category': 'Incident Report', 'Parent ActivityLogID': 'blank', 'ActivityLog Status': 'not Resolved'}})
         if execute:

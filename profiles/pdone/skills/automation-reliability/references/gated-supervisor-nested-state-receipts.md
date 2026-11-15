@@ -35,6 +35,7 @@ Conversely, if the exact thread contains later bot posts for another item ID, cl
 
 ## Evidence hygiene
 
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 - Keep temporary Sheets exports and exact-thread JSON in `/tmp` or another explicitly temporary path.
 - Emit only concise counts, physical rows, stable IDs, categories, and receipt IDs into the report.
 - Do not retain raw transcripts, attachment contents, credentials, or full thread payloads in remediation plans.

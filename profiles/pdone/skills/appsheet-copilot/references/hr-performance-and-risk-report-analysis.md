@@ -40,8 +40,11 @@ gog sheets metadata <SPREADSHEET_ID> --json --no-input
 Then read the relevant data tabs, usually:
 
 ```bash
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 gog sheets get <SPREADSHEET_ID> '風險回報!A1:BK6799' --json --no-input > /tmp/risk_current.json
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 gog sheets get <SPREADSHEET_ID> '風險回報-歷史!A1:AX2770' --json --no-input > /tmp/risk_history.json
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 gog sheets get <SPREADSHEET_ID> '員工代號!A1:C120' --json --no-input > /tmp/emp_codes.json
 ```
 

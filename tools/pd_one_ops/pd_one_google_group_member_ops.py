@@ -54,7 +54,7 @@ def authorize_ticket(ticket_id: str, action: str, group: str, member: str, role:
     caps = set(grant.get('allowed_capabilities') or [])
     scope = ticket.get('capability_scope') or {}
     if ticket.get('status') not in {'approved', 'queued', 'in_progress'}:
-        fail(f'ticket {ticket_id} is not executable: {ticket.get('status')}')
+        fail(f"ticket {ticket_id} is not executable: {ticket.get('status')}")
     if grant.get('status') != 'active' or token not in caps:
         fail(f'ticket {ticket_id} grant does not include {token}')
     if scope.get('permission_changes_allowed') is not True:

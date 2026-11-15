@@ -104,4 +104,4 @@ def test_channel_create_apply_readback(captured_emit):
     assert payload['channel_readback']['display_name'] == 'Project Alpha'
     assert payload['membership_readback']['added_usernames'] == ['alice']
     assert payload['membership_readback']['member_count_observed'] == 1
-    assert any((c[0] == 'POST' and c[1] == '/api/v4/channels' for c in calls))
+    assert any(c[0] == 'POST' and c[1] == '/api/v4/channels' for c in calls)

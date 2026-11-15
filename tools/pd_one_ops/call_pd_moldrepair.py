@@ -28,7 +28,7 @@ def _build_smoke_prompt() -> str:
 def _invoke(prompt: str, timeout: int) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env['PATH'] = resolve_configured_path('~/.local/bin:') + env.get('PATH', '')
-    return subprocess.run([str(HERMES()), '--profile', PROFILE, 'chat', '-Q', '-q', prompt, '--max-turns', '8'], check=False, capture_output=True, text=True, timeout=timeout, env=env)
+    return subprocess.run([str(HERMES()), '--profile', PROFILE, 'chat', '-Q', '-q', prompt, '--max-turns', '8'], check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env)
 
 def main(argv: list[str] | None=None) -> int:
     parser = argparse.ArgumentParser(description='Call the internal pd-moldrepair bot from PD One only.')

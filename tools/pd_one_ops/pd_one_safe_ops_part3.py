@@ -1,5 +1,5 @@
 from __future__ import annotations
-__all__ = ['cmd_3mf_slicer_inspect', 'cmd_svg_embed_image', 'cmd_pptx_inspect', 'cmd_docx_inspect', 'cmd_docx_body_xml_inspect', 'cmd_pptx_ooxml_text_inspect', 'cmd_docx_table_structure', 'cmd_docx_table_search', 'cmd_legacy_xls_inspect', '_xlsx_preview_value', 'inspect_xlsx_workbooks', 'cmd_xlsx_workbook_inspect', '_load_equipment_workbook_module', 'cmd_equipment_workbook', '_item_number_compiler_python', '_ensure_item_number_compiler_imports', '_load_item_number_compiler_module', '_item_number_smoke_approval', 'item_number_xlsx_compiler_check', 'item_number_xlsx_compiler_smoke', 'cmd_item_number_xlsx_compiler', 'cmd_doc_detect_format', 'render_legacy_xls_summary_pdf', 'inspect_office_toolchain', 'inspect_office_deb_contents', 'cmd_office_deb_contents', 'inspect_item_number_render_qa_status', '_ecrn_approval_pilot_status_blocked', '_summarize_ecrn_approval_pilot_preview', '_summarize_ecrn_approval_pilot_thread', 'inspect_ecrn_approval_pilot_status', 'inspect_timezone_snapshot', '_LoopbackOnlyRedirectHandler', '_protected_portal_allowed_paths', '_protected_portal_fetch', 'inspect_protected_portal_origin_probe', 'inspect_timestamp_to_epoch', 'inspect_epoch_milliseconds_to_iso', 'SHEETS_SERIAL_EPOCH', 'SHEETS_SERIAL_MIN', 'SHEETS_SERIAL_MAX', 'SHEETS_SERIAL_MAX_ITEMS', 'SHEETS_COLUMN_MAX_LEN', 'SHEETS_COLUMN_MAX_INDEX', 'SHEETS_COLUMN_MAX_ITEMS', 'SHEETS_RANGE_MAX_ITEMS', '_a1_column_to_index', 'inspect_sheets_serial_column_convert', 'cmd_timezone_snapshot', 'cmd_protected_portal_origin_probe', 'cmd_timestamp_to_epoch', 'cmd_epoch_milliseconds_to_iso', 'cmd_sheets_serial_column_convert', 'cmd_office_toolchain_status', 'cmd_item_number_render_qa_status', 'cmd_item_number_historical_sample_summary', 'cmd_item_number_local_fixture_copy', 'cmd_item_number_windows_excel_qa', 'cmd_ecrn_approval_pilot_status', 'cmd_ecrn_approval_pilot_check', '_item_number_workflow_component_paths', 'cmd_item_number_workflow_check', 'convert_office_to_pdf', 'cmd_office_convert_pdf', '_require_str', '_require_list', '_apply_table', 'build_html_from_paragraph_spec', 'cmd_json_html_artifact', '_iter_docx_table_paragraphs', '_iter_docx_story_paragraphs', 'inspect_or_stage_docx_layout', 'cmd_docx_layout_patch', '_replace_one_visible_paragraph_text', 'build_company_announcement_from_spec', 'build_docx_from_spec', '_office_visual_qa_file_receipts', 'run_office_visual_qa', 'run_visual_qa', '_office_docprops_local_name', '_office_docprops_safe_member', '_office_docprops_parse_xml', 'cmd_office_docprops_inspect', 'cmd_office_visual_qa', 'convert_html_to_docx', 'cmd_office_html_to_docx', 'cmd_office_file_ops', 'cmd_doc_build', '_load_ecrn_docx_patch_module', 'cmd_ecrn_docx_unique_text_patch']
+__all__ = ['SHEETS_COLUMN_MAX_INDEX', 'SHEETS_COLUMN_MAX_ITEMS', 'SHEETS_COLUMN_MAX_LEN', 'SHEETS_RANGE_MAX_ITEMS', 'SHEETS_SERIAL_EPOCH', 'SHEETS_SERIAL_MAX', 'SHEETS_SERIAL_MAX_ITEMS', 'SHEETS_SERIAL_MIN', '_LoopbackOnlyRedirectHandler', '_a1_column_to_index', '_apply_table', '_ecrn_approval_pilot_status_blocked', '_ensure_item_number_compiler_imports', '_item_number_compiler_python', '_item_number_smoke_approval', '_item_number_workflow_component_paths', '_iter_docx_story_paragraphs', '_iter_docx_table_paragraphs', '_load_ecrn_docx_patch_module', '_load_equipment_workbook_module', '_load_item_number_compiler_module', '_office_docprops_local_name', '_office_docprops_parse_xml', '_office_docprops_safe_member', '_office_visual_qa_file_receipts', '_protected_portal_allowed_paths', '_protected_portal_fetch', '_replace_one_visible_paragraph_text', '_require_list', '_require_str', '_summarize_ecrn_approval_pilot_preview', '_summarize_ecrn_approval_pilot_thread', '_xlsx_preview_value', 'build_company_announcement_from_spec', 'build_docx_from_spec', 'build_html_from_paragraph_spec', 'cmd_3mf_slicer_inspect', 'cmd_doc_build', 'cmd_doc_detect_format', 'cmd_docx_body_xml_inspect', 'cmd_docx_inspect', 'cmd_docx_layout_patch', 'cmd_docx_table_search', 'cmd_docx_table_structure', 'cmd_ecrn_approval_pilot_check', 'cmd_ecrn_approval_pilot_status', 'cmd_ecrn_docx_unique_text_patch', 'cmd_epoch_milliseconds_to_iso', 'cmd_equipment_workbook', 'cmd_item_number_historical_sample_summary', 'cmd_item_number_local_fixture_copy', 'cmd_item_number_render_qa_status', 'cmd_item_number_windows_excel_qa', 'cmd_item_number_workflow_check', 'cmd_item_number_xlsx_compiler', 'cmd_json_html_artifact', 'cmd_legacy_xls_inspect', 'cmd_office_convert_pdf', 'cmd_office_deb_contents', 'cmd_office_docprops_inspect', 'cmd_office_file_ops', 'cmd_office_html_to_docx', 'cmd_office_toolchain_status', 'cmd_office_visual_qa', 'cmd_pptx_inspect', 'cmd_pptx_ooxml_text_inspect', 'cmd_protected_portal_origin_probe', 'cmd_sheets_serial_column_convert', 'cmd_svg_embed_image', 'cmd_timestamp_to_epoch', 'cmd_timezone_snapshot', 'cmd_xlsx_workbook_inspect', 'convert_html_to_docx', 'convert_office_to_pdf', 'inspect_ecrn_approval_pilot_status', 'inspect_epoch_milliseconds_to_iso', 'inspect_item_number_render_qa_status', 'inspect_office_deb_contents', 'inspect_office_toolchain', 'inspect_or_stage_docx_layout', 'inspect_protected_portal_origin_probe', 'inspect_sheets_serial_column_convert', 'inspect_timestamp_to_epoch', 'inspect_timezone_snapshot', 'inspect_xlsx_workbooks', 'item_number_xlsx_compiler_check', 'item_number_xlsx_compiler_smoke', 'render_legacy_xls_summary_pdf', 'run_office_visual_qa', 'run_visual_qa']
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import argparse
@@ -30,7 +30,7 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 from pathlib import Path
 from statistics import mean, median
 from typing import Any
@@ -62,7 +62,7 @@ def cmd_3mf_slicer_inspect(args: argparse.Namespace) -> None:
         'Inspect or stage allowlisted PrusaSlicer metadata from one approved .3mf.'
         action = args.action
         source = Path(args.input).resolve(strict=False)
-        if not any((is_within(source, root) for root in THREEMF_SLICER_INPUT_ROOTS())):
+        if not any(is_within(source, root) for root in THREEMF_SLICER_INPUT_ROOTS()):
             fail(f'path is outside approved PD One 3MF roots: {source}')
         if not source.is_file() or source.suffix.lower() != '.3mf':
             fail(f'input must be a regular .3mf file: {source}')
@@ -177,7 +177,7 @@ def cmd_3mf_slicer_inspect(args: argparse.Namespace) -> None:
 def cmd_svg_embed_image(args: argparse.Namespace) -> None:
     """Inspect or stage one SVG with the fixed Pro-Design logo embedded as a data URI."""
     path = Path(args.input).resolve(strict=False)
-    if not any((is_within(path, root) for root in ARTIFACT_BASE64_ALLOWED_ROOTS())):
+    if not any(is_within(path, root) for root in ARTIFACT_BASE64_ALLOWED_ROOTS()):
         fail(f'path is outside approved PD One artifact roots: {path}')
     if not path.is_file() or path.suffix.lower() != '.svg':
         fail(f'input must be a regular .svg file: {path}')
@@ -185,7 +185,7 @@ def cmd_svg_embed_image(args: argparse.Namespace) -> None:
     if size > SVG_EMBED_IMAGE_MAX_SVG_BYTES:
         fail(f'SVG exceeds {SVG_EMBED_IMAGE_MAX_SVG_BYTES} byte limit: {size}')
     try:
-        source = path.read_text(encoding='utf-8')
+        source = path.read_text(encoding='utf-8-sig')
     except UnicodeDecodeError:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         fail('SVG must be valid UTF-8')
@@ -227,7 +227,7 @@ def cmd_svg_embed_image(args: argparse.Namespace) -> None:
         os.replace(temp_output, output)
     finally:
         temp_output.unlink(missing_ok=True)
-    readback = output.read_text(encoding='utf-8')
+    readback = output.read_text(encoding='utf-8-sig')
     if SVG_EMBED_IMAGE_ALLOWED_URL in readback or data_uri not in readback:
         fail('staged SVG readback verification failed')
     if hashlib.sha256(path.read_bytes()).hexdigest() != source_sha256:
@@ -434,7 +434,7 @@ def _ensure_item_number_compiler_imports() -> None:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
     site_packages = ITEM_NUMBER_COMPILER_ROOT() / '.venv' / 'lib' / f'python{sys.version_info.major}.{sys.version_info.minor}' / 'site-packages'
     if not site_packages.is_dir():
-        fail(f'item-number compiler is missing openpyxl/xlrd; install compiler/requirements.txt into {ITEM_NUMBER_COMPILER_ROOT() / '.venv'}')
+        fail(f"item-number compiler is missing openpyxl/xlrd; install compiler/requirements.txt into {ITEM_NUMBER_COMPILER_ROOT() / '.venv'}")
     sys.path.append(str(site_packages))
 
 def _load_item_number_compiler_module() -> Any:
@@ -453,7 +453,7 @@ def _item_number_smoke_approval(target: str='department_manager') -> dict[str, A
     if target == 'department_manager':
         return {'display_name': ITEM_NUMBER_SMOKE_DISPLAY_NAME, 'create_at': ITEM_NUMBER_SMOKE_CREATE_AT, 'status': '同意', 'user_id': ITEM_NUMBER_SMOKE_USER_ID, 'post_id': ITEM_NUMBER_SMOKE_POST_ID, 'revision_hash': ITEM_NUMBER_SMOKE_REVISION_HASH, 'comments': ITEM_NUMBER_SMOKE_COMMENTS}
     seed = hashlib.sha256(target.encode('utf-8')).hexdigest()
-    return {'display_name': ITEM_NUMBER_SMOKE_DISPLAY_NAME, 'create_at': ITEM_NUMBER_SMOKE_CREATE_AT, 'status': '同意', 'user_id': seed[:26], 'post_id': hashlib.sha256(f'post:{target}'.encode('utf-8')).hexdigest()[:26], 'revision_hash': hashlib.sha256(f'revision:{target}'.encode('utf-8')).hexdigest(), 'comments': f'{ITEM_NUMBER_SMOKE_COMMENTS} [{target}]'}
+    return {'display_name': ITEM_NUMBER_SMOKE_DISPLAY_NAME, 'create_at': ITEM_NUMBER_SMOKE_CREATE_AT, 'status': '同意', 'user_id': seed[:26], 'post_id': hashlib.sha256(f'post:{target}'.encode()).hexdigest()[:26], 'revision_hash': hashlib.sha256(f'revision:{target}'.encode()).hexdigest(), 'comments': f'{ITEM_NUMBER_SMOKE_COMMENTS} [{target}]'}
 
 def item_number_xlsx_compiler_check(runner=run_capture) -> dict[str, Any]:
     if not ITEM_NUMBER_COMPILER_SCRIPT().exists():
@@ -556,7 +556,7 @@ def render_legacy_xls_summary_pdf(source: Path, out: Path, *, lo_error: dict[str
     for index, sheet in enumerate(sheets):
         if index:
             story.append(PageBreak())
-        story.append(Paragraph(f'Sheet {sheet.get('index')} — {sheet.get('name')}', styles['Heading2']))
+        story.append(Paragraph(f"Sheet {sheet.get('index')} — {sheet.get('name')}", styles['Heading2']))
         story.append(Preformatted(json.dumps(sheet, ensure_ascii=False, indent=2), code_style))
     doc = SimpleDocTemplate(str(out), pagesize=landscape(A4), leftMargin=1.0 * cm, rightMargin=1.0 * cm, topMargin=1.0 * cm, bottomMargin=1.0 * cm)
     doc.build(story)
@@ -583,7 +583,7 @@ def inspect_office_deb_contents(package_path: Path) -> dict[str, Any]:
     proc = run_capture([dpkg_deb, '--contents', str(package)], timeout=30)
     all_lines = proc.stdout.splitlines()
     lines = all_lines[:OFFICE_DEB_CONTENT_MAX_LINES]
-    matches = [line for line in lines if any((marker in line.lower() for marker in ('registry', '.xcd', 'calc')))]
+    matches = [line for line in lines if any(marker in line.lower() for marker in ('registry', '.xcd', 'calc'))]
     return {'status': 'ok' if proc.returncode == 0 else 'error', 'capability': 'pd_one_office_deb_contents', 'package': str(package), 'returncode': proc.returncode, 'matched_paths': matches, 'matched_count': len(matches), 'content_lines_inspected': len(lines), 'truncated': len(all_lines) > OFFICE_DEB_CONTENT_MAX_LINES, 'stderr': tail_text(proc.stderr.strip()), 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True}}
 
 def cmd_office_deb_contents(args: argparse.Namespace) -> None:
@@ -594,19 +594,19 @@ def inspect_item_number_render_qa_status() -> dict[str, Any]:
     evidence_files = {'qa_artifacts': ITEM_NUMBER_RENDER_QA_ARTIFACTS(), 'render_results': ITEM_NUMBER_RENDER_QA_RESULTS(), 'test_report': ITEM_NUMBER_RENDER_QA_TEST_REPORT(), 'admin_packet': ITEM_NUMBER_RENDER_QA_ADMIN_PACKET(), 'template': ITEM_NUMBER_RENDER_QA_TEMPLATE()}
     missing = [name for name, path in evidence_files.items() if not path.exists()]
     if missing:
-        return {'status': 'blocked', 'capability': 'pd_one_item_number_render_qa_status', 'qa_dir': str(ITEM_NUMBER_RENDER_QA_ROOT()), 'missing_evidence': missing, 'evidence_files': {name: str(path) for name, path in evidence_files.items()}, 'toolchain': toolchain, 'blocker': 'missing_render_qa_receipts', 'next_step': 'Recreate the fixed item-number workflow render receipts with the registered PD One local LibreOffice Calc environment, then retry the status wrapper.', 'display_lines': [f'qa_dir={ITEM_NUMBER_RENDER_QA_ROOT()}', f'missing_evidence={', '.join(missing)}'], 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True}}
+        return {'status': 'blocked', 'capability': 'pd_one_item_number_render_qa_status', 'qa_dir': str(ITEM_NUMBER_RENDER_QA_ROOT()), 'missing_evidence': missing, 'evidence_files': {name: str(path) for name, path in evidence_files.items()}, 'toolchain': toolchain, 'blocker': 'missing_render_qa_receipts', 'next_step': 'Recreate the fixed item-number workflow render receipts with the registered PD One local LibreOffice Calc environment, then retry the status wrapper.', 'display_lines': [f'qa_dir={ITEM_NUMBER_RENDER_QA_ROOT()}', f"missing_evidence={', '.join(missing)}"], 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True}}
     if ITEM_NUMBER_LOCAL_QA_RECEIPT().is_file():
         try:
-            local_receipt = json.loads(ITEM_NUMBER_LOCAL_QA_RECEIPT().read_text(encoding='utf-8'))
+            local_receipt = json.loads(ITEM_NUMBER_LOCAL_QA_RECEIPT().read_text(encoding='utf-8-sig'))
         except Exception as exc:
             logging.getLogger('pd_one_ops').exception('pd one command failed')
             local_receipt = {'status': 'error', 'error': f'local receipt parse failed: {exc}'}
         local_fixtures = local_receipt.get('fixtures') if isinstance(local_receipt.get('fixtures'), dict) else {}
-        local_ok = local_receipt.get('status') == 'ok' and set(ITEM_NUMBER_LOCAL_QA_INPUTS()).issubset(local_fixtures) and all((isinstance(value, dict) and int(value.get('pdf_size_bytes') or 0) > 0 and (int(value.get('page_count') or 0) > 0) and (int(value.get('png_count') or 0) == int(value.get('page_count') or 0)) for value in local_fixtures.values()))
+        local_ok = local_receipt.get('status') == 'ok' and set(ITEM_NUMBER_LOCAL_QA_INPUTS()).issubset(local_fixtures) and all(isinstance(value, dict) and int(value.get('pdf_size_bytes') or 0) > 0 and (int(value.get('page_count') or 0) > 0) and (int(value.get('png_count') or 0) == int(value.get('page_count') or 0)) for value in local_fixtures.values())
         return {'status': 'ok' if local_ok else 'blocked', 'capability': 'pd_one_item_number_render_qa_status', 'qa_dir': str(ITEM_NUMBER_RENDER_QA_ROOT()), 'local_qa_receipt': str(ITEM_NUMBER_LOCAL_QA_RECEIPT()), 'office_environment_id': local_receipt.get('office_environment_id'), 'renderer': local_receipt.get('renderer'), 'fixtures': local_fixtures, 'production_qualified': False, 'blocker': None if local_ok else 'local_libreoffice_render_qa_incomplete', 'next_step': 'Keep this receipt pilot-only; production qualification remains separately gated.' if local_ok else 'Re-run the fixed typed local LibreOffice render-QA capability and inspect its receipt.', 'toolchain': toolchain, 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True}}
     try:
-        qa_data = json.loads(ITEM_NUMBER_RENDER_QA_ARTIFACTS().read_text(encoding='utf-8'))
-        render_data = json.loads(ITEM_NUMBER_RENDER_QA_RESULTS().read_text(encoding='utf-8'))
+        qa_data = json.loads(ITEM_NUMBER_RENDER_QA_ARTIFACTS().read_text(encoding='utf-8-sig'))
+        render_data = json.loads(ITEM_NUMBER_RENDER_QA_RESULTS().read_text(encoding='utf-8-sig'))
     except Exception as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return {'status': 'blocked', 'capability': 'pd_one_item_number_render_qa_status', 'qa_dir': str(ITEM_NUMBER_RENDER_QA_ROOT()), 'toolchain': toolchain, 'error': f'receipt parse failed: {exc}', 'blocker': 'receipt_parse_failed', 'next_step': 'Recreate the qa-artifacts-final receipts with the registered PD One local LibreOffice Calc environment and retry the status wrapper.', 'display_lines': [f'qa_dir={ITEM_NUMBER_RENDER_QA_ROOT()}', f'error={exc}'], 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True}}
@@ -614,7 +614,7 @@ def inspect_item_number_render_qa_status() -> dict[str, Any]:
     render_routes = render_data.get('routes') if isinstance(render_data.get('routes'), dict) else {}
     migration = qa_data.get('migration') if isinstance(qa_data.get('migration'), dict) else {}
     route_order = [name for name in ('procurement', 'production', 'special') if name in outputs]
-    route_order.extend(sorted((name for name in outputs if name not in route_order)))
+    route_order.extend(sorted(name for name in outputs if name not in route_order))
     routes: dict[str, Any] = {}
     all_production_qualified = True
     all_rendered = True
@@ -630,10 +630,10 @@ def inspect_item_number_render_qa_status() -> dict[str, Any]:
     status = 'ok' if all_production_qualified and all_rendered else 'blocked'
     blocker = None if status == 'ok' else 'registered_local_libreoffice_render_qa_required'
     next_step = 'Call certify-render with the passed receipt and the required render-certification fields.' if status == 'ok' else 'Use the registered PD One local LibreOffice Calc environment to render the fixed qa-artifacts-final template, visually inspect every page, then call certify-render with exact template/source/PDF hashes, office_environment_id, renderer version/path, certifier_user_id, certified_at, page_count, and passed visual checks.'
-    return {'status': status, 'capability': 'pd_one_item_number_render_qa_status', 'qa_dir': str(ITEM_NUMBER_RENDER_QA_ROOT()), 'source': {'path': migration.get('source_path') or str(ITEM_NUMBER_SOURCE_XLS()), 'sha256': qa_data.get('source_sha256') or migration.get('source_sha256')}, 'template': {'path': qa_data.get('template') or str(ITEM_NUMBER_RENDER_QA_TEMPLATE()), 'sha256': migration.get('template_sha256'), 'manifest_path': migration.get('manifest_path')}, 'toolchain': toolchain, 'evidence_files': {name: str(path) for name, path in evidence_files.items()}, 'routes': routes, 'blocker': blocker, 'next_step': next_step, 'display_lines': [f'qa_dir={ITEM_NUMBER_RENDER_QA_ROOT()}', f'status={status}', f'blocker={blocker or 'none'}'], 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True}}
+    return {'status': status, 'capability': 'pd_one_item_number_render_qa_status', 'qa_dir': str(ITEM_NUMBER_RENDER_QA_ROOT()), 'source': {'path': migration.get('source_path') or str(ITEM_NUMBER_SOURCE_XLS()), 'sha256': qa_data.get('source_sha256') or migration.get('source_sha256')}, 'template': {'path': qa_data.get('template') or str(ITEM_NUMBER_RENDER_QA_TEMPLATE()), 'sha256': migration.get('template_sha256'), 'manifest_path': migration.get('manifest_path')}, 'toolchain': toolchain, 'evidence_files': {name: str(path) for name, path in evidence_files.items()}, 'routes': routes, 'blocker': blocker, 'next_step': next_step, 'display_lines': [f'qa_dir={ITEM_NUMBER_RENDER_QA_ROOT()}', f'status={status}', f"blocker={blocker or 'none'}"], 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True}}
 
 def _ecrn_approval_pilot_status_blocked(reason: str, next_step: str, *, detail: str='', root_id: str='') -> dict[str, Any]:
-    return {'status': 'blocked', 'capability': 'pd_one_ecrn_approval_pilot_status', 'state_path': str(ECRN_APPROVAL_PILOT_STATE()), 'source_script': str(ECRN_APPROVAL_PILOT_SCRIPT()), 'root_id': root_id, 'blocker': reason, 'detail': detail, 'next_step': next_step, 'display_lines': [f'state={ECRN_APPROVAL_PILOT_STATE()}', f'blocker={reason}', f'detail={detail or 'none'}'], 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True}}
+    return {'status': 'blocked', 'capability': 'pd_one_ecrn_approval_pilot_status', 'state_path': str(ECRN_APPROVAL_PILOT_STATE()), 'source_script': str(ECRN_APPROVAL_PILOT_SCRIPT()), 'root_id': root_id, 'blocker': reason, 'detail': detail, 'next_step': next_step, 'display_lines': [f'state={ECRN_APPROVAL_PILOT_STATE()}', f'blocker={reason}', f"detail={detail or 'none'}"], 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True}}
 
 def _summarize_ecrn_approval_pilot_preview(root_id: str, thread: dict[str, Any], source_file_id: str, receipt: Any) -> dict[str, Any] | None:
     if not isinstance(receipt, dict):
@@ -665,13 +665,13 @@ def _summarize_ecrn_approval_pilot_thread(root_id: str, thread: dict[str, Any], 
             pending_deletion_verification_count += 1
     approval_groups = sorted({group for receipt in approvals.values() if isinstance(receipt, dict) for group in receipt.get('approval_groups') or []})
     complete_post_message = str(all_required_complete_posted.get('message') or '') if all_required_complete_posted else ''
-    return ({'root_id': root_id, 'ecrn_no': str(thread.get('ecrn_no') or ''), 'stage': str(thread.get('stage') or ''), 'routing_blocked': bool(thread.get('routing_blocked')), 'signed_document_posted': bool(thread.get('signed_document_posted')), 'final_document_stage': str(thread.get('final_document_stage') or ''), 'approval_count': len(approvals), 'approval_groups': approval_groups, 'preview_count': len(preview_pdfs), 'deleted_preview_count': deleted_preview_count, 'pending_deletion_verification_count': pending_deletion_verification_count, 'all_required_complete_posted': bool(all_required_complete_posted), 'all_required_complete_posted_id': str(all_required_complete_posted.get('id') or ''), 'all_required_complete_posted_reply_count': all_required_complete_posted.get('reply_count'), 'all_required_complete_posted_excerpt': tail_text(complete_post_message, 160), 'display_lines': [f'root_id={root_id}', f'stage={thread.get('stage') or ''}', f'preview_count={len(preview_pdfs)} signed_document_posted={bool(thread.get('signed_document_posted'))}']}, preview_receipts)
+    return ({'root_id': root_id, 'ecrn_no': str(thread.get('ecrn_no') or ''), 'stage': str(thread.get('stage') or ''), 'routing_blocked': bool(thread.get('routing_blocked')), 'signed_document_posted': bool(thread.get('signed_document_posted')), 'final_document_stage': str(thread.get('final_document_stage') or ''), 'approval_count': len(approvals), 'approval_groups': approval_groups, 'preview_count': len(preview_pdfs), 'deleted_preview_count': deleted_preview_count, 'pending_deletion_verification_count': pending_deletion_verification_count, 'all_required_complete_posted': bool(all_required_complete_posted), 'all_required_complete_posted_id': str(all_required_complete_posted.get('id') or ''), 'all_required_complete_posted_reply_count': all_required_complete_posted.get('reply_count'), 'all_required_complete_posted_excerpt': tail_text(complete_post_message, 160), 'display_lines': [f'root_id={root_id}', f"stage={thread.get('stage') or ''}", f"preview_count={len(preview_pdfs)} signed_document_posted={bool(thread.get('signed_document_posted'))}"]}, preview_receipts)
 
 def inspect_ecrn_approval_pilot_status(root_id: str | None=None, max_threads: int=20, max_previews: int=5) -> dict[str, Any]:
     if not ECRN_APPROVAL_PILOT_STATE().exists():
         return _ecrn_approval_pilot_status_blocked('state_file_missing', 'Run the deterministic ECRN approval pilot once so the state file is created, then retry the status wrapper.')
     try:
-        state = json.loads(ECRN_APPROVAL_PILOT_STATE().read_text(encoding='utf-8'))
+        state = json.loads(ECRN_APPROVAL_PILOT_STATE().read_text(encoding='utf-8-sig'))
     except Exception as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return _ecrn_approval_pilot_status_blocked('state_parse_failed', 'Re-read the ECRN approval-pilot state after the JSON issue is fixed, then retry the status wrapper.', detail=str(exc))
@@ -695,15 +695,15 @@ def inspect_ecrn_approval_pilot_status(root_id: str | None=None, max_threads: in
         thread_summary, previews = _summarize_ecrn_approval_pilot_thread(selected_root_id, thread, max_previews=max_previews)
         thread_summaries.append(thread_summary)
         preview_receipts.extend(previews)
-    thread_stage_counts = dict(collections.Counter((str(thread.get('stage') or 'unknown') for thread in threads.values() if isinstance(thread, dict))))
-    preview_status_counts = dict(collections.Counter((str(receipt.get('status') or 'unknown') for thread in threads.values() if isinstance(thread, dict) for receipt in (thread.get('preview_pdfs') or {}).values() if isinstance(receipt, dict))))
-    threads_with_preview_pdfs = sum((1 for thread in threads.values() if isinstance(thread, dict) and bool(thread.get('preview_pdfs'))))
-    threads_with_signed_document_posted = sum((1 for thread in threads.values() if isinstance(thread, dict) and bool(thread.get('signed_document_posted'))))
-    threads_with_complete_post = sum((1 for thread in threads.values() if isinstance(thread, dict) and bool(thread.get('all_required_complete_posted'))))
+    thread_stage_counts = dict(collections.Counter(str(thread.get('stage') or 'unknown') for thread in threads.values() if isinstance(thread, dict)))
+    preview_status_counts = dict(collections.Counter(str(receipt.get('status') or 'unknown') for thread in threads.values() if isinstance(thread, dict) for receipt in (thread.get('preview_pdfs') or {}).values() if isinstance(receipt, dict)))
+    threads_with_preview_pdfs = sum(1 for thread in threads.values() if isinstance(thread, dict) and bool(thread.get('preview_pdfs')))
+    threads_with_signed_document_posted = sum(1 for thread in threads.values() if isinstance(thread, dict) and bool(thread.get('signed_document_posted')))
+    threads_with_complete_post = sum(1 for thread in threads.values() if isinstance(thread, dict) and bool(thread.get('all_required_complete_posted')))
     return {'status': 'ok', 'capability': 'pd_one_ecrn_approval_pilot_status', 'state_path': str(ECRN_APPROVAL_PILOT_STATE()), 'source_script': str(ECRN_APPROVAL_PILOT_SCRIPT()), 'root_id': normalized_root_id, 'policy': {'office_preview_delete_when_complete': bool(state.get('office_preview_delete_when_complete')), 'office_preview_new_threads_after_ms': state.get('office_preview_new_threads_after_ms'), 'office_preview_retention_enabled_at_utc': state.get('office_preview_retention_enabled_at_utc')}, 'thread_count': len(threads), 'selected_thread_count': len(thread_summaries), 'selected_root_ids': [summary.get('root_id') for summary in thread_summaries], 'threads_with_preview_pdfs': threads_with_preview_pdfs, 'threads_with_signed_document_posted': threads_with_signed_document_posted, 'threads_with_complete_post': threads_with_complete_post, 'thread_stage_counts': thread_stage_counts, 'preview_receipt_count': len(preview_receipts), 'preview_status_counts': preview_status_counts, 'threads': thread_summaries, 'preview_receipts': preview_receipts, 'display_lines': [f'state={ECRN_APPROVAL_PILOT_STATE()}', f'threads={len(threads)} selected={len(thread_summaries)} preview_receipts={len(preview_receipts)}', f'signed_document_posted={threads_with_signed_document_posted} preview_threads={threads_with_preview_pdfs}'], 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True}}
 
 def inspect_timezone_snapshot() -> dict[str, Any]:
-    snapshot_utc = datetime.now(timezone.utc).replace(microsecond=0)
+    snapshot_utc = datetime.now(UTC).replace(microsecond=0)
     snapshot_taipei = snapshot_utc.astimezone(ZoneInfo('Asia/Taipei'))
     utc_text = snapshot_utc.isoformat().replace('+00:00', 'Z')
     taipei_text = snapshot_taipei.isoformat()
@@ -725,7 +725,7 @@ def _protected_portal_allowed_paths() -> set[str]:
         allowed.add('/qa/')
         return allowed
     try:
-        payload = json.loads(PROTECTED_PORTAL_MANIFEST().read_text(encoding='utf-8'))
+        payload = json.loads(PROTECTED_PORTAL_MANIFEST().read_text(encoding='utf-8-sig'))
     except (OSError, json.JSONDecodeError):
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         allowed.add('/qa/')
@@ -788,7 +788,7 @@ def _protected_portal_fetch(path: str, email: str | None) -> dict[str, Any]:
     except OSError as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         error = f'oserror:{exc}'
-    title_match = re.search('<title>([^<]{0,80})', body, flags=re.I)
+    title_match = re.search('<title>([^<]{0,80})', body, flags=re.IGNORECASE)
     title = (title_match.group(1).strip() if title_match else '')[:PROTECTED_PORTAL_ORIGIN_TITLE_CAP]
     as_of = ''
     as_of_match = re.search('"as_of_date"\\s*:\\s*"([0-9-]{10})"', body)
@@ -805,7 +805,7 @@ def inspect_protected_portal_origin_probe(extra_probes: list[dict[str, Any]] | N
         if path not in allowed_paths:
             fail(f'probe path is not allowlisted: {path}')
         checks[str(probe['label'])] = _protected_portal_fetch(path, probe.get('email'))
-    display_lines = [f'{label} status={item.get('status')} len={item.get('body_len')} err={item.get('error')}' for label, item in checks.items()]
+    display_lines = [f"{label} status={item.get('status')} len={item.get('body_len')} err={item.get('error')}" for label, item in checks.items()]
     return {'status': 'ok', 'capability': 'pd_one_protected_portal_origin_probe', 'origin': f'http://{PROTECTED_PORTAL_ORIGIN_HOST}:{PROTECTED_PORTAL_ORIGIN_PORT}', 'probe_count': len(checks), 'checks': checks, 'display_lines': display_lines, 'safety': {'read_only': True, 'loopback_only': True, 'shell_used': False, 'source_system_writes_forbidden': True, 'body_returned': False, 'public_hostname_forbidden': True, 'service_restart_forbidden': True}}
 
 def inspect_timestamp_to_epoch(timestamp: str) -> dict[str, Any]:
@@ -824,7 +824,7 @@ def inspect_timestamp_to_epoch(timestamp: str) -> dict[str, Any]:
         fail('timestamp must include an explicit timezone offset')
     epoch_seconds = parsed.timestamp()
     epoch_milliseconds = int(epoch_seconds * 1000)
-    normalized_utc = parsed.astimezone(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    normalized_utc = parsed.astimezone(UTC).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
     return {'status': 'ok', 'capability': 'pd_one_timestamp_to_epoch', 'input_timestamp': value, 'normalized_utc': normalized_utc, 'epoch_seconds': epoch_seconds, 'epoch_milliseconds': epoch_milliseconds, 'display_lines': [f'input={value}', f'normalized_utc={normalized_utc}', f'epoch_milliseconds={epoch_milliseconds}'], 'safety': {'read_only': True, 'shell_used': False, 'source_system_writes_forbidden': True, 'bounded_input': True, 'explicit_timezone_required': True}}
 
 def inspect_epoch_milliseconds_to_iso(epoch_milliseconds: list[int]) -> dict[str, Any]:
@@ -839,8 +839,8 @@ def inspect_epoch_milliseconds_to_iso(epoch_milliseconds: list[int]) -> dict[str
             fail('epoch_milliseconds values must be integers')
         if raw < 0 or raw > 4102444800000:
             fail('epoch_milliseconds values must be between 0 and 4102444800000')
-        converted.append({'epoch_milliseconds': raw, 'utc_iso': datetime.fromtimestamp(raw / 1000, tz=timezone.utc).isoformat()})
-    return {'status': 'ok', 'capability': 'pd_one_epoch_milliseconds_to_iso', 'values': converted, 'display_lines': [f'{item['epoch_milliseconds']} {item['utc_iso']}' for item in converted], 'safety': {'read_only': True, 'deterministic': True, 'shell_used': False, 'source_system_writes_forbidden': True, 'bounded_input': True}}
+        converted.append({'epoch_milliseconds': raw, 'utc_iso': datetime.fromtimestamp(raw / 1000, tz=UTC).isoformat()})
+    return {'status': 'ok', 'capability': 'pd_one_epoch_milliseconds_to_iso', 'values': converted, 'display_lines': [f"{item['epoch_milliseconds']} {item['utc_iso']}" for item in converted], 'safety': {'read_only': True, 'deterministic': True, 'shell_used': False, 'source_system_writes_forbidden': True, 'bounded_input': True}}
 SHEETS_SERIAL_EPOCH = date(1899, 12, 30)
 SHEETS_SERIAL_MIN = 0
 SHEETS_SERIAL_MAX = 2958465
@@ -895,7 +895,7 @@ def inspect_sheets_serial_column_convert(serials: list[int] | None=None, columns
         if end_index < start_index:
             fail('range end column must be at or after the start column')
         converted_ranges.append({'range': f'{start_letter}:{end_letter}', 'start_letter': start_letter, 'start_index': start_index, 'end_letter': end_letter, 'end_index': end_index, 'width': end_index - start_index + 1})
-    display_lines = [f'{item['serial']} {item['iso_date']}' for item in converted_serials] + [f'{item['letter']} {item['index']}' for item in converted_columns] + [f'{item['range']} width={item['width']}' for item in converted_ranges]
+    display_lines = [f"{item['serial']} {item['iso_date']}" for item in converted_serials] + [f"{item['letter']} {item['index']}" for item in converted_columns] + [f"{item['range']} width={item['width']}" for item in converted_ranges]
     return {'status': 'ok', 'capability': 'pd_one_sheets_serial_column_convert', 'epoch': '1899-12-30', 'epoch_name': 'google_sheets', 'serials': converted_serials, 'columns': converted_columns, 'ranges': converted_ranges, 'display_lines': display_lines, 'safety': {'read_only': True, 'deterministic': True, 'shell_used': False, 'source_system_writes_forbidden': True, 'bounded_input': True, 'excel_1900_leap_bug_not_applied': True}}
 
 def cmd_timezone_snapshot(args: argparse.Namespace) -> None:
@@ -939,7 +939,7 @@ def cmd_item_number_historical_sample_summary(args: argparse.Namespace) -> None:
     if not ITEM_NUMBER_HISTORICAL_RECEIPT().is_file():
         fail(f'historical copyout receipt not found: {ITEM_NUMBER_HISTORICAL_RECEIPT()}')
     try:
-        receipt = json.loads(ITEM_NUMBER_HISTORICAL_RECEIPT().read_text(encoding='utf-8'))
+        receipt = json.loads(ITEM_NUMBER_HISTORICAL_RECEIPT().read_text(encoding='utf-8-sig'))
     except Exception as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         fail(f'historical copyout receipt is invalid JSON: {exc}')
@@ -952,7 +952,7 @@ def cmd_item_number_historical_sample_summary(args: argparse.Namespace) -> None:
             fail(f'historical sample path is outside the fixed sample root: {path}')
         if not path.is_file():
             fail(f'historical sample is missing: {path}')
-    proc = subprocess.run([sys.executable, str(ITEM_NUMBER_HISTORICAL_SCRIPT())], cwd=str(ITEM_NUMBER_WORKFLOW_ROOT()), env=safe_env(), text=True, capture_output=True, shell=False, timeout=180)
+    proc = subprocess.run([sys.executable, str(ITEM_NUMBER_HISTORICAL_SCRIPT())], check=False, cwd=str(ITEM_NUMBER_WORKFLOW_ROOT()), env=safe_env(), text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=180)
     result = {'status': 'ok' if proc.returncode == 0 and ITEM_NUMBER_HISTORICAL_OUTPUT().is_file() else 'error', 'capability': 'pd_one_item_number_historical_sample_summary', 'action': 'summarize', 'sample_count': 10, 'script': str(ITEM_NUMBER_HISTORICAL_SCRIPT()), 'receipt': str(ITEM_NUMBER_HISTORICAL_RECEIPT()), 'output': str(ITEM_NUMBER_HISTORICAL_OUTPUT()), 'returncode': proc.returncode, 'stdout_tail': tail_text(proc.stdout), 'stderr_tail': tail_text(proc.stderr), 'safety': {'shell_used': False, 'source_inputs_read_only': True, 'fixed_sample_root': True, 'local_artifact_write_only': True, 'source_system_writes_forbidden': True, 'external_sends_forbidden': True}}
     emit(result)
     if result['status'] != 'ok':
@@ -989,7 +989,7 @@ def cmd_item_number_local_fixture_copy(args: argparse.Namespace) -> None:
         pngs = sorted(ITEM_NUMBER_LOCAL_QA_ROOT().glob(f'{name}-page-*.png'))
         fixture_ok = info_proc.returncode == 0 and raster_proc.returncode == 0 and (page_count > 0) and (len(pngs) == page_count)
         fixtures[name] = {'status': 'ok' if fixture_ok else 'error', 'source': str(source), 'source_sha256': hashlib.sha256(source_bytes).hexdigest(), 'staged': str(staged), 'staged_sha256': hashlib.sha256(staged_bytes).hexdigest(), 'pdf': str(pdf), 'pdf_sha256': conversion['sha256'], 'pdf_size_bytes': conversion['output_size_bytes'], 'page_count': page_count, 'png_count': len(pngs), 'pngs': [str(path) for path in pngs], 'cjk_visual_check': 'required_on_rasterized_pages', 'renderer': conversion['renderer'], 'render_mode': conversion['render_mode']}
-    all_ok = all((value.get('status') == 'ok' for value in fixtures.values()))
+    all_ok = all(value.get('status') == 'ok' for value in fixtures.values())
     renderer_version = run_capture([renderer, '--version'], timeout=30)
     environment_material = json.dumps({'renderer': renderer, 'version': renderer_version.stdout.strip()}, sort_keys=True).encode('utf-8')
     result = {'status': 'ok' if all_ok else 'error', 'capability': 'pd_one_item_number_local_fixture_copy', 'action': 'stage_and_render_fixed_qa_set', 'office_environment_id': 'sha256:' + hashlib.sha256(environment_material).hexdigest(), 'renderer': renderer, 'renderer_version': renderer_version.stdout.strip(), 'fixtures': fixtures, 'receipt': str(ITEM_NUMBER_LOCAL_QA_RECEIPT()), 'production_qualified': False, 'safety': {'source_read_only': True, 'fixed_source_root': True, 'fixed_local_temp_root': True, 'external_system_writes_forbidden': True, 'external_delivery_forbidden': True, 'shell_used': False}}
@@ -1008,7 +1008,7 @@ def cmd_item_number_windows_excel_qa(args: argparse.Namespace) -> None:
     if getattr(args, 'confirm', None) != confirmation:
         emit({'status': 'planned', 'capability': 'pd_one_item_number_windows_excel_qa', 'action': 'run', 'command': [str(python_bin), str(script)], 'workdir': str(ITEM_NUMBER_WORKFLOW_ROOT()), 'confirmation_required': confirmation, 'safety': {'read_only_source_inputs': True, 'remote_temp_only': True, 'local_artifact_write': True, 'production_qualification_asserted': False, 'shell_used': False}})
         return
-    proc = subprocess.run([str(python_bin), str(script)], cwd=str(ITEM_NUMBER_WORKFLOW_ROOT()), env=safe_env(), text=True, capture_output=True, shell=False, timeout=360)
+    proc = subprocess.run([str(python_bin), str(script)], check=False, cwd=str(ITEM_NUMBER_WORKFLOW_ROOT()), env=safe_env(), text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=360)
     result = {'status': 'ok' if proc.returncode == 0 else 'error', 'capability': 'pd_one_item_number_windows_excel_qa', 'action': 'run', 'returncode': proc.returncode, 'stdout_tail': tail_text(proc.stdout, 12000), 'stderr_tail': tail_text(proc.stderr, 4000), 'safety': {'read_only_source_inputs': True, 'remote_temp_only': True, 'local_artifact_write': True, 'production_qualification_asserted': False, 'shell_used': False}}
     emit(result)
     if proc.returncode != 0:
@@ -1030,15 +1030,15 @@ def cmd_ecrn_approval_pilot_check(args: argparse.Namespace) -> None:
     def line_count(path: Path) -> int | None:
         if not path.is_file():
             return None
-        with path.open('r', encoding='utf-8') as handle:
-            return sum((1 for _ in handle))
+        with path.open('r', encoding='utf-8-sig') as handle:
+            return sum(1 for _ in handle)
     before = line_count(log_path)
     checks: dict[str, Any] = {}
     commands = [('pytest', [sys.executable, '-m', 'pytest', '-q', *[str(path.relative_to(root)) for path in test_paths]], 300), ('ruff', ['ruff', 'check', 'tools/ecrn_approval_pilot.py', 'tests/test_ecrn_channel_header.py'], 120), ('py_compile', [sys.executable, '-m', 'py_compile', 'tools/ecrn_approval_pilot.py'], 120)]
     if not missing:
         for name, command, timeout in commands:
             try:
-                proc = subprocess.run(command, cwd=str(root), env=safe_env(), text=True, capture_output=True, shell=False, timeout=timeout)
+                proc = subprocess.run(command, check=False, cwd=str(root), env=safe_env(), text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=timeout)
                 checks[name] = {'command': command, 'returncode': proc.returncode, 'stdout_tail': tail_text(proc.stdout), 'stderr_tail': tail_text(proc.stderr)}
             except FileNotFoundError as exc:
                 logging.getLogger('pd_one_ops').exception('pd one command failed')
@@ -1047,7 +1047,7 @@ def cmd_ecrn_approval_pilot_check(args: argparse.Namespace) -> None:
                 logging.getLogger('pd_one_ops').exception('pd one command failed')
                 checks[name] = {'command': command, 'returncode': 'timeout', 'stdout_tail': tail_text(exc.stdout or ''), 'stderr_tail': tail_text(exc.stderr or '')}
     after = line_count(log_path)
-    checks_ok = not missing and all((value.get('returncode') == 0 for value in checks.values()))
+    checks_ok = not missing and all(value.get('returncode') == 0 for value in checks.values())
     result = {'status': 'ok' if checks_ok and before == after else 'error', 'capability': 'pd_one_ecrn_approval_pilot_check', 'action': 'check', 'test_root': str(root), 'script': str(script_path), 'test_files': [str(path) for path in test_paths], 'missing_prerequisites': missing, 'checks': checks, 'operational_log': {'path': str(log_path), 'lines_before': before, 'lines_after': after, 'unchanged': before == after}, 'safety': {'read_only': True, 'shell_used': False, 'fixed_paths_only': True, 'source_system_writes_forbidden': True, 'external_delivery_forbidden': True}}
     emit(result)
     if result['status'] != 'ok':
@@ -1073,9 +1073,9 @@ def cmd_item_number_workflow_check(args: argparse.Namespace) -> None:
     if not unit_test_path.is_file():
         fail(f'item-number workflow {component} test not found: {unit_test_path}')
     compile_cmd = [sys.executable, '-m', 'py_compile', str(script_path), str(unit_test_path)]
-    compile_proc = subprocess.run(compile_cmd, cwd=str(component_root), env=safe_env(), text=True, capture_output=True, shell=False, timeout=120)
+    compile_proc = subprocess.run(compile_cmd, check=False, cwd=str(component_root), env=safe_env(), text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=120)
     unit_cmd = [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-v']
-    unit_proc = subprocess.run(unit_cmd, cwd=str(component_root), env=safe_env(), text=True, capture_output=True, shell=False, timeout=240)
+    unit_proc = subprocess.run(unit_cmd, check=False, cwd=str(component_root), env=safe_env(), text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=240)
     result = {'status': 'ok' if compile_proc.returncode == 0 and unit_proc.returncode == 0 else 'error', 'capability': 'pd_one_item_number_workflow_check', 'action': 'check', 'component': component, 'component_root': str(component_root), 'script': str(script_path), 'unit_test': str(unit_test_path), 'unit_test_dir': str(component_root / 'tests'), 'unit_command': unit_cmd, 'unit_mode': 'discover', 'compile': {'command': compile_cmd, 'returncode': compile_proc.returncode, 'stdout_tail': tail_text(compile_proc.stdout), 'stderr_tail': tail_text(compile_proc.stderr)}, 'unit': {'command': unit_cmd, 'returncode': unit_proc.returncode, 'stdout_tail': tail_text(unit_proc.stdout), 'stderr_tail': tail_text(unit_proc.stderr)}, 'safety': {'shell_used': False, 'read_only': True, 'fixed_component_root': True, 'source_system_writes_forbidden': True}}
     emit(result)
     if result['status'] != 'ok':
@@ -1093,7 +1093,7 @@ def convert_office_to_pdf(input_path: Path, out: Path) -> dict[str, Any]:
     if suffix in {'.xlsx', '.xlsm', '.ods'} and (not source_header.startswith(b'PK')):
         fail(f'declared {suffix} input is not a ZIP-based Office package')
     out = out.resolve(strict=False)
-    if not any((is_within(out, root) for root in DOC_ALLOWED_ROOTS())):
+    if not any(is_within(out, root) for root in DOC_ALLOWED_ROOTS()):
         fail(f'output path is outside approved PD One document roots: {out}')
     if out.suffix.lower() != '.pdf':
         fail('office-convert-pdf output must end with .pdf')
@@ -1178,12 +1178,12 @@ def build_html_from_paragraph_spec(spec_path: Path, out: Path) -> dict[str, Any]
         fail('json-html-artifact input must be .json')
     if out.suffix.lower() not in {'.html', '.htm'}:
         fail('json-html-artifact output must be .html or .htm')
-    if not any((is_within(out, root) for root in DOC_ALLOWED_ROOTS())):
+    if not any(is_within(out, root) for root in DOC_ALLOWED_ROOTS()):
         fail(f'output path is outside approved roots: {out}')
     if source.stat().st_size > JSON_HTML_ARTIFACT_MAX_BYTES:
         fail(f'JSON spec exceeds {JSON_HTML_ARTIFACT_MAX_BYTES} bytes')
     try:
-        spec = json.loads(source.read_text(encoding='utf-8'))
+        spec = json.loads(source.read_text(encoding='utf-8-sig'))
     except Exception as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         fail(f'failed to load JSON spec: {exc!r}')
@@ -1306,7 +1306,7 @@ def inspect_or_stage_docx_layout(*, action: str, input_path: Path, target_text: 
         output = Path(output_path).resolve(strict=False)
         if output.suffix.lower() != '.docx':
             raise ValueError('output_path must end in .docx')
-        if not any((is_within(output, root) for root in DOC_ALLOWED_ROOTS())):
+        if not any(is_within(output, root) for root in DOC_ALLOWED_ROOTS()):
             raise ValueError(f'output_path is outside approved PD One document roots: {output}')
         if output == source:
             raise ValueError('source overwrite is forbidden; choose a separate staged output_path')
@@ -1324,7 +1324,7 @@ def inspect_or_stage_docx_layout(*, action: str, input_path: Path, target_text: 
             gate_script = Path(resolve_configured_path('~/.hermes/skills/pd-one/pd-one-admin/scripts/office_no_corruption_gate.py'))
             gate_result = {'status': 'unavailable'}
             if gate_script.exists():
-                proc = subprocess.run([sys.executable, str(gate_script), str(temp_path)], text=True, capture_output=True, env=safe_env(), shell=False, timeout=180)
+                proc = subprocess.run([sys.executable, str(gate_script), str(temp_path)], check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, env=safe_env(), shell=False, timeout=180)
                 gate_result = {'status': 'ok' if proc.returncode == 0 else 'error', 'returncode': proc.returncode}
                 if proc.returncode != 0:
                     raise RuntimeError(f'office no-corruption gate failed: {proc.stderr.strip()[:1200] or proc.stdout.strip()[:1200]}')
@@ -1359,7 +1359,7 @@ def cmd_docx_layout_patch(args: argparse.Namespace) -> None:
 
 def _replace_one_visible_paragraph_text(paragraph: Any, old_text: str, new_text: str) -> None:
     runs = list(paragraph.runs)
-    full_text = ''.join((run.text for run in runs))
+    full_text = ''.join(run.text for run in runs)
     start = full_text.find(old_text)
     if start < 0 or full_text.find(old_text, start + 1) >= 0:
         fail('company announcement replacement must occur exactly once in one paragraph')
@@ -1411,7 +1411,7 @@ def build_company_announcement_from_spec(spec: dict[str, Any], out: Path) -> dic
     doc = Document(str(template))
     paragraphs = _iter_docx_story_paragraphs(doc)
     for old_text, new_text in normalized:
-        matches = [paragraph for paragraph in paragraphs if old_text in ''.join((run.text for run in paragraph.runs))]
+        matches = [paragraph for paragraph in paragraphs if old_text in ''.join(run.text for run in paragraph.runs)]
         if len(matches) != 1:
             fail(f'company announcement replacement must match exactly once: {old_text[:120]!r}; matches={len(matches)}')
         _replace_one_visible_paragraph_text(matches[0], old_text, new_text)
@@ -1422,7 +1422,7 @@ def build_company_announcement_from_spec(spec: dict[str, Any], out: Path) -> dic
         doc.save(str(temp_path))
         gate_script = Path(resolve_configured_path('~/.hermes/skills/pd-one/pd-one-admin/scripts/office_no_corruption_gate.py'))
         if gate_script.exists():
-            proc = subprocess.run([sys.executable, str(gate_script), str(temp_path)], text=True, capture_output=True, env=safe_env(), shell=False, timeout=180)
+            proc = subprocess.run([sys.executable, str(gate_script), str(temp_path)], check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, env=safe_env(), shell=False, timeout=180)
             if proc.returncode != 0:
                 fail(f'office no-corruption gate failed: {proc.stderr.strip()[:1200] or proc.stdout.strip()[:1200]}')
         if hashlib.sha256(template.read_bytes()).hexdigest() != source_sha256:
@@ -1555,7 +1555,7 @@ def build_docx_from_spec(spec: dict[str, Any], out: Path) -> dict[str, Any]:
         doc.save(str(out))
         gate_script = Path(resolve_configured_path('~/.hermes/skills/pd-one/pd-one-admin/scripts/office_no_corruption_gate.py'))
         if gate_script.exists():
-            proc = subprocess.run([sys.executable, str(gate_script), str(out)], text=True, capture_output=True, env=safe_env(), shell=False, timeout=180)
+            proc = subprocess.run([sys.executable, str(gate_script), str(out)], check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, env=safe_env(), shell=False, timeout=180)
             if proc.returncode != 0:
                 fail(f'office no-corruption gate failed: {proc.stderr.strip()[:1200] or proc.stdout.strip()[:1200]}')
         digest = hashlib.sha256(out.read_bytes()).hexdigest()
@@ -1587,9 +1587,9 @@ def run_office_visual_qa(path: Path, qa_dir: Path) -> dict[str, Any]:
     if not qa_script.exists():
         return {'status': 'skipped', 'reason': 'visual-office-qa script unavailable', 'input': str(path), 'out_dir': str(qa_dir), 'safety': {'read_only_source': True, 'source_system_writes': False, 'shell_used': False}}
     qa_dir.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run([sys.executable, str(qa_script), str(path), '--out-dir', str(qa_dir)], text=True, capture_output=True, env=safe_env(), shell=False, timeout=300)
+    proc = subprocess.run([sys.executable, str(qa_script), str(path), '--out-dir', str(qa_dir)], check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, env=safe_env(), shell=False, timeout=300)
     summary = qa_dir / 'qa-summary.md'
-    summary_text = summary.read_text(encoding='utf-8', errors='replace') if summary.exists() else ''
+    summary_text = summary.read_text(encoding='utf-8-sig', errors='replace') if summary.exists() else ''
     files = _office_visual_qa_file_receipts(qa_dir)
     result: dict[str, Any] = {'status': 'ok' if proc.returncode == 0 else 'error', 'capability': 'pd_one_office_visual_qa', 'input': str(path), 'out_dir': str(qa_dir), 'summary': str(summary) if summary.exists() else None, 'returncode': proc.returncode, 'page_count': len(list(qa_dir.glob('page-*.png'))), 'files': files, 'safety': {'read_only_source': True, 'source_system_writes': False, 'local_artifact_write': True, 'fixed_helper': True, 'shell_used': False, 'manual_visual_inspection_required': True}}
     if proc.returncode != 0:
@@ -1600,7 +1600,7 @@ def run_office_visual_qa(path: Path, qa_dir: Path) -> dict[str, Any]:
             result.update({'status': 'partial', 'reason': 'renderer produced incomplete visual artifacts'})
             return result
         diagnostic = proc.stderr.strip() or proc.stdout.strip()
-        fail(f'visual office QA failed: {diagnostic[:1200] or 'no diagnostic output'}')
+        fail(f"visual office QA failed: {diagnostic[:1200] or 'no diagnostic output'}")
     return result
 
 def run_visual_qa(path: Path) -> dict[str, Any]:
@@ -1648,7 +1648,7 @@ def _office_docprops_parse_xml(payload: bytes, allowed_fields: tuple[str, ...]) 
 def cmd_office_docprops_inspect(args: argparse.Namespace) -> None:
     """Inspect allowlisted Office Open XML core/app properties without dumping XML."""
     source = require_allowed_doc_path(Path(args.input))
-    if source.is_symlink() or any((parent.is_symlink() for parent in source.parents if str(parent).startswith(str(ROOT())))):
+    if source.is_symlink() or any(parent.is_symlink() for parent in source.parents if str(parent).startswith(str(ROOT()))):
         fail('symlinked Office inputs are not allowed')
     suffix = source.suffix.lower()
     if suffix not in OFFICE_DOCPROPS_INPUT_SUFFIXES:
@@ -1702,7 +1702,7 @@ def cmd_office_visual_qa(args: argparse.Namespace) -> None:
     if source.stat().st_size > OFFICE_VISUAL_QA_MAX_BYTES:
         fail(f'office-visual-qa input exceeds {OFFICE_VISUAL_QA_MAX_BYTES} bytes')
     qa_dir = Path(args.out_dir).expanduser().resolve(strict=False)
-    if not any((is_within(qa_dir, root) for root in DOC_ALLOWED_ROOTS())):
+    if not any(is_within(qa_dir, root) for root in DOC_ALLOWED_ROOTS()):
         fail(f'output path is outside approved PD One document roots: {qa_dir}')
     emit(run_office_visual_qa(source, qa_dir))
 
@@ -1713,7 +1713,7 @@ def convert_html_to_docx(input_path: Path, out: Path) -> dict[str, Any]:
     if source.stat().st_size > OFFICE_HTML_TO_DOCX_MAX_BYTES:
         fail(f'office-html-to-docx input exceeds {OFFICE_HTML_TO_DOCX_MAX_BYTES} bytes')
     out = out.resolve(strict=False)
-    if not any((is_within(out, root) for root in DOC_ALLOWED_ROOTS())):
+    if not any(is_within(out, root) for root in DOC_ALLOWED_ROOTS()):
         fail(f'output path is outside approved roots: {out}')
     if out.suffix.lower() != '.docx':
         fail('office-html-to-docx output must end with .docx')
@@ -1790,12 +1790,12 @@ def cmd_office_file_ops(args: argparse.Namespace) -> None:
 def cmd_doc_build(args: argparse.Namespace) -> None:
     spec_path = require_allowed_doc_path(Path(args.spec))
     out = Path(args.out).resolve(strict=False)
-    if not any((is_within(out, root) for root in DOC_ALLOWED_ROOTS())):
+    if not any(is_within(out, root) for root in DOC_ALLOWED_ROOTS()):
         fail(f'output path is outside approved roots: {out}')
     if out.suffix.lower() != '.docx':
         fail('doc-build output must end with .docx')
     try:
-        spec = json.loads(spec_path.read_text(encoding='utf-8'))
+        spec = json.loads(spec_path.read_text(encoding='utf-8-sig'))
     except Exception as exc:
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         fail(f'failed to load JSON spec: {exc!r}')

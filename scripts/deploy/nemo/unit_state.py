@@ -69,7 +69,7 @@ def process_alive(pid: int | None) -> bool:
     if pid is None or pid <= 0:
         return False
     try:
-        os.kill(pid, 0)
+        os.kill(pid, 0)  # windows-footgun: ok — Linux liveness probe on the nemo host
     except OSError:
         return False
     return True

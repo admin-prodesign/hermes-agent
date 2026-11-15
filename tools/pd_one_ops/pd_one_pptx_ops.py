@@ -70,7 +70,7 @@ def _is_within(path: Path, root: Path) -> bool:
 
 def _require_path(raw: str | Path, roots: tuple[Path, ...], label: str) -> Path:
     path = Path(raw).expanduser().resolve(strict=False)
-    if not any((_is_within(path, root) for root in roots)):
+    if not any(_is_within(path, root) for root in roots):
         raise ValueError(f'{label} is outside approved PPTX document roots: {path}')
     if not path.is_file():
         raise FileNotFoundError(f'{label} not found: {path}')
@@ -89,7 +89,7 @@ def _require_sha256(value: str | None) -> str | None:
     if value is None or not str(value).strip():
         return None
     digest = str(value).strip().lower()
-    if len(digest) != 64 or any((ch not in '0123456789abcdef' for ch in digest)):
+    if len(digest) != 64 or any(ch not in '0123456789abcdef' for ch in digest):
         raise ValueError('source_sha256 must be a 64-character hexadecimal SHA-256 digest')
     return digest
 
@@ -119,7 +119,7 @@ def _run_sanitize(path: Path, *, compat: bool=False) -> dict[str, Any]:
     if compat:
         cmd.append('--compat')
     cmd.append(str(path))
-    proc = subprocess.run(cmd, text=True, capture_output=True, shell=False, timeout=180)
+    proc = subprocess.run(cmd, check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=180)
     detail = (proc.stderr.strip() or proc.stdout.strip())[-1600:]
     return {'status': 'ok' if proc.returncode == 0 else 'error', 'returncode': proc.returncode, 'detail': detail}
 
@@ -138,13 +138,13 @@ def save_presentation(prs: Any, path: str | Path, *, run_gate: bool=True) -> dic
     prs.save(str(dest))
     sanitize_result = _run_sanitize(dest)
     if sanitize_result['status'] != 'ok':
-        raise RuntimeError(f'pptx sanitize failed: {sanitize_result.get('detail', 'unknown error')}')
+        raise RuntimeError(f"pptx sanitize failed: {sanitize_result.get('detail', 'unknown error')}")
     receipt: dict[str, Any] = {'status': 'ok', 'path': str(dest), 'sha256': _sha256(dest), 'sanitize': sanitize_result, 'header_footer': hf_result, 'source_footnote_strip': source_strip, 'template': str(FIRM_TEMPLATE())}
     if run_gate:
         gate_result = _run_no_corruption_gate(dest)
         receipt['office_no_corruption_gate'] = gate_result
         if gate_result['status'] != 'ok':
-            raise RuntimeError(f'Office no-corruption gate failed: {gate_result.get('detail', 'unknown error')}')
+            raise RuntimeError(f"Office no-corruption gate failed: {gate_result.get('detail', 'unknown error')}")
     return receipt
 HF_PH_TYPES = frozenset({'dt', 'ftr', 'sldNum'})
 DEFAULT_FOOTER_TEXT = 'Pro-Design Group · 良器集團'
@@ -228,7 +228,7 @@ def require_slide_header_footer(prs: Any) -> None:
         slide_types = {ph.get('type') for ph in slide._element.iter(qn('p:ph')) if ph.get('type') in HF_PH_TYPES}
         lack = sorted(layout_types - slide_types)
         if lack or slide._element.find(qn('p:hf')) is None:
-            missing.append(f'slide {i} missing {lack or ['p:hf']}')
+            missing.append(f"slide {i} missing {lack or ['p:hf']}")
     if missing:
         raise RuntimeError('slides missing header/footer placeholders: ' + '; '.join(missing[:12]))
 _SOURCE_NAME_HINTS = ('source', 'footnote', 'footnotes', '資料來源', '來源', '註腳')
@@ -267,9 +267,9 @@ def strip_empty_source_footnote_placeholders(prs: Any) -> dict[str, Any]:
                 continue
             cnv = sp.find('.//' + qn('p:cNvPr'))
             name = (cnv.get('name') if cnv is not None else '') or ''
-            blob = ' '.join((t.text or '' for t in sp.iter(qn('a:t'))))
-            name_hit = any((h in name.lower() or h in name for h in _SOURCE_NAME_HINTS))
-            text_hit = any((h in blob.lower() or h in blob for h in ('source', 'footnote', '資料來源', '註腳')))
+            blob = ' '.join(t.text or '' for t in sp.iter(qn('a:t')))
+            name_hit = any(h in name.lower() or h in name for h in _SOURCE_NAME_HINTS)
+            text_hit = any(h in blob.lower() or h in blob for h in ('source', 'footnote', '資料來源', '註腳'))
             if not (name_hit or text_hit):
                 continue
             if not _is_boilerplate_source_footnote(blob):
@@ -369,7 +369,7 @@ def _iter_paragraphs(prs: Any) -> Iterator[tuple[Any, dict[str, Any]]]:
 
     def already_seen(paragraph: Any) -> bool:
         element = getattr(paragraph, '_p', paragraph)
-        if any((element is previous for previous in seen)):
+        if any(element is previous for previous in seen):
             return True
         seen.append(element)
         return False
@@ -399,7 +399,7 @@ def _iter_paragraphs(prs: Any) -> Iterator[tuple[Any, dict[str, Any]]]:
                     yield from emit(paragraph, {'scope': 'notes', 'slide_index': slide_index, 'paragraph_index': paragraph_index})
 
 def _paragraph_text(paragraph: Any) -> str:
-    return ''.join((run.text or '' for run in paragraph.runs)) or (paragraph.text or '')
+    return ''.join(run.text or '' for run in paragraph.runs) or (paragraph.text or '')
 
 def _find_run_span(paragraph: Any, old_text: str) -> dict[str, int] | None:
     run_texts = [run.text or '' for run in paragraph.runs]
@@ -490,7 +490,7 @@ def _apply_minimal_run_patch(paragraph: Any, old_text: str, new_text: str, run_s
 def _run_no_corruption_gate(path: Path) -> dict[str, Any]:
     if not GATE_SCRIPT().is_file():
         return {'status': 'blocked', 'detail': f'gate script not found: {GATE_SCRIPT()}'}
-    proc = subprocess.run([sys.executable, str(GATE_SCRIPT()), str(path)], text=True, capture_output=True, shell=False, timeout=180)
+    proc = subprocess.run([sys.executable, str(GATE_SCRIPT()), str(path)], check=False, text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, timeout=180)
     detail = (proc.stderr.strip() or proc.stdout.strip())[-1600:]
     return {'status': 'ok' if proc.returncode == 0 else 'error', 'returncode': proc.returncode, 'detail': detail}
 
@@ -544,7 +544,7 @@ def inspect_or_stage_many(*, action: str, input_path: str | Path, replacements: 
         all_patchable = True
         for old_text, new_text in pairs:
             matches = _find_matches(_load_presentation(source), old_text) if use_pptx else _stdlib_find_matches(source, old_text)
-            occurrence_count = sum((int(match['occurrences']) for match in matches))
+            occurrence_count = sum(int(match['occurrences']) for match in matches)
             patchable = len(matches) == 1 and occurrence_count == 1 and bool(matches[0].get('patchable_without_rebuilding_runs'))
             all_patchable = all_patchable and patchable
             checks.append({'old_text_sha256': hashlib.sha256(old_text.encode('utf-8')).hexdigest(), 'new_text_sha256': hashlib.sha256(new_text.encode('utf-8')).hexdigest(), 'match_count': len(matches), 'occurrence_count': occurrence_count, 'patchable': patchable, 'locations': [match['location'] for match in matches[:2]]})
@@ -557,7 +557,7 @@ def inspect_or_stage_many(*, action: str, input_path: str | Path, replacements: 
         if output_path is None:
             raise ValueError('output_path is required for action=stage')
         output = Path(output_path).expanduser().resolve(strict=False)
-        if not any((_is_within(output, root) for root in OUTPUT_ROOTS())):
+        if not any(_is_within(output, root) for root in OUTPUT_ROOTS()):
             raise ValueError(f'output is outside approved staged artifact roots: {output}')
         if output.suffix.lower() != '.pptx' or output == source:
             raise ValueError('output must be a separate .pptx under an approved staged artifact root')
@@ -577,7 +577,7 @@ def inspect_or_stage_many(*, action: str, input_path: str | Path, replacements: 
                 staged = _load_presentation(temp_path)
                 for old_text, new_text in pairs:
                     current_matches = _find_matches(staged, old_text)
-                    if len(current_matches) != 1 or sum((int(match['occurrences']) for match in current_matches)) != 1:
+                    if len(current_matches) != 1 or sum(int(match['occurrences']) for match in current_matches) != 1:
                         raise RuntimeError('replacement set changed during staging; unique match no longer holds')
                     match = current_matches[0]
                     run_span = match.get('run_span')
@@ -592,21 +592,21 @@ def inspect_or_stage_many(*, action: str, input_path: str | Path, replacements: 
                 _stdlib_apply_replacements(source, temp_path, pairs)
             sanitize_result = _run_sanitize(temp_path)
             if sanitize_result['status'] != 'ok':
-                raise RuntimeError(f'pptx sanitize failed: {sanitize_result.get('detail', 'unknown error')}')
+                raise RuntimeError(f"pptx sanitize failed: {sanitize_result.get('detail', 'unknown error')}")
             gate_result = _run_no_corruption_gate(temp_path)
             if gate_result['status'] != 'ok':
-                raise RuntimeError(f'Office no-corruption gate failed: {gate_result.get('detail', 'unknown error')}')
+                raise RuntimeError(f"Office no-corruption gate failed: {gate_result.get('detail', 'unknown error')}")
             os.replace(temp_path, output)
             temp_path = None
             readback_rows = []
             for old_text, new_text in pairs:
                 if use_pptx:
                     readback = _load_presentation(output)
-                    old_count = sum((int(match['occurrences']) for match in _find_matches(readback, old_text)))
-                    new_count = sum((int(match['occurrences']) for match in _find_matches(readback, new_text)))
+                    old_count = sum(int(match['occurrences']) for match in _find_matches(readback, old_text))
+                    new_count = sum(int(match['occurrences']) for match in _find_matches(readback, new_text))
                 else:
-                    old_count = sum((int(match['occurrences']) for match in _stdlib_find_matches(output, old_text)))
-                    new_count = sum((int(match['occurrences']) for match in _stdlib_find_matches(output, new_text)))
+                    old_count = sum(int(match['occurrences']) for match in _stdlib_find_matches(output, old_text))
+                    new_count = sum(int(match['occurrences']) for match in _stdlib_find_matches(output, new_text))
                 if old_count != 0 or new_count != 1:
                     raise RuntimeError('staged artifact replacement readback failed')
                 readback_rows.append({'old_occurrence_count': old_count, 'new_occurrence_count': new_count})

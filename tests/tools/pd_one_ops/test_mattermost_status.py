@@ -38,7 +38,7 @@ def test_no_codex_strings_in_package_sources():
     root = Path(__file__).resolve().parents[3] / "tools" / "pd_one_ops" / "mattermost_status"
     banned = ("openai-codex", "codex oauth", "refresh_codex", "chatgpt.com", "OpenAI Codex")
     for path in root.rglob("*.py"):
-        text = path.read_text(encoding="utf-8").lower()
+        text = path.read_text(encoding="utf-8-sig").lower()
         for needle in banned:
             assert needle not in text, f"{needle} found in {path.name}"
 
@@ -101,7 +101,7 @@ def test_inference_canary_failure_backoff_skips_runner(status_home, monkeypatch)
             return None
         return now - 120
 
-    ok, msg, detail = prov.cached_canary_runner(
+    ok, _msg, detail = prov.cached_canary_runner(
         state,
         state_key="codex_canary",
         enabled=True,
@@ -141,7 +141,7 @@ def test_switches_off_skip_provider_network(status_home, monkeypatch):
         lambda url, **kw: (True, 200, {"id": "u1", "username": "bot"}),
     )
 
-    ok, bad, detail = monitor.check_health("https://mm.example", "tok", {})
+    ok, _bad, detail = monitor.check_health("https://mm.example", "tok", {})
     assert "Provider metadata check disabled" in " ".join(ok)
     assert detail["inference_canary"]["skipped"] == "disabled"
     assert detail["hermes_path_canary"]["skipped"] == "disabled"

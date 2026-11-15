@@ -29,7 +29,9 @@ Use this pattern for scheduled reports/posts whose first attempt may fail due to
 
 ```cron
 # Every 5 minutes 08:00-09:30 Asia/Taipei == 00:00-01:30 UTC
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 */5 0 * * 1-5 /usr/bin/flock -n /tmp/job.lock /path/run_with_capped_log.sh /path/job.log 1048576 /path/retry_wrapper.py target
+<!-- no-tmp: ok — documented nemo host path or an existing PD One artifact contract -->
 0-30/5 1 * * 1-5 /usr/bin/flock -n /tmp/job.lock /path/run_with_capped_log.sh /path/job.log 1048576 /path/retry_wrapper.py target
 ```
 

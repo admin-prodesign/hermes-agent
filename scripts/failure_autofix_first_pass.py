@@ -288,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--webhook", action="store_true", help="Emit webhook_transform JSON")
     args = ap.parse_args(argv)
     if args.file:
-        payload = json.loads(Path(args.file).read_text(encoding="utf-8"))
+        payload = json.loads(Path(args.file).read_text(encoding="utf-8-sig"))
     else:
         raw = sys.stdin.read()
         payload = json.loads(raw) if raw.strip() else {}
