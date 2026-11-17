@@ -21,7 +21,7 @@ Canvas for previews: 13.333 in × 7.5 in at 144 dpi (16:9 firm size).
 
 ## Slide chrome (data-chart layouts)
 
-Every data-chart layout reserves three regions. Do not let the plot go full-bleed.
+Every data-chart layout reserves three regions. Do not let the plot go full-bleed. The SAMPLE chip and the comments card are gallery chrome. `scripts/prepare_deck.py` removes the chip from user decks and removes the card when comments are empty.
 
 | Region | Role |
 |--------|------|

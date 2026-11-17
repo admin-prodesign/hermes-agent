@@ -60,7 +60,7 @@ If several layouts fit, prefer the more specific graphic (e.g. “illustrate a f
 
 ## Data chart layouts
 
-Native PowerPoint charts (employees edit the workbook). Left plot, right comments, bottom source. Sample series are **SAMPLE / 示意** only. Do **not** use `從到 From-to` for a before/after **data** chart.
+Native PowerPoint charts (employees edit the workbook). Left plot, right comments, bottom source. Sample series are **SAMPLE / 示意** only. User decks strip that chip and an unused comments card with `scripts/prepare_deck.py`, and they drop the gallery slides. Do **not** use `從到 From-to` for a before/after **data** chart.
 
 | Exact name | Purpose | Use when (intent keywords) |
 |------------|---------|----------------------------|

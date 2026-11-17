@@ -97,6 +97,20 @@ def test_office_skills_omit_banking_example_and_index_layouts() -> None:
     assert not leaks, "\n".join(leaks)
 
 
+def test_pptx_author_documents_prepare_deck_path() -> None:
+    text = (SKILLS / "finance/pptx-author/SKILL.md").read_text(encoding="utf-8")
+    for needle in (
+        "load_authoring_presentation",
+        "set_cover_subtitle",
+        "finish_authoring",
+        "prepare_deck.py",
+    ):
+        assert needle in text, needle
+    firm = (SKILLS / "pd-one/pd-one-firm-template/SKILL.md").read_text(encoding="utf-8")
+    assert "load_authoring_presentation" in firm
+    assert "finish_authoring" in firm
+
+
 def test_pptx_author_requires_visual_office_qa_render() -> None:
     text = (SKILLS / "finance/pptx-author/SKILL.md").read_text(encoding="utf-8")
     assert "office_visual_qa.py" in text

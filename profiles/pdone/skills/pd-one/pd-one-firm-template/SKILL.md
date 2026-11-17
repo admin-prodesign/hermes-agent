@@ -1,7 +1,7 @@
 ---
 name: pd-one-firm-template
 description: "Use when finding or changing the Pro-Design PPT golden."
-version: 1.0.0
+version: 1.1.0
 author: Hermes Agent
 license: private
 metadata:
@@ -33,7 +33,7 @@ Product golden: GitHub `admin-prodesign/pro-design-ppt-template`. PD One sealed 
 - Do not invent accent bars or non-rect `p:ph`. Conceptual decorations stay ordinary shapes.
 - `從到 From-to` is two conceptual cards plus an arrow — not a before/after **data** chart. `瀑布 Waterfall` is a shape stack, not an Office chart.
 - After approval, add the same layout on **both** masters. Default data charts to **native PowerPoint charts** so employees can edit data. Ship **only the types that were in the approved preview set** (a sql-srv recommendation such as combo stays out until it had its own preview). Andy asking to create a PR and integrate **is** save approval: implement in `admin-prodesign/pro-design-ppt-template` and open an andy-auto PR (see `company-github-cursor`). Merge, Nemo `firm-template.pptx`, and the Town Square pin are **three later gates**. Do not copy builder zip onto Nemo or into the pin until the rebuilt PPTX/POTX have been COM-sealed (desktop PowerPoint Open, Repair if prompted, keep those bytes).
-- Delivered decks still use `pd_one_pptx_ops.load_firm_presentation()` / `save_presentation()` (header/footer clone, sanitize, gate).
+- Delivered decks: `prepare_deck.py` (`load_authoring_presentation`, `finish_authoring`) then `save_presentation()`.
 - Type size: titles at least 28 pt; body at least 14 pt; 10 pt only for footnotes and sources. Shrink or split text that would overflow, and keep content inside the layout safe area.
 - Fonts on nemo: renders approximate Aptos and Microsoft JhengHei via host fontconfig aliases (JhengHei→Noto Sans CJK TC, Aptos→close sans) handled by PD Neo Watch on the host. Do not add host fontconfig files.
 

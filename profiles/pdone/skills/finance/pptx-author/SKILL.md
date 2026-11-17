@@ -1,7 +1,7 @@
 ---
 name: pptx-author
 description: "Build PD One decks on the firm template."
-version: 1.1.0
+version: 1.2.0
 author: Hermes Agent
 license: Apache-2.0
 platforms: [linux, macos, windows]
@@ -29,19 +29,11 @@ Always load the sealed template from the profile absolute path. A blank `Present
 
 `/home/prodesign/.hermes/profiles/pdone/templates/firm-template.pptx`
 
-Prefer `pd_one_pptx_ops.load_firm_presentation()` and `save_presentation()` so sanitize and header/footer cannot be skipped. Any active profiled employee may request a company-template deck. Do not refuse because the room is not Admin. The employee path is a typed tool, not a shell. When they say to generate the report deck directly, attach the PPTX. If no typed tool on the surface calls `load_firm_presentation()` and `save_presentation()` for a new brief, say the writer is missing in a few sentences and stop. Do not stop with "writer is missing" for a picture-only NotebookLM or Gemini deck. Do not substitute `pd_one_office_file_ops` blank `Presentation()`. Do not ask them to approve a shell, and do not send them to Admin. A `pd_one_pptx_inspect` or local-file-search refusal of `templates/` is an allowlist miss, not a missing template.
+The golden carries 56 gallery slides. `load_firm_presentation()` keeps them, so a short brief renders with those slides still attached. Author with `scripts/prepare_deck.py` in `pd-one-firm-template`: `load_authoring_presentation()` drops every gallery slide and keeps both masters and every layout. `set_cover_subtitle()` writes the cover subtitle with no bullet. `finish_authoring()` removes the `SAMPLE · 示意` chip, an unused comments card, and every placeholder the slide does not fill. Then `save_presentation()` so sanitize and header/footer cannot be skipped. Do not edit `firm-template.pptx` bytes.
+
+Any active profiled employee may request a company-template deck. Do not refuse because the room is not Admin. The employee path is a typed tool, not a shell. When they say to generate the report deck directly, attach the PPTX. If no typed tool on the surface calls `load_authoring_presentation()` and `save_presentation()` for a new brief, say the writer is missing in a few sentences and stop. Do not stop with "writer is missing" for a picture-only NotebookLM or Gemini deck. Do not substitute `pd_one_office_file_ops` blank `Presentation()`. Do not ask them to approve a shell, and do not send them to Admin. A `pd_one_pptx_inspect` or local-file-search refusal of `templates/` is an allowlist miss, not a missing template.
 
 `save_presentation` clones layout `dt` / `ftr` / `sldNum` onto slides, strips empty or SAMPLE SOURCE / FOOTNOTE / `資料來源` placeholders when there is no real citation, and fails closed if header/footer fields are missing. Do not leave SOURCE or FOOTNOTE labels on slides with no citation. Do not invent accent bars, thin navy or cyan edge strips, or non-rect `p:ph` placeholders. Do not emit `sldLayout type="cust"`.
-
-```python
-import sys
-from pathlib import Path
-
-sys.path.insert(0, "/home/prodesign/.hermes/profiles/pdone/tools")
-from pd_one_pptx_ops import load_firm_presentation, save_presentation
-
-prs = load_firm_presentation()
-```
 
 ## Named layouts and the two masters
 
@@ -49,63 +41,13 @@ Read exact layout names from `pd-one-firm-template/LAYOUTS.md` (tracked with tha
 
 The template has two masters only: **Pro-Design Light** (white canvas, default) and **Pro-Design Dark** (only when the employee asks for dark, night, or navy). Every named layout exists on both masters. Do not add a master.
 
-Pick a layout by intent from the LAYOUTS.md keyword table. The first strong keyword hit wins. Add the slide with that exact `p:cSld/@name`. Walk the chosen master's layouts and match `layout.name`. Never select a layout by its numeric position in the layout list.
-
-```python
-def layout_by_name(prs, name, master_name="Pro-Design Light"):
-    for master in prs.slide_masters:
-        if master.name != master_name:
-            continue
-        for layout in master.slide_layouts:
-            if layout.name == name:
-                return layout
-    raise KeyError(f"{master_name} has no layout {name!r}")
-
-slide = prs.slides.add_slide(layout_by_name(prs, "流程 Flow"))
-```
-
-Fill bilingual placeholders only. Prefer Light.
+Pick a layout by intent from the LAYOUTS.md keyword table. The first strong keyword hit wins. Add the slide with that exact `p:cSld/@name`. `layout_by_name()` walks the chosen master's layouts and matches `layout.name`. Never select a layout by its numeric position in the layout list. Fill bilingual placeholders only. Prefer Light.
 
 ## Charts
 
-Default to a **native PowerPoint chart** on a data-chart layout from LAYOUTS.md (`長條圖 Bar`, `堆疊長條圖 Stacked bar`, `折線圖 Line`, `散佈圖 Scatter`, `前後對比圖 Before / after`). Employees can edit the embedded workbook. `從到 From-to` is two conceptual cards, not a data chart. `瀑布 Waterfall` is a shape stack, not an Office chart. Sample series on the golden are SAMPLE / 示意; a real deck uses source numbers.
+Default to a **native PowerPoint chart** on a data-chart layout from LAYOUTS.md (`長條圖 Bar`, `堆疊長條圖 Stacked bar`, `折線圖 Line`, `散佈圖 Scatter`, `前後對比圖 Before / after`). Employees can edit the embedded workbook. `從到 From-to` is two conceptual cards, not a data chart. `瀑布 Waterfall` is a shape stack, not an Office chart. Sample series on the golden are SAMPLE / 示意; a real deck uses source numbers. `finish_authoring()` deletes that chip and the empty comments card.
 
-Put the chart in the layout's chart placeholder when it has one.
-
-```python
-from pptx.chart.data import CategoryChartData
-from pptx.enum.chart import XL_CHART_TYPE
-from pptx.enum.shapes import PP_PLACEHOLDER
-
-data = CategoryChartData()
-data.categories = ["甲 A", "乙 B", "丙 C"]
-data.add_series("本期 Current", (12, 15, 11))
-data.add_series("前期 Prior", (10, 13, 9))
-
-chart_shape = next(
-    shape for shape in slide.placeholders
-    if shape.placeholder_format.type == PP_PLACEHOLDER.CHART
-)
-chart_shape.insert_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, data)
-```
-
-An image chart is the rare case: the layout has no native chart placeholder and a picture is the only way to show the figure. Render it with matplotlib, with Traditional Chinese set to **Noto Sans CJK TC**, and embed the PNG. Do not use an image chart for a layout that already has a native chart.
-
-```python
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
-plt.rcParams["font.family"] = "Noto Sans CJK TC"
-plt.rcParams["axes.unicode_minus"] = False
-fig, ax = plt.subplots(figsize=(8.0, 4.5))
-ax.bar(["甲 A", "乙 B"], [12, 15])
-fig.tight_layout()
-fig.savefig("artifacts/charts/bars.png", dpi=144)
-plt.close(fig)
-```
-
-Set picture width only, or set width and height together only when they match the PNG aspect. Contain and center inside the layout box. Letterboxing is correct. Stretching is not.
+Put the chart in the layout's chart placeholder when it has one. The skeleton below is the pattern. An image chart is the rare case: the layout has no native chart placeholder and a picture is the only way to show the figure. Render it with matplotlib, with Traditional Chinese set to **Noto Sans CJK TC**, and embed the PNG. Do not use an image chart for a layout that already has a native chart. Set picture width only, or set width and height together only when they match the PNG aspect. Contain and center inside the layout box. Letterboxing is correct. Stretching is not.
 
 ## Type size and safe area
 
@@ -160,21 +102,30 @@ from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.shapes import PP_PLACEHOLDER
 from pptx.util import Pt
 
+sys.path.insert(0, "/home/prodesign/.hermes/profiles/pdone/skills/pd-one/pd-one-firm-template/scripts")
 sys.path.insert(0, "/home/prodesign/.hermes/profiles/pdone/tools")
-from pd_one_pptx_ops import load_firm_presentation, save_presentation
+from prepare_deck import (
+    finish_authoring,
+    layout_by_name,
+    load_authoring_presentation,
+    set_cover_subtitle,
+)
+from pd_one_pptx_ops import save_presentation
 
-prs = load_firm_presentation()
+TEMPLATE = "/home/prodesign/.hermes/profiles/pdone/templates/firm-template.pptx"
+prs = load_authoring_presentation(TEMPLATE)
 cover = prs.slides.add_slide(layout_by_name(prs, "封面 Title"))
 cover.shapes.title.text = "週會 Weekly review"
-# subtitle placeholder: month and presenter, bilingual, title runs at least 28 pt
+for paragraph in cover.shapes.title.text_frame.paragraphs:
+    for run in paragraph.runs:
+        run.font.size = Pt(28)
+set_cover_subtitle(cover, "2026 年 11 月 · 產銷彙整 November 2026 operations review")
 
 body = prs.slides.add_slide(layout_by_name(prs, "內文 Content"))
 body.shapes.title.text = "良率較上月上升 Yield rose versus last month"
-for paragraph in body.shapes.title.text_frame.paragraphs:
-    for run in paragraph.runs:
-        run.font.size = Pt(28)
 
 chart_slide = prs.slides.add_slide(layout_by_name(prs, "長條圖 Bar"))
+chart_slide.shapes.title.text = "各線產出 Output by line"
 data = CategoryChartData()
 data.categories = ["甲 A", "乙 B"]
 data.add_series("本期 Current", (12, 15))
@@ -184,11 +135,12 @@ placeholder = next(
 )
 placeholder.insert_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, data)
 
+finish_authoring(prs)
 Path("artifacts").mkdir(exist_ok=True)
 save_presentation(prs, "artifacts/weekly-review.pptx")
 ```
 
-`layout_by_name` is the helper above. Body runs stay at least 14 pt. A source line may be 10 pt.
+Do not set the cover subtitle with `placeholder.text`. That drops `buNone`, and the master bullet renders. Body runs stay at least 14 pt. A source line may be 10 pt.
 
 ## When not to use this skill
 
