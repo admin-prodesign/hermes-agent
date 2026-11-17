@@ -17,8 +17,12 @@ RUN apt-get update \
       fonts-noto-cjk \
       fonts-dejavu-core \
       fonts-liberation \
+      fontconfig \
       ca-certificates \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+COPY fonts/99-pd-one-aliases.conf /etc/fonts/conf.d/99-pd-one-aliases.conf
+RUN fc-cache -f
 
 WORKDIR /skill
