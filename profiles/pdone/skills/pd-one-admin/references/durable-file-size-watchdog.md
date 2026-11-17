@@ -31,13 +31,14 @@ OpenClaw bootstrap injection has a per-file character guardrail (`bootstrapMaxCh
    /home/prodesign/.hermes/scripts/pd-one-durable-file-size-watchdog.py --baseline
    ```
 2. Expected healthy output is an `OK:` line with file count, workspace-root count, aggregate chars, and largest files.
-3. Create/run the Hermes cron as no-agent, using only the script filename. Route PD One/Hermes alert output to Andy's shared alert Discord channel unless the request explicitly names a different destination:
+3. Create/run the Hermes cron as no-agent, using only the script filename. Route PD One/Hermes alert output through `/home/prodesign/.hermes/scripts/pd_neo_notify.py` (on nemo, `~/.hermes/scripts/pd_neo_notify.py`) unless the request explicitly names a different destination. Do not post to the Discord forum or `#pd-neo-alerts`. Set cron `deliver` to `local` when the script already notifies, so Hermes does not also post the stdout to an old Discord channel:
    ```text
    script: pd-one-durable-file-size-watchdog.py
    no_agent: true
-   deliver: discord:1503946606985216090
+   deliver: local
    schedule: every 6h
    ```
+   Actionable notifications, unknown keys, and informational notifications with severity error, critical, or fatal go to PD One Admin `5gmqtwqf7bde3cyihas79xi8ie` and mention `@andy.lin`. Other informational notifications go to that same channel with no mention. Flags: `--notify-class auto|actionable|informational`, `--actionable-channel`, `--informational-channel`. A dry run shows `via: mattermost_actionable` or `via: mattermost_informational`. `PDNEO_NOTIFY_RAIL=discord` is rollback only.
 4. Manually run the cron once and verify the output record says `silent (empty output)` when healthy.
 5. Read back state/log evidence:
    - `/home/prodesign/.openclaw/workspace/memory/durable-file-size-watchdog-state.json`
@@ -52,5 +53,5 @@ OpenClaw bootstrap injection has a per-file character guardrail (`bootstrapMaxCh
 - Do not leave `MEMORY.md` out of the durable-file checker config; it is often the file most likely to approach the limit.
 - Avoid alerting every healthy run. For this class of monitor, no-agent + silent-on-OK is preferred.
 - A cron creation failure caused by an absolute script path is a Hermes cron input-shape issue, not a script failure: place the script under `~/.hermes/scripts/` and pass only the filename.
-- Alerts from this watcher are PD One/Hermes alerts; deliver them to Discord channel `1503946606985216090` by default, not to the originating thread.
+- Alerts from this watcher are PD One/Hermes alerts. Send them with `pd_neo_notify.py` to PD One Admin Mattermost `5gmqtwqf7bde3cyihas79xi8ie` (actionable mentions `@andy.lin`; informational does not), not to Discord channel `1503946606985216090` and not to the originating thread.
 - Do not commit broad dirty OpenClaw runtime/wiki changes just because the watcher config changed; stage and commit the narrow config diff only.
