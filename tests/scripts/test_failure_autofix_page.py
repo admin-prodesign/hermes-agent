@@ -111,6 +111,54 @@ def test_prose_detail_line_becomes_a_finding_when_findings_is_absent():
     )
 
 
+MONITOR_DETAIL = """\
+## Automation Self-Heal Report
+Checked: 2026-11-17 02:14 TPE
+Mode: report
+Guardrails: do not reset units from this header
+
+### Needs review / approval
+- **systemd_user_unit_failed** `hermes-deploy.service` — ● hermes-deploy.service loaded failed failed Hermes deploy worker (build, wait for idle profiles, cut over); last error: hermes-deploy.service: Main process exited, code=exited, status=1/FAILURE. Action: needs review before reset/restart
+- **cron_job_failed** `nightly-sync` — 3 consecutive failures; last EXIT 1 at 2026-11-17T02:14:00+08:00; log /var/log/nightly-sync.log. Action: inspect the log
+
+### Guardrails
+- **systemd_user_unit_failed** `guarded.service` — last error: hidden by guardrails. Action: ignore
+
+### Info
+- **systemd_user_unit_failed** `quiet-probe.service` — last error: low severity noise. Action: ignore
+- **systemd_user_unit_failed** `hermes-deploy-drift.service` — last error: drift while autodeploy is paused. Action: needs review before reset/restart
+"""
+
+
+def test_markdown_report_detail_uses_the_needs_review_line():
+    alert = {
+        "source": "automation-self-heal-monitor",
+        "summary": "PD One automation self-heal monitor found cron/systemd issues",
+        "detail": MONITOR_DETAIL,
+    }
+    page, decision = render_needs_decision_page(
+        alert, reason="unresolvable_latched", offer="", signature=SIGNATURE
+    )
+    assert (
+        "`systemd_user_unit_failed` `hermes-deploy.service` — "
+        "hermes-deploy.service: Main process exited, code=exited, status=1/FAILURE"
+        in page
+    )
+    assert "loaded failed failed" not in page
+    assert (
+        "`cron_job_failed` `nightly-sync` — "
+        "3 consecutive failures; last EXIT 1 at 2026-11-17T02:14:00+08:00; "
+        "log /var/log/nightly-sync.log" in page
+    )
+    assert decision == "OK to `systemctl --user reset-failed hermes-deploy.service`?"
+    assert "hermes-deploy-drift.service" in page
+    assert "Automation Self-Heal Report" not in page
+    assert "do not reset units from this header" not in page
+    assert "guarded.service" not in page
+    assert "quiet-probe.service" not in page
+    assert "low severity noise" not in page
+
+
 def test_latched_page_without_findings_asks_to_clear_the_latch():
     alert = {"source": "automation-self-heal-monitor", "summary": "latched class"}
     page, decision = render_needs_decision_page(

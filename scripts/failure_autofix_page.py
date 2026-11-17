@@ -4,12 +4,18 @@
 The source event should pass ``findings``: a list of objects. Each object
 uses ``kind``, ``unit`` or ``job_id``, ``error`` (the last error line), and
 optionally ``action``, ``since``, and ``hit_count``. The same list may sit on
-``automation_incident.findings``. When that list is absent, a prose ``detail``
-or ``body`` is shown, and a ``kind unit — error`` line is parsed as a finding.
+``automation_incident.findings``.
 
-``hermes-deploy-drift.service`` stays on the page when autodeploy is paused,
-including when the producer parked it on ``suppressed_findings`` or
-``downgraded_findings``.
+The self-heal monitor sends ``detail`` as the markdown report instead. Finding
+bullets look like ``- **kind** `unit` — … last error: … Action: …`` and sit
+under ``### Needs review / approval``. The parser accepts that bold and those
+backticks, uses the ``last error:`` text (or the whole detail when it is
+absent), and takes ``Action:`` as the action. The report header, ``Checked:``,
+``Mode:``, ``Guardrails:``, and low-severity sections are ignored.
+``hermes-deploy-drift.service`` still counts from a low-severity section.
+
+``hermes-deploy-drift.service`` also stays on the page when the producer
+parked it on ``suppressed_findings`` or ``downgraded_findings``.
 """
 
 from __future__ import annotations
@@ -48,9 +54,24 @@ _ENV = re.compile(
 )
 _LINE = re.compile(
     r"^(?P<kind>[a-z][a-z0-9_]{2,})\s+"
-    r"(?P<ident>[A-Za-z0-9][A-Za-z0-9@._:-]{0,120})\s+"
+    r"(?P<ident>.+?)\s+"
     r"[—–-]+\s+(?P<rest>.+)$"
 )
+_BULLET = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
+_BOLD_KIND = re.compile(r"^(?:\*\*|__)(?P<kind>[a-z][a-z0-9_]{2,})(?:\*\*|__)")
+_TICK_IDENT = re.compile(r"^([a-z][a-z0-9_]{2,}\s+)`([^`]+)`")
+_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+_META_LINE = re.compile(r"(?i)^(checked|mode|guardrails)\s*:")
+_SKIP_HEADING = re.compile(
+    r"(?i)\b(guardrail|low|info|informational|notice|healthy|resolved|"
+    r"suppressed|downgraded|clean|passed|ok)\b"
+)
+_KEEP_HEADING = re.compile(
+    r"(?i)(needs review|approval|action required|actionable|\berror\b|"
+    r"\bcritical\b|\bfail)"
+)
+_LAST_ERROR = re.compile(r"(?i)\blast error:\s*")
+_LEADING_MARK = re.compile(r"^[●•]\s*")
 _UNIT_SUFFIXES = (".service", ".timer", ".socket", ".path")
 _SAFE_UNIT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9@._:-]{0,120}$")
 _GENERIC_OFFERS = (
@@ -316,7 +337,7 @@ def _normalize_dict(raw: dict[str, Any]) -> Finding | None:
 
 
 def _normalize_text(text: str) -> Finding | None:
-    line = " ".join(text.split())
+    line = _unwrap_markdown(text)
     match = _LINE.match(line)
     if match is None:
         if DRIFT_UNIT in line:
@@ -330,10 +351,10 @@ def _normalize_text(text: str) -> Finding | None:
                 hit_count=None,
             )
         return None
-    ident = match.group("ident")
+    ident = match.group("ident").strip()
     if not _ident_ok(match.group("kind"), ident):
         return None
-    error, action = _split_action(match.group("rest"))
+    error, action = _error_and_action(match.group("rest"))
     unit, job_id = _split_ident(ident)
     return Finding(
         kind=match.group("kind"),
@@ -346,9 +367,17 @@ def _normalize_text(text: str) -> Finding | None:
     )
 
 
+def _unwrap_markdown(text: str) -> str:
+    line = _BULLET.sub("", " ".join(text.split()))
+    line = _BOLD_KIND.sub(r"\g<kind>", line, count=1)
+    return _TICK_IDENT.sub(r"\1\2", line, count=1)
+
+
 def _ident_ok(kind: str, ident: str) -> bool:
+    if not ident or len(ident) > 160:
+        return False
     if ident.endswith(_UNIT_SUFFIXES):
-        return True
+        return bool(_SAFE_UNIT.fullmatch(ident))
     if re.fullmatch(r"[0-9a-fA-F]{8,64}", ident):
         return True
     return "cron" in kind or "job" in kind
@@ -365,6 +394,15 @@ def _split_action(text: str) -> tuple[str, str]:
     if not sep:
         return " ".join(text.split()), ""
     return " ".join(error.split()).rstrip("."), " ".join(action.split())
+
+
+def _error_and_action(text: str) -> tuple[str, str]:
+    """Prefer ``last error:``; otherwise keep the detail after the dash."""
+    body, action = _split_action(text)
+    body = _LEADING_MARK.sub("", body).strip()
+    match = _LAST_ERROR.search(body)
+    error = body[match.end() :].strip() if match else body
+    return " ".join(error.split()).rstrip("."), action
 
 
 def _hit_count(raw: dict[str, Any]) -> int | None:
@@ -391,9 +429,43 @@ def _findings_from_text(alert: dict[str, Any]) -> list[Finding | None]:
         if isinstance(parsed, list):
             found.extend(_normalize_item(item) for item in _finding_items(parsed))
             continue
-        for line in text.splitlines() or [text]:
+        for line in _report_lines(text):
             found.append(_normalize_text(line))
     return found
+
+
+def _heading_disposition(title: str) -> str:
+    if _SKIP_HEADING.search(title):
+        return "skip"
+    if _KEEP_HEADING.search(title):
+        return "keep"
+    return "other"
+
+
+def _report_lines(text: str) -> list[str]:
+    """Finding bullets, skipping the report header and low-severity sections.
+
+    Drift-check lines are kept from a skipped section so a paused autodeploy
+    cannot hide ``hermes-deploy-drift.service``.
+    """
+    raw = [line.strip() for line in text.splitlines() if line.strip()]
+    if not raw and text.strip():
+        raw = [text.strip()]
+    titles = [_HEADING.match(line).group(1) for line in raw if _HEADING.match(line)]
+    only_keep = any(_heading_disposition(title) == "keep" for title in titles)
+    section = "preamble"
+    chosen: list[str] = []
+    for line in raw:
+        heading = _HEADING.match(line)
+        if heading:
+            section = _heading_disposition(heading.group(1))
+            continue
+        if _META_LINE.match(line):
+            continue
+        visible = section != "skip" and (not only_keep or section == "keep")
+        if visible or DRIFT_UNIT in line:
+            chosen.append(line)
+    return chosen
 
 
 def _prose_chunks(alert: dict[str, Any]) -> list[str]:
