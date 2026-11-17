@@ -44,5 +44,7 @@ User POTX/PPTX restyle procedure stays in `pd-one-pptx-template-migration` (adop
 - Do not ship Macintosh Repair as the deliverable when generator vs Repair is only datetime cache, PNG recompress, `Application` Macintosh, or element order. Repair is not idempotent; that file can still Repair on reopen. If those are the only deltas, prune unused POTX layouts next — do not restage another pictures-dominated clone.
 - Do not rasterize source EMF chart pictures to PNG unless asked. `nSize=0x6C` is a normal `EMR_HEADER`, not an empty bounds box. EMF is a Windows paste-as-picture risk; it is not the usual Macintosh Repair cause. Rasterizing redraws every chart slide.
 - Hash a PowerPoint add-in diagnosis against the staged generator. Open-with-add-in injects `ppt/webextensions/` (empty `<we:snapshot>`) and Macintosh `app.xml`; that is not generator output. `notesSz` without `notesMaster` is inherited from a working POTX and is secondary.
+- Type size: titles at least 28 pt; body at least 14 pt; 10 pt only for footnotes and sources. Shrink or split text that would overflow, and keep content inside the layout safe area.
+- Fonts on nemo: renders approximate Aptos and Microsoft JhengHei via host fontconfig aliases (JhengHei→Noto Sans CJK TC, Aptos→close sans) handled by PD Neo Watch on the host. Do not add host fontconfig files.
 
 Trigger table: `references/repair-triggers.md`.

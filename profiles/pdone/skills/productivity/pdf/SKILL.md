@@ -23,12 +23,13 @@ Use this skill whenever the user wants to do anything with PDF files: reading or
 ## Prerequisites
 
 ```bash
-pip install pypdf pdfplumber reportlab
 which pdftotext || sudo apt install -y poppler-utils   # pdftotext, pdftoppm, pdfimages
 which qpdf || sudo apt install -y qpdf                 # CLI merge/split/decrypt
 ```
 
-macOS: `brew install poppler qpdf`. OCR extras: `pip install pytesseract pdf2image` + `sudo apt install -y tesseract-ocr`.
+macOS: `brew install poppler qpdf`. OCR also needs the `tesseract-ocr` package (`sudo apt install -y tesseract-ocr`) plus `pytesseract` and `pdf2image`.
+
+Do not add Python packages to the Hermes release environment. The documents extra already pins `pypdf`, `pdfplumber`, and `reportlab`. If an import fails, report the missing module.
 
 > Script paths below are relative to this skill's directory. Form filling has its own workflow — read [forms.md](forms.md) and follow it. Advanced library usage (pypdfium2, pdf-lib) and troubleshooting: [reference.md](reference.md).
 

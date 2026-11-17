@@ -29,6 +29,8 @@ Do **not** use for: mold-repair / 模修課 monthly KPI (that deck is `mold-repa
 - Do not paste Excel screenshots. Light master, native tables/charts, `pd_one_pptx_ops.load_firm_presentation` + `save_presentation` only.
 - Channel replies: no bonus amounts, no sheet dumps, no file bodies. Cite UNC, byte size, mtime, and the three (or fewer) proven rates.
 - Default formulas unless the requester locks otherwise: yield = 完工數量 ÷ 總投入 (includes 開機不良); IML = jobs whose 產品名稱 contains `膜內貼`, 總不良 ÷ 總投入 (not 貼紙使用數 unless that column exists for the month).
+- Type size: titles at least 28 pt; body at least 14 pt; 10 pt only for footnotes and sources. Shrink or split text that would overflow, and keep content inside the layout safe area.
+- Fonts on nemo: renders approximate Aptos and Microsoft JhengHei via host fontconfig aliases (JhengHei→Noto Sans CJK TC, Aptos→close sans) handled by PD Neo Watch on the host. Do not add host fontconfig files.
 
 ## Procedure
 

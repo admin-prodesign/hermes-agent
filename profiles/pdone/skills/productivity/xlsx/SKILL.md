@@ -23,9 +23,18 @@ Use this skill any time a spreadsheet file is the primary input or output: openi
 ## Prerequisites
 
 ```bash
-pip install openpyxl pandas "markitdown[xlsx]"
 which soffice || sudo apt install -y libreoffice   # formula recalculation (scripts/recalc.py)
 ```
+
+Do not add Python packages to the Hermes release environment. The nemo extra already pins `openpyxl`. If `pandas` or `markitdown` fails to import, report that missing module.
+
+## Type size and fonts
+
+Type size: titles at least 28 pt; body at least 14 pt; 10 pt only for footnotes and sources. Shrink or split text that would overflow, and keep content inside the layout safe area.
+
+Fonts on nemo: renders approximate Aptos and Microsoft JhengHei via host fontconfig aliases (JhengHei→Noto Sans CJK TC, Aptos→close sans) handled by PD Neo Watch on the host. Do not add host fontconfig files.
+
+A sheet title banner uses the title floor. Header and body cells use the body floor. Only a footnote or source row may be 10 pt. Widen the column or split the sheet instead of shrinking body text under 14 pt. Name the font Aptos for Latin and Microsoft JhengHei for Traditional Chinese unless the file you are editing already uses another face.
 
 macOS: `brew install libreoffice`.
 

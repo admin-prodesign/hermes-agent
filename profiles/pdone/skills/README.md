@@ -36,3 +36,7 @@ rsync -a ~/.hermes/profiles/pdone/skills/ ./profiles/pdone/skills/
 ```
 
 Do not restate root `AGENTS.md` permission rules in these skills.
+
+## Office skills
+
+Vendored from the live nemo profile on 2026-11-17 (not part of the 8 KB table above). `pptx-author` builds decks on `pd-one-firm-template` using named layouts in `LAYOUTS.md` and the sealed `firm-template.pptx`. `visual-office-qa` renders the contact sheet before delivery. Word, Excel, PDF, and infographic skills live under `productivity/` and `creative/`.

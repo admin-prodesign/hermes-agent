@@ -51,6 +51,14 @@ A source that already shows the firm logo, date, and `Pro-Design Group · 良器
 - A footer date on the PNG is the template date field evaluated at render time. Read stored `a:t` before you treat that date as the report date. Put the source KPI month and presenter on the cover. Do not copy the render date into the subtitle.
 - If the source table is already cut at the right edge, do not invent the missing columns. Say the source already cuts them.
 
+## Type size and fonts
+
+Type size: titles at least 28 pt; body at least 14 pt; 10 pt only for footnotes and sources. Shrink or split text that would overflow, and keep content inside the layout safe area.
+
+Fonts on nemo: renders approximate Aptos and Microsoft JhengHei via host fontconfig aliases (JhengHei→Noto Sans CJK TC, Aptos→close sans) handled by PD Neo Watch on the host. Do not add host fontconfig files.
+
+When a reflow leaves a title or body run under that floor, or a text box past the layout placeholder, split the slide or shorten the copy. Do not shrink below the floor to clear the footer.
+
 ## Do not
 
 - Raw `prs.save`.

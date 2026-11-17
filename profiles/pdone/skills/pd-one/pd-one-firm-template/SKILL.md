@@ -21,7 +21,7 @@ Mutations to the company meeting/report template: new layouts, data-chart templa
 - Do **not** use for migrating an attached employee deck onto the template (`pd-one-pptx-template-migration`) or for a one-off report deck (`pptx-author`).
 - An employee ask to find the company slide template, or the new KPI briefing template, is a lookup. A screenshot of the Town Square pin plus a request for that file is the same lookup. Do not treat it as a golden mutation.
 
-Product golden: GitHub `admin-prodesign/pro-design-ppt-template`. PD One sealed copy: profile path `.../pdone/templates/` file `firm-template.pptx`. Intent names: `LAYOUTS.md` next to that sealed file.
+Product golden: GitHub `admin-prodesign/pro-design-ppt-template`. PD One sealed copy: profile path `.../pdone/templates/` file `firm-template.pptx`. Intent names: `LAYOUTS.md` next to that sealed file. This skill directory also tracks those two current files (`LAYOUTS.md`, `firm-template.pptx`) so the names and the package are in git. Runtime loads still use the sealed profile path.
 
 ## Always-on
 
@@ -34,6 +34,8 @@ Product golden: GitHub `admin-prodesign/pro-design-ppt-template`. PD One sealed 
 - `從到 From-to` is two conceptual cards plus an arrow — not a before/after **data** chart. `瀑布 Waterfall` is a shape stack, not an Office chart.
 - After approval, add the same layout on **both** masters. Default data charts to **native PowerPoint charts** so employees can edit data. Ship **only the types that were in the approved preview set** (a sql-srv recommendation such as combo stays out until it had its own preview). Andy asking to create a PR and integrate **is** save approval: implement in `admin-prodesign/pro-design-ppt-template` and open an andy-auto PR (see `company-github-cursor`). Merge, Nemo `firm-template.pptx`, and the Town Square pin are **three later gates**. Do not copy builder zip onto Nemo or into the pin until the rebuilt PPTX/POTX have been COM-sealed (desktop PowerPoint Open, Repair if prompted, keep those bytes).
 - Delivered decks still use `pd_one_pptx_ops.load_firm_presentation()` / `save_presentation()` (header/footer clone, sanitize, gate).
+- Type size: titles at least 28 pt; body at least 14 pt; 10 pt only for footnotes and sources. Shrink or split text that would overflow, and keep content inside the layout safe area.
+- Fonts on nemo: renders approximate Aptos and Microsoft JhengHei via host fontconfig aliases (JhengHei→Noto Sans CJK TC, Aptos→close sans) handled by PD Neo Watch on the host. Do not add host fontconfig files.
 
 Chart tokens, series colors, PNG preview recipe, live sql-srv usage scan, and the before/after pairing rule: `references/chart-layouts.md`.
 

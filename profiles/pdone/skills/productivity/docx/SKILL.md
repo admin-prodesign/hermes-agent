@@ -24,11 +24,20 @@ Use this skill whenever the user wants to create, read, edit, or manipulate Word
 
 ```bash
 npm ls docx --depth=0 2>/dev/null | grep -q docx || npm install docx   # creation (docx-js)
-pip show pandoc >/dev/null 2>&1 || true; which pandoc || sudo apt install -y pandoc   # reading
+which pandoc || sudo apt install -y pandoc   # reading
 which soffice || sudo apt install -y libreoffice     # rendering/verification
 which pdftoppm || sudo apt install -y poppler-utils  # PDF → images
-pip install defusedxml lxml   # validation scripts
 ```
+
+Do not add Python packages to the Hermes release environment. The nemo extra already pins `python-docx`. If `defusedxml` or `lxml` fails to import, report that missing module.
+
+## Type size and fonts
+
+Type size: titles at least 28 pt; body at least 14 pt; 10 pt only for footnotes and sources. Shrink or split text that would overflow, and keep content inside the layout safe area.
+
+Fonts on nemo: renders approximate Aptos and Microsoft JhengHei via host fontconfig aliases (JhengHei→Noto Sans CJK TC, Aptos→close sans) handled by PD Neo Watch on the host. Do not add host fontconfig files.
+
+On a Word document the title and the first heading use the title floor, body paragraphs use the body floor, and only footnotes and source lines may be 10 pt. If a paragraph would overflow the page or a cell, shorten it or split the section. Do not set body text under 14 pt to squeeze a page.
 
 macOS: `brew install pandoc libreoffice poppler`.
 

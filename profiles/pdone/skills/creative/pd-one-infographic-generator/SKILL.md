@@ -52,6 +52,10 @@ Do not use it for plain text announcements only; use `company-announcement-write
 - Use official avatar/brand assets only from approved local/Drive sources; do not substitute random public images for company identity.
 - When generating or editing images, visually inspect the result; do not claim the artifact is final without checking layout, text legibility, and brand fit.
 - If the design will be published externally or sent broadly, get approval before sending/posting. Deliver the draft only in the requesting thread until that approval.
+- Type size: titles at least 28 pt; body at least 14 pt; 10 pt only for footnotes and sources. Shrink or split text that would overflow, and keep content inside the layout safe area.
+- Fonts on nemo: renders approximate Aptos and Microsoft JhengHei via host fontconfig aliases (JhengHei→Noto Sans CJK TC, Aptos→close sans) handled by PD Neo Watch on the host. Do not add host fontconfig files.
+
+For HTML, SVG, or PNG text you control, keep those floors. If an image model cannot hold them, move the words to HTML or SVG. Do not paint over a label to hide type that is too small. Split the page or cut copy instead.
 
 ### External prospect sheets
 
