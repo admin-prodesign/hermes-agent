@@ -27,13 +27,13 @@ def which_any(names: list[str]) -> str | None:
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, cwd=str(cwd) if cwd else None, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    return subprocess.run(cmd, cwd=str(cwd) if cwd else None, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)  # health: allow HX006 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
 
 
 def make_contact_sheet(images: list[Path], out: Path, thumb_width: int = 900) -> str:
     try:
         from PIL import Image, ImageDraw  # type: ignore
-    except Exception:
+    except Exception:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         montage = which_any(["montage"])
         if montage:
             cmd = [montage, *map(str, images), "-thumbnail", f"{thumb_width}x", "-tile", "2x", "-geometry", "+24+36", str(out)]
@@ -105,7 +105,7 @@ def main() -> int:
                 cmd = [
                     docker, "run", "--rm",
                     "--user", f"{os.getuid()}:{os.getgid()}",
-                    "-e", "HOME=/tmp",
+                    "-e", "HOME=/tmp",  # no-tmp: ok — container HOME for the visual-office-qa Docker fallback
                     "-v", f"{skill_dir}:/skill:ro",
                     "-v", f"{src_parent}:/input:ro",
                     "-v", f"{out_dir}:/out",

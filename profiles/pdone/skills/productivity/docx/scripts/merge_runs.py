@@ -60,7 +60,7 @@ def merge_runs(input_dir: str) -> tuple[int, str]:
         doc_xml.write_bytes(dom.toxml(encoding="UTF-8"))
         return merge_count, f"Merged {merge_count} runs"
 
-    except Exception as e:
+    except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         return 0, f"Error: {e}"
 
 

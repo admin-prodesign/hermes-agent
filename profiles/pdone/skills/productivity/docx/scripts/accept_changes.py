@@ -13,7 +13,7 @@ from office.soffice import get_soffice_env
 
 logger = logging.getLogger(__name__)
 
-LIBREOFFICE_PROFILE = "/tmp/libreoffice_docx_profile"
+LIBREOFFICE_PROFILE = "/tmp/libreoffice_docx_profile"  # no-tmp: ok — live LibreOffice macro profile path from the nemo snapshot
 MACRO_DIR = f"{LIBREOFFICE_PROFILE}/user/basic/Standard"
 
 ACCEPT_CHANGES_MACRO = """<?xml version="1.0" encoding="UTF-8"?>
@@ -49,7 +49,7 @@ def accept_changes(
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(input_path, output_path)
-    except Exception as e:
+    except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         return None, f"Error: Failed to copy input file to output location: {e}"
 
     if not _setup_libreoffice_macro():
@@ -113,7 +113,7 @@ def _setup_libreoffice_macro() -> bool:
     try:
         macro_file.write_text(ACCEPT_CHANGES_MACRO)
         return True
-    except Exception as e:
+    except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         logger.warning(f"Failed to setup LibreOffice macro: {e}")
         return False
 

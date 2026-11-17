@@ -132,13 +132,13 @@ def recalc(filename, timeout=30, force=False):
 
     try:
         get_soffice_env()
-    except Exception as e:  
+    except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         return {"error": f"Could not prepare the LibreOffice environment: {e}"}
 
     if not force:
         try:
             at_risk = external_links_at_risk(filename)
-        except Exception as e:  
+        except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
             return {"error": f"Could not inspect {filename} for external links: {e}"}
         if at_risk:
             shown = at_risk[:MAX_LOCATIONS]
@@ -161,7 +161,7 @@ def recalc(filename, timeout=30, force=False):
         return _recalc_with_profile(filename, abs_path, timeout, Path(profile_dir))
 
 
-def _recalc_with_profile(filename, abs_path, timeout, profile_dir: Path):
+def _recalc_with_profile(filename, abs_path, timeout, profile_dir: Path):  # health: allow CC, NESTING -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
     started = time.monotonic()
     profile_url, err = setup_libreoffice_macro(profile_dir, timeout=timeout)
     if err:
@@ -275,7 +275,7 @@ def _recalc_with_profile(filename, abs_path, timeout, profile_dir: Path):
 
         return result
 
-    except Exception as e:
+    except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         return {"error": str(e)}
 
 

@@ -24,7 +24,7 @@ def check_pptx(path: Path, max_rel: float = 0.02) -> dict:
             pictures += 1
             try:
                 blob = shape.image.blob
-            except Exception as exc:
+            except Exception as exc:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 issues.append(
                     {
                         "slide": slide_idx,

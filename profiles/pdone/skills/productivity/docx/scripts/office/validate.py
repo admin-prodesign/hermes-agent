@@ -45,7 +45,7 @@ def _has_tracked_changes(unpacked_dir: Path) -> bool:
     return any(elem.tag in tracked for elem in root.iter())
 
 
-def main():
+def main():  # health: allow CC -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
     parser = argparse.ArgumentParser(description="Validate Office document XML files")
     parser.add_argument(
         "path",

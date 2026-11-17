@@ -154,7 +154,7 @@ class BaseSchemaValidator:
                         print(message)
                     repairs += len(pending)
 
-            except Exception:
+            except Exception:  # health: allow BLE001, S110 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 pass
 
         return repairs
@@ -170,7 +170,7 @@ class BaseSchemaValidator:
                     f"  {xml_file.relative_to(self.unpacked_dir)}: "
                     f"Line {e.lineno}: {e.msg}"
                 )
-            except Exception as e:
+            except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 errors.append(
                     f"  {xml_file.relative_to(self.unpacked_dir)}: "
                     f"Unexpected error: {str(e)}"
@@ -215,7 +215,7 @@ class BaseSchemaValidator:
             print("PASSED - All namespace prefixes properly declared")
         return True
 
-    def validate_unique_ids(self):
+    def validate_unique_ids(self):  # health: allow NESTING -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         errors = []
         global_ids = {}  
 
@@ -292,7 +292,7 @@ class BaseSchemaValidator:
                                 else:
                                     file_ids[key][id_value] = elem.sourceline
 
-            except (lxml.etree.XMLSyntaxError, Exception) as e:
+            except (lxml.etree.XMLSyntaxError, Exception) as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 errors.append(
                     f"  {xml_file.relative_to(self.unpacked_dir)}: Error: {e}"
                 )
@@ -307,7 +307,7 @@ class BaseSchemaValidator:
                 print("PASSED - All required IDs are unique")
             return True
 
-    def validate_file_references(self):
+    def validate_file_references(self):  # health: allow CC -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         errors = []
 
         rels_files = list(self.unpacked_dir.rglob("*.rels"))
@@ -377,7 +377,7 @@ class BaseSchemaValidator:
                             f"  {rel_path}: Line {line_num}: Broken reference to {broken_ref}"
                         )
 
-            except Exception as e:
+            except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 rel_path = rels_file.relative_to(self.unpacked_dir)
                 errors.append(f"  Error parsing {rel_path}: {e}")
 
@@ -405,7 +405,7 @@ class BaseSchemaValidator:
                 )
             return True
 
-    def validate_all_relationship_ids(self):
+    def validate_all_relationship_ids(self):  # health: allow NESTING -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         import lxml.etree
 
         errors = []
@@ -476,7 +476,7 @@ class BaseSchemaValidator:
                                         f"but should point to a '{expected_type}' relationship"
                                     )
 
-            except Exception as e:
+            except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 xml_rel_path = xml_file.relative_to(self.unpacked_dir)
                 errors.append(f"  Error processing {xml_rel_path}: {e}")
 
@@ -586,7 +586,7 @@ class BaseSchemaValidator:
                             f"  {path_str}: File with <{root_name}> root not declared in [Content_Types].xml"
                         )
 
-                except Exception:
+                except Exception:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                     continue  
 
             for file_path in all_files:
@@ -605,7 +605,7 @@ class BaseSchemaValidator:
                             f'  {relative_path}: File with extension \'{extension}\' not declared in [Content_Types].xml - should add: <Default Extension="{extension}" ContentType="{media_extensions[extension]}"/>'
                         )
 
-        except Exception as e:
+        except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
             errors.append(f"  Error parsing [Content_Types].xml: {e}")
 
         if errors:
@@ -806,7 +806,7 @@ class BaseSchemaValidator:
                     errors.add(error.message)
                 return False, errors
 
-        except Exception as e:
+        except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
             return False, {str(e)}
 
     def _get_original_file_errors(self, xml_file, schema_path=None):

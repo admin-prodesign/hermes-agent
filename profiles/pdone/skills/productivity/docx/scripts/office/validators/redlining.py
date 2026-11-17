@@ -47,7 +47,7 @@ class RedliningValidator:
             try:
                 with zipfile.ZipFile(self.original_docx, "r") as zip_ref:
                     safe_extract(zip_ref, temp_path)
-            except Exception as e:
+            except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 print(f"FAILED - Error unpacking original docx: {e}")
                 return False
 
@@ -189,7 +189,7 @@ class RedliningValidator:
                 original_file.write_text(original_text, encoding="utf-8")
                 modified_file.write_text(modified_text, encoding="utf-8")
 
-                result = subprocess.run(
+                result = subprocess.run(  # health: allow HX006 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                     [
                         "git",
                         "diff",
@@ -218,7 +218,7 @@ class RedliningValidator:
                     if content_lines:
                         return "\n".join(content_lines)
 
-                result = subprocess.run(
+                result = subprocess.run(  # health: allow HX006 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                     [
                         "git",
                         "diff",
@@ -244,7 +244,7 @@ class RedliningValidator:
                             content_lines.append(line)
                     return "\n".join(content_lines)
 
-        except (subprocess.CalledProcessError, FileNotFoundError, Exception):
+        except (subprocess.CalledProcessError, FileNotFoundError, Exception):  # health: allow BLE001, S110 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
             pass
 
         return None

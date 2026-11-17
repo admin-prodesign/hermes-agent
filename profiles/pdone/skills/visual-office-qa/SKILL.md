@@ -62,7 +62,7 @@ For each class, require a non-empty output with the expected file signature, suc
 ## Practical command
 
 ```bash
-python3 /home/prodesign/.hermes/profiles/pdone/skills/visual-office-qa/scripts/office_visual_qa.py /path/to/file.docx --out-dir /tmp/office-qa
+python3 /home/prodesign/.hermes/profiles/pdone/skills/visual-office-qa/scripts/office_visual_qa.py /path/to/file.docx --out-dir artifacts/office-qa
 ```
 
 When the typed `pd_one_office_visual_qa` tool is the available path, set `output_dir` under an approved document root (`artifacts/` or the profile `tmp/`). `cache/scratch` is rejected, so the render never starts. A footer date on the PNG can be a live date field evaluated at render time. Read the stored `a:t` before you treat that PNG date as the file's date.

@@ -97,7 +97,7 @@ class DOCXSchemaValidator(BaseSchemaValidator):
                                     f"Line {elem.sourceline}: w:t element with whitespace missing xml:space='preserve': {text_preview}"
                                 )
 
-            except (lxml.etree.XMLSyntaxError, Exception) as e:
+            except (lxml.etree.XMLSyntaxError, Exception) as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 errors.append(
                     f"  {xml_file.relative_to(self.unpacked_dir)}: Error: {e}"
                 )
@@ -148,7 +148,7 @@ class DOCXSchemaValidator(BaseSchemaValidator):
                         f"Line {instr_elem.sourceline}: <w:instrText> found within <w:del> (use <w:delInstrText>): {text_preview}"
                     )
 
-            except (lxml.etree.XMLSyntaxError, Exception) as e:
+            except (lxml.etree.XMLSyntaxError, Exception) as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 errors.append(
                     f"  {xml_file.relative_to(self.unpacked_dir)}: Error: {e}"
                 )
@@ -174,7 +174,7 @@ class DOCXSchemaValidator(BaseSchemaValidator):
                 root = lxml.etree.parse(str(xml_file)).getroot()
                 paragraphs = root.findall(f".//{{{self.WORD_2006_NAMESPACE}}}p")
                 count = len(paragraphs)
-            except Exception as e:
+            except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 print(f"Error counting paragraphs in unpacked document: {e}")
 
         return count
@@ -197,7 +197,7 @@ class DOCXSchemaValidator(BaseSchemaValidator):
                 paragraphs = root.findall(f".//{{{self.WORD_2006_NAMESPACE}}}p")
                 count = len(paragraphs)
 
-        except Exception as e:
+        except Exception as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
             print(f"Error counting paragraphs in original document: {e}")
 
         return count
@@ -228,7 +228,7 @@ class DOCXSchemaValidator(BaseSchemaValidator):
                         f"Line {elem.sourceline}: <w:delText> within <w:ins>: {text_preview}"
                     )
 
-            except (lxml.etree.XMLSyntaxError, Exception) as e:
+            except (lxml.etree.XMLSyntaxError, Exception) as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 errors.append(
                     f"  {xml_file.relative_to(self.unpacked_dir)}: Error: {e}"
                 )
@@ -257,7 +257,7 @@ class DOCXSchemaValidator(BaseSchemaValidator):
     def _parse_id_value(self, val: str, base: int = 16) -> int:
         return int(val, base)
 
-    def validate_id_constraints(self):
+    def validate_id_constraints(self):  # health: allow NESTING -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         errors = []
         para_id_attr = f"{{{self.W14_NAMESPACE}}}paraId"
         durable_id_attr = f"{{{self.W16CID_NAMESPACE}}}durableId"
@@ -388,7 +388,7 @@ class DOCXSchemaValidator(BaseSchemaValidator):
                             f'  document.xml: marker id="{comment_id}" references non-existent comment'
                         )
 
-        except (lxml.etree.XMLSyntaxError, Exception) as e:
+        except (lxml.etree.XMLSyntaxError, Exception) as e:  # health: allow BLE001 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
             errors.append(f"  Error parsing XML: {e}")
 
         if errors:
@@ -406,7 +406,7 @@ class DOCXSchemaValidator(BaseSchemaValidator):
         repairs += self.repair_durableId()
         return repairs
 
-    def repair_durableId(self) -> int:
+    def repair_durableId(self) -> int:  # health: allow NESTING -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         DURABLE_ID_ATTRS = ("w16cid:durableId", "w16cex:durableId")
         repairs = 0
         renames: dict = {}  
@@ -456,7 +456,7 @@ class DOCXSchemaValidator(BaseSchemaValidator):
                         print(message)
                     repairs += len(pending)
 
-            except Exception:
+            except Exception:  # health: allow BLE001, S110 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
                 pass
 
         return repairs

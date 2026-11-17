@@ -65,7 +65,7 @@ def _ensure_shim() -> Path:
 
     src = Path(tempfile.gettempdir()) / "lo_socket_shim.c"
     src.write_text(_SHIM_SOURCE)
-    subprocess.run(
+    subprocess.run(  # health: allow HX006 -- vendored 2026-11-17 nemo office-skill snapshot; keep the live script
         ["gcc", "-shared", "-fPIC", "-o", str(_SHIM_SO), str(src), "-ldl"],
         check=True,
         capture_output=True,
