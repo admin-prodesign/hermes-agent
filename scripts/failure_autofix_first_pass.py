@@ -29,6 +29,17 @@ from failure_autofix_admission_gate import (
 from failure_autofix_allowlist import try_allowlist_repair
 from failure_autofix_thin_llm import run_thin_llm
 
+try:
+    from scripts.failure_autofix_page import (
+        latch_times_from_state,
+        render_needs_decision_page,
+    )
+except ImportError:  # script next to the page module (~/.hermes/scripts copy)
+    from failure_autofix_page import (
+        latch_times_from_state,
+        render_needs_decision_page,
+    )
+
 RECEIPT_PATH = Path(
     os.environ.get(
         "FAILURE_AUTOFIX_FIRST_PASS_RECEIPTS",
@@ -50,17 +61,25 @@ def _append_receipt(row: dict[str, Any]) -> None:
         pass
 
 
-def _offer_markdown(alert: dict[str, Any], *, reason: str, offer: str) -> str:
-    source = str(alert.get("source") or "unknown")
-    summary = str(alert.get("summary") or alert.get("title") or "")[:200]
-    lines = [
-        "**Status:** Failure autofix needs a human decision (first-pass, no retry storm)",
-        f"**Source:** `{source}`",
-        f"**Summary:** {summary}",
-        f"**Why automation stopped:** {reason}",
-        f"**Concrete offer:** {offer or 'Approve a bounded manual repair or extend the allowlist.'}",
-    ]
-    return "\n".join(lines)
+def _page_for(
+    alert: dict[str, Any],
+    *,
+    reason: str,
+    offer: str,
+    signature: str,
+) -> tuple[str, str]:
+    """Build the needs-decision page and the one-line decision it asks."""
+    tried, until = (None, None)
+    if reason == "unresolvable_latched":
+        tried, until = latch_times_from_state(signature)
+    return render_needs_decision_page(
+        alert,
+        reason=reason,
+        offer=offer,
+        signature=signature,
+        latch_tried_at=tried,
+        latch_until=until,
+    )
 
 
 def _maybe_page(alert: dict[str, Any], markdown: str) -> dict[str, Any]:
@@ -182,9 +201,11 @@ def run_first_pass(
         record_verdict(alert, "needs_input", text=offer, now=now)
         result["outcome"] = "needs_input"
         result["reason"] = str(allowlist.get("status"))
-        result["offer"] = offer
         result["notify"] = True
-        md = _offer_markdown(alert, reason=result["reason"], offer=offer)
+        md, decision = _page_for(
+            alert, reason=result["reason"], offer=offer, signature=""
+        )
+        result["offer"] = decision
         result["notification_markdown"] = md
         # Record latch first (above); page at most once per recurrence cooldown.
         if should_page_recurrence(alert, now=now):
@@ -203,13 +224,15 @@ def run_first_pass(
         result["admission"] = pre.as_dict()
         result["outcome"] = "unresolvable"
         result["reason"] = "unresolvable_latched"
-        result["offer"] = (
-            "Signature is latched after a prior blocked repair. "
-            "Do not re-burn LLM. Approve a manual fix or clear the latch."
+        md, decision = _page_for(
+            alert,
+            reason=result["reason"],
+            offer="",
+            signature=pre.signature,
         )
+        result["offer"] = decision
         if should_page_recurrence(alert, now=now):
             result["notify"] = True
-            md = _offer_markdown(alert, reason=result["reason"], offer=result["offer"])
             result["page"] = _maybe_page(alert, md)
             result["notification_markdown"] = md
         _append_receipt({"ts": int(now), "source": alert.get("source"), **result})
@@ -222,8 +245,13 @@ def run_first_pass(
         result["outcome"] = "no_action"
         if admission.reason == "unresolvable_latched" and should_page_recurrence(alert, now=now):
             result["notify"] = True
-            result["offer"] = "Latched recurrence; approve manual action."
-            md = _offer_markdown(alert, reason=admission.reason, offer=result["offer"])
+            md, decision = _page_for(
+                alert,
+                reason=admission.reason,
+                offer="",
+                signature=admission.signature,
+            )
+            result["offer"] = decision
             result["page"] = _maybe_page(alert, md)
             result["notification_markdown"] = md
         _append_receipt({"ts": int(now), "source": alert.get("source"), **result})
@@ -252,11 +280,13 @@ def run_first_pass(
         now=now,
     )
     if result["notify"]:
-        md = _offer_markdown(
+        md, decision = _page_for(
             alert,
             reason=result["reason"] or result["outcome"],
             offer=result["offer"],
+            signature=str((result.get("admission") or {}).get("signature") or ""),
         )
+        result["offer"] = decision
         result["notification_markdown"] = md
         result["page"] = _maybe_page(alert, md)
     _append_receipt({"ts": int(now), "source": alert.get("source"), **{k: result[k] for k in result if k != "thin_llm"}})
