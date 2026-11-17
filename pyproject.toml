@@ -485,9 +485,12 @@ nemo = [
   "pyyaml==6.0.3",
   "requests==2.34.2",
   # PD One employee office-file-ops (XLSX/DOCX/PPTX writes on the release host).
+  # matplotlib is the rare pptx-author image-chart path (Noto Sans CJK TC).
+  # Native charts stay on python-pptx.
   "openpyxl==3.1.5",
   "python-docx==1.2.0",
   "python-pptx==1.0.2",
+  "matplotlib==3.11.2",
   "hermes-agent[mcp]",
   # Gateway adapters on the host (webhook, Mattermost, LINE) import aiohttp from here.
   "hermes-agent[messaging]",
@@ -608,6 +611,7 @@ test = [
   "openpyxl==3.1.5",
   "python-docx==1.2.0",
   "python-pptx==1.0.2",
+  "matplotlib==3.11.2",
 ]
 
 [build-system]
