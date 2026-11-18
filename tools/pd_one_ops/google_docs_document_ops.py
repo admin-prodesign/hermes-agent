@@ -942,7 +942,7 @@ def execute_document_ops(*, action: str='list_registered_documents', document_ke
     action_key = str(action or 'list_registered_documents').strip().lower().replace('-', '_')
 
     def _pd_phase_2():
-        nonlocal _pd_result, result, section_heading
+        nonlocal _pd_result, result, body_paragraphs, changelog_summary, new_text, section_heading
         doc = _PdUnset
         docs_client = _PdUnset
         document = _PdUnset
@@ -951,12 +951,10 @@ def execute_document_ops(*, action: str='list_registered_documents', document_ke
         resolved_tab_id = _PdUnset
         result = _PdUnset
         revision_error = _PdUnset
-        section_heading = _PdUnset
         translation_repairs = _PdUnset
 
         def _pd_phase_5():
-            nonlocal _pd_result, doc, docs_client, document, live, module, resolved_tab_id, result, revision_error, section_heading, translation_repairs
-            section_heading = _PdUnset
+            nonlocal _pd_result, body_paragraphs, changelog_summary, doc, docs_client, document, live, module, new_text, resolved_tab_id, result, revision_error, section_heading, translation_repairs
             if action_key == 'bootstrap_erp_work_manual':
                 import importlib.util
                 bootstrap_path = ROOT() / 'tools/erp_work_manual_bootstrap.py'
@@ -1000,14 +998,10 @@ def execute_document_ops(*, action: str='list_registered_documents', document_ke
             translation_repairs = []
 
             def _pd_phase_1():
-                nonlocal _pd_result, section_heading
-                body_paragraphs = _PdUnset
-                changelog_summary = _PdUnset
-                new_text = _PdUnset
-                section_heading = _PdUnset
+                nonlocal _pd_result, body_paragraphs, changelog_summary, new_text, section_heading, translation_repairs
 
                 def _pd_phase_3():
-                    nonlocal body_paragraphs, changelog_summary, new_text, section_heading
+                    nonlocal body_paragraphs, changelog_summary, new_text, section_heading, translation_repairs
                     translate = translator or _google_translate_text
                     translatable_action = action_key in {'insert_section_before_heading', 'unique_text_patch', 'append_changelog'}
                     translation_cache = None
