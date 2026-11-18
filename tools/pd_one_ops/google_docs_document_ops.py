@@ -428,11 +428,28 @@ def _authorize_work_manual_grant(document: dict[str, Any], *, requester_user_id:
     result = authorize(mattermost_user_id=requester_user_id, channel_id=channel_id, chat_type=chat_type, document_key=grant_key, document_id=str(document.get('document_id') or ''))
     return result.get('execute') is True
 
+def _authorize_drive_acl_write(document: dict[str, Any], *, requester_user_id: str) -> bool:
+    file_id = str(document.get('document_id') or '').strip()
+    if not file_id:
+        return False
+    tools_dir = str(Path(__file__).resolve().parent)
+    if tools_dir not in sys.path:
+        sys.path.append(tools_dir)
+    from drive_acl_authorize import authorize
+    try:
+        result = authorize(file_id, mattermost_user_id=requester_user_id)
+    except Exception:
+        logging.getLogger('pd_one_ops').exception('pd one command failed')
+        return False
+    return result.get('status') == 'ok' and bool(result.get('canWrite'))
+
 def _authorize_document_requester(registry: dict[str, Any], document: dict[str, Any] | None, *, requester_user_id: str, live: bool, channel_id: str='', chat_type: str='') -> None:
     requester = _parse_requester_id(requester_user_id)
     if requester in _global_requester_ids(registry):
         return
     if document is not None and _authorize_work_manual_grant(document, requester_user_id=requester, channel_id=channel_id, chat_type=chat_type):
+        return
+    if document is not None and _authorize_drive_acl_write(document, requester_user_id=requester):
         return
     mode = 'live writes' if live else 'Google Docs document operations'
     raise PermissionError(f'requester is not authorized for {mode}')
