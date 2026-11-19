@@ -19,6 +19,7 @@ from tools.pd_one_ops.site_config import profile_root, resolve_configured_path
 DEFAULT_APP_ID = "f2073120-8c2e-4930-b13c-105838c5e4c3"
 DEFAULT_APP_NAME = "prodesign-group-1163872-25-01-09"
 TICKET_RE = re.compile(r"^PDAPP-\d{8}-[A-F0-9]{8}$")
+MATTERMOST_POST_ID_RE = re.compile(r"^[a-z0-9]{26}$")
 LIVE_CONFIRMATION = "RUN LIVE APPSHEET DEFINITION APPLY"
 TICKET_CAPABILITY = "appsheet_definition_apply"
 APPSHEET_VENV_PY = Path(
@@ -297,6 +298,96 @@ def load_proposed_app(path: Path) -> dict[str, Any]:
     return data
 
 
+def andy_origin_user_id() -> str:
+    from tools.pd_one_ops.pd_one_safe_ops_part0 import DEFAULT_ANDY_USER_ID
+
+    configured = str(DEFAULT_ANDY_USER_ID() or "").strip()
+    return configured or "5nak6m7nmf8kudbrwbtccazbgc"
+
+
+def _normalize_match_text(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text or "").strip()).casefold()
+
+
+def post_asks_for_definition_changes(message: str, change_summary: list[Any]) -> bool:
+    normalized_message = _normalize_match_text(message)
+    if not normalized_message:
+        return False
+    items = [str(item or "").strip() for item in change_summary if str(item or "").strip()]
+    if not items:
+        return False
+    return all(_normalize_match_text(item) in normalized_message for item in items)
+
+
+def authorize_andy_origin_post(
+    *,
+    requester_user_id: str,
+    origin_post_id: str,
+    change_summary: list[Any],
+    post_fetcher: Callable[[str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    andy_id = andy_origin_user_id()
+    requester = str(requester_user_id or "").strip()
+    if requester != andy_id:
+        fail("live AppSheet definition apply origin authorization requires Andy requester_user_id")
+    post_id = str(origin_post_id or "").strip()
+    if not MATTERMOST_POST_ID_RE.fullmatch(post_id):
+        fail(f"invalid Mattermost origin_post_id: {origin_post_id!r}")
+    if post_fetcher is not None:
+        post = post_fetcher(post_id)
+        if not isinstance(post, dict):
+            fail(f"origin post {post_id} could not be re-fetched for authorization")
+    else:
+        from tools.pd_one_ops.pd_one_safe_ops_part1 import _mattermost_lookup_get, mattermost_context
+
+        base, headers, _me = mattermost_context()
+        receipt, post = _mattermost_lookup_get(base, headers, f"/api/v4/posts/{post_id}")
+        if receipt.get("status") != 200 or not post:
+            fail(f"origin post {post_id} could not be re-fetched for authorization")
+    if str(post.get("user_id") or "") != andy_id:
+        fail("origin post sender does not match Andy requester_user_id")
+    if int(post.get("delete_at") or 0):
+        fail(f"origin post {post_id} is deleted")
+    message = str(post.get("message") or "")
+    if not post_asks_for_definition_changes(message, change_summary):
+        fail("origin post message does not request the patch envelope change_summary")
+    return {
+        "authorization": "andy_origin_post",
+        "origin_post_id": post_id,
+        "requester_user_id": requester,
+        "message_excerpt": message[:240],
+    }
+
+
+def authorize_live_apply(
+    *,
+    ticket_id: str,
+    requester_user_id: str,
+    origin_post_id: str,
+    patch_id: str,
+    app_id: str,
+    change_summary: list[Any],
+    post_fetcher: Callable[[str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    ticket = str(ticket_id or "").strip()
+    requester = str(requester_user_id or "").strip()
+    post_id = str(origin_post_id or "").strip()
+    if ticket:
+        bound = authorize_ticket(ticket, patch_id=patch_id, app_id=app_id)
+        return {"authorization": "pdapp_ticket", "ticket_id": bound.get("ticket_id") or ticket}
+    if requester and post_id:
+        origin = authorize_andy_origin_post(
+            requester_user_id=requester,
+            origin_post_id=post_id,
+            change_summary=change_summary,
+            post_fetcher=post_fetcher,
+        )
+        return origin
+    if requester or post_id:
+        fail("live AppSheet definition apply requires both requester_user_id and origin_post_id")
+    fail("live AppSheet definition apply requires ticket_id or Andy origin_post authorization")
+
+
 def authorize_ticket(ticket_id: str, *, patch_id: str, app_id: str) -> dict[str, Any]:
     if not TICKET_RE.fullmatch(ticket_id):
         fail("ticket_id must look like PDAPP-YYYYMMDD-XXXXXXXX")
@@ -379,8 +470,11 @@ def apply_definition(
     patch_envelope_path: str,
     dry_run: bool = True,
     ticket_id: str = "",
+    requester_user_id: str = "",
+    origin_post_id: str = "",
     confirm_live_write: str = "",
     client_factory: Callable[..., EditorClient] | None = None,
+    post_fetcher: Callable[[str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     envelope_path = resolve_allowed_path(patch_envelope_path, label="patch_envelope_path")
     envelope = load_patch_envelope(envelope_path)
@@ -418,7 +512,7 @@ def apply_definition(
         "plan": plan,
         "readback_required": True,
         "safety": {
-            "admin_ticket_required_for_live": True,
+            "admin_ticket_or_andy_origin_post_required_for_live": True,
             "live_write_confirmation_required": LIVE_CONFIRMATION,
             "snapshot_before_save": True,
             "rollback_on_failure": True,
@@ -430,15 +524,32 @@ def apply_definition(
         return receipt
     if confirm_live_write != LIVE_CONFIRMATION:
         fail(f"live apply requires --confirm-live-write {LIVE_CONFIRMATION!r}")
-    if not ticket_id:
-        fail("live AppSheet definition apply requires --ticket-id")
-    ticket = authorize_ticket(ticket_id, patch_id=envelope["patch_id"], app_id=envelope["app_id"])
-    receipt["ticket_id"] = ticket.get("ticket_id") or ticket_id
+    auth = authorize_live_apply(
+        ticket_id=ticket_id,
+        requester_user_id=requester_user_id,
+        origin_post_id=origin_post_id,
+        patch_id=envelope["patch_id"],
+        app_id=envelope["app_id"],
+        change_summary=envelope["change_summary"],
+        post_fetcher=post_fetcher,
+    )
+    receipt["authorization"] = auth
+    auth_ticket_id = auth.get("ticket_id")
+    if auth_ticket_id:
+        receipt["ticket_id"] = auth_ticket_id
+    elif auth.get("origin_post_id"):
+        receipt["origin_post_id"] = auth["origin_post_id"]
+        receipt["requester_user_id"] = auth.get("requester_user_id")
     if not plan["would_change"]:
         receipt.update(
             {
                 "writes": False,
-                "execution": {"status": "noop", "verified": True, "ticket_id": ticket_id},
+                "execution": {
+                    "status": "noop",
+                    "verified": True,
+                    "ticket_id": auth_ticket_id,
+                    "origin_post_id": auth.get("origin_post_id"),
+                },
             }
         )
         return receipt
@@ -457,7 +568,8 @@ def apply_definition(
             "after_wrapper": wrapper_flags(after_payload),
             "after_sha256": after_sha,
             "verified": verified,
-            "ticket_id": ticket_id,
+            "ticket_id": auth_ticket_id,
+            "origin_post_id": auth.get("origin_post_id"),
         }
         if not verified:
             rollback_path = write_snapshot(envelope["app_id"], envelope["patch_id"], "rollback-source", after_app)
@@ -520,6 +632,8 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--dry-run", action="store_true", default=True)
     apply.add_argument("--live", dest="dry_run", action="store_false")
     apply.add_argument("--ticket-id", default="")
+    apply.add_argument("--requester-user-id", default="")
+    apply.add_argument("--origin-post-id", default="")
     apply.add_argument("--confirm-live-write", default="")
     return parser
 
@@ -534,6 +648,8 @@ def main(argv: list[str] | None = None) -> int:
         patch_envelope_path=args.patch_envelope_path,
         dry_run=bool(args.dry_run),
         ticket_id=args.ticket_id,
+        requester_user_id=args.requester_user_id,
+        origin_post_id=args.origin_post_id,
         confirm_live_write=args.confirm_live_write,
     )
     return 0 if payload.get("status") == "ok" else 3

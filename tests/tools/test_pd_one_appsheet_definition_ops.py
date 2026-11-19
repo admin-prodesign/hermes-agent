@@ -9,6 +9,10 @@ import pytest
 from tools.pd_one_ops import pd_one_appsheet_definition_ops as ops
 import tools.pd_one_safe_ops as safe_ops
 
+ANDY_USER_ID = "5nak6m7nmf8kudbrwbtccazbgc"
+EMPLOYEE_USER_ID = "abcdefghijklmnopqrstuvwx"
+ORIGIN_POST_ID = "zyxwvutsrqponmlkjihgfedcba"
+
 
 class _FakeClient:
     def __init__(self, *, app_id: str, app_name: str, apps: dict[str, dict]) -> None:
@@ -185,3 +189,88 @@ def test_apply_live_saves_and_readbacks_with_ticket(tmp_path, monkeypatch):
     assert payload["execution"]["verified"] is True
     assert len(client.saved) == 1
     assert Path(payload["snapshot_before_path"]).is_file()
+
+
+def _envelope_paths(tmp_path, monkeypatch, *, change_summary: list[str] | None = None):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    profile = tmp_path / "profiles" / "pdone"
+    cache = profile / "cache" / "scratch"
+    cache.mkdir(parents=True)
+    proposed = _sample_app("next")
+    proposed_path = cache / "proposed.json"
+    proposed_path.write_text(json.dumps(proposed), encoding="utf-8")
+    envelope_path = cache / "envelope.json"
+    envelope_path.write_text(
+        json.dumps(
+            {
+                "patch_id": "demo-patch",
+                "app_id": ops.DEFAULT_APP_ID,
+                "app_name": ops.DEFAULT_APP_NAME,
+                "proposed_app_path": str(proposed_path),
+                "proposed_app_sha256": ops.app_json_sha256(proposed),
+                "change_summary": change_summary or ["add demo view"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return envelope_path, proposed
+
+
+def test_apply_live_authorized_by_andy_origin_post_without_pdapp(tmp_path, monkeypatch):
+    envelope_path, proposed = _envelope_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(ops, "andy_origin_user_id", lambda: ANDY_USER_ID)
+
+    def _fetch(post_id: str) -> dict:
+        assert post_id == ORIGIN_POST_ID
+        return {
+            "id": post_id,
+            "user_id": ANDY_USER_ID,
+            "delete_at": 0,
+            "message": "Please apply add demo view to the AppSheet editor definition.",
+        }
+
+    before = _sample_app("before")
+    client = _FakeClient(
+        app_id=ops.DEFAULT_APP_ID,
+        app_name=ops.DEFAULT_APP_NAME,
+        apps={"latest": before},
+    )
+    payload = ops.apply_definition(
+        patch_envelope_path=str(envelope_path),
+        dry_run=False,
+        requester_user_id=ANDY_USER_ID,
+        origin_post_id=ORIGIN_POST_ID,
+        confirm_live_write=ops.LIVE_CONFIRMATION,
+        client_factory=lambda: client,
+        post_fetcher=_fetch,
+    )
+    assert payload["status"] == "ok"
+    assert payload["writes"] is True
+    assert payload["authorization"]["authorization"] == "andy_origin_post"
+    assert payload.get("ticket_id") is None
+    assert payload["origin_post_id"] == ORIGIN_POST_ID
+
+
+def test_apply_live_rejects_employee_origin_post(tmp_path, monkeypatch):
+    envelope_path, _proposed = _envelope_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(ops, "andy_origin_user_id", lambda: ANDY_USER_ID)
+    client = _FakeClient(
+        app_id=ops.DEFAULT_APP_ID,
+        app_name=ops.DEFAULT_APP_NAME,
+        apps={"latest": _sample_app("before")},
+    )
+    with pytest.raises(SystemExit):
+        ops.apply_definition(
+            patch_envelope_path=str(envelope_path),
+            dry_run=False,
+            requester_user_id=EMPLOYEE_USER_ID,
+            origin_post_id=ORIGIN_POST_ID,
+            confirm_live_write=ops.LIVE_CONFIRMATION,
+            client_factory=lambda: client,
+            post_fetcher=lambda post_id: {
+                "id": post_id,
+                "user_id": EMPLOYEE_USER_ID,
+                "delete_at": 0,
+                "message": "add demo view please",
+            },
+        )

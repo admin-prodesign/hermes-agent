@@ -1,5 +1,5 @@
 from __future__ import annotations
-__all__ = ['_apps_script_file', '_apps_script_patch_plan', '_apps_script_project', '_apps_script_registered_projects', '_apps_script_stage_file_plan', '_apps_script_syntax_check', '_apps_script_verify', '_appsheet_hr_employee_compare_value', '_appsheet_hr_employee_plan', '_appsheet_hr_employee_subset', '_appsheet_quote', '_case_payload', '_execute_bulk_create_cases', '_find_case_by_id', '_find_case_by_parent_and_title', '_load_appsheet_record_ops_module', '_plan_bulk_create_cases', '_push_apps_script_content', '_safe_staged_source_path', '_validate_bulk_case_payload', 'apps_script_project_ops', 'appsheet_record_ops', 'call_function_twin', 'pd_one_3mf_slicer_inspect', 'pd_one_appsheet_definition_apply_approved', 'pd_one_appsheet_definition_inspect', 'pd_one_appsheet_hr_employee_patch', 'pd_one_appsheet_incident_morning_briefing_qa', 'pd_one_appsheet_table_probe', 'pd_one_artifact_base64_encode', 'pd_one_artifact_identity_inventory', 'pd_one_doc_build_artifact', 'pd_one_doc_detect_format', 'pd_one_doc_extract', 'pd_one_docx_body_xml_inspect', 'pd_one_docx_exact_text_patch', 'pd_one_docx_inspect', 'pd_one_docx_layout_patch', 'pd_one_docx_table_search', 'pd_one_docx_table_structure', 'pd_one_drive_acl_authorize', 'pd_one_ecrn_docx_unique_text_patch', 'pd_one_employee_watch', 'pd_one_equipment_workbook_build', 'pd_one_item_number_historical_sample_summary', 'pd_one_item_number_local_fixture_copy', 'pd_one_item_number_render_qa_status', 'pd_one_item_number_windows_excel_qa', 'pd_one_item_number_workflow_check', 'pd_one_item_number_xlsx_compiler', 'pd_one_json_html_artifact_build', 'pd_one_legacy_xls_inspect', 'pd_one_local_artifact_copy', 'pd_one_local_video_compose', 'pd_one_office_convert_to_pdf', 'pd_one_office_deb_contents', 'pd_one_office_docprops_inspect', 'pd_one_office_file_ops', 'pd_one_office_html_to_docx', 'pd_one_office_toolchain_status', 'pd_one_office_visual_qa', 'pd_one_origin_thread_media_deliver', 'pd_one_portal_module_change_authorize', 'pd_one_pptx_exact_text_patch', 'pd_one_pptx_from_template', 'pd_one_pptx_inspect', 'pd_one_pptx_ooxml_text_inspect', 'pd_one_sip_thread_index_audit', 'pd_one_sip_thread_index_build', 'pd_one_svg_artifact_inspect', 'pd_one_svg_embed_image', 'pd_one_typhoon_automation', 'pd_one_video_frame_sample', 'pd_one_work_manual_change_authorize', 'pd_one_xlsx_workbook_inspect', 'worker_scheduling_apps_script_patch', 'worker_scheduling_setup_rules']
+__all__ = ['_apps_script_file', '_apps_script_patch_plan', '_apps_script_project', '_apps_script_registered_projects', '_apps_script_stage_file_plan', '_apps_script_syntax_check', '_apps_script_verify', '_appsheet_hr_employee_compare_value', '_appsheet_hr_employee_plan', '_appsheet_hr_employee_subset', '_appsheet_quote', '_case_payload', '_execute_bulk_create_cases', '_find_case_by_id', '_find_case_by_parent_and_title', '_load_appsheet_record_ops_module', '_plan_bulk_create_cases', '_push_apps_script_content', '_safe_staged_source_path', '_validate_bulk_case_payload', 'apps_script_project_ops', 'appsheet_record_ops', 'call_function_twin', 'pd_one_3mf_slicer_inspect', 'pd_one_appsheet_definition_apply_approved', 'pd_one_appsheet_definition_inspect', 'pd_one_appsheet_hr_employee_patch', 'pd_one_appsheet_incident_morning_briefing_qa', 'pd_one_appsheet_table_probe', 'pd_one_artifact_base64_encode', 'pd_one_artifact_identity_inventory', 'pd_one_doc_build_artifact', 'pd_one_doc_detect_format', 'pd_one_doc_extract', 'pd_one_docx_body_xml_inspect', 'pd_one_docx_exact_text_patch', 'pd_one_docx_inspect', 'pd_one_docx_layout_patch', 'pd_one_docx_table_search', 'pd_one_docx_table_structure', 'pd_one_drive_acl_authorize', 'pd_one_ecrn_docx_unique_text_patch', 'pd_one_employee_watch', 'pd_one_equipment_workbook_build', 'pd_one_gateway_restart', 'pd_one_item_number_historical_sample_summary', 'pd_one_item_number_local_fixture_copy', 'pd_one_item_number_render_qa_status', 'pd_one_item_number_windows_excel_qa', 'pd_one_item_number_workflow_check', 'pd_one_item_number_xlsx_compiler', 'pd_one_json_html_artifact_build', 'pd_one_legacy_xls_inspect', 'pd_one_local_artifact_copy', 'pd_one_local_video_compose', 'pd_one_office_convert_to_pdf', 'pd_one_office_deb_contents', 'pd_one_office_docprops_inspect', 'pd_one_office_file_ops', 'pd_one_office_html_to_docx', 'pd_one_office_toolchain_status', 'pd_one_office_visual_qa', 'pd_one_origin_thread_media_deliver', 'pd_one_portal_module_change_authorize', 'pd_one_pptx_exact_text_patch', 'pd_one_pptx_from_template', 'pd_one_pptx_inspect', 'pd_one_pptx_ooxml_text_inspect', 'pd_one_sip_thread_index_audit', 'pd_one_sip_thread_index_build', 'pd_one_svg_artifact_inspect', 'pd_one_svg_embed_image', 'pd_one_typhoon_automation', 'pd_one_video_frame_sample', 'pd_one_work_manual_change_authorize', 'pd_one_xlsx_workbook_inspect', 'worker_scheduling_apps_script_patch', 'worker_scheduling_setup_rules']
 import logging
 from tools.pd_one_ops.site_config import site_text, resolve_configured_path, external_path, profile_root, text_excludes_configured_hosts, ExternalModule, owner_display_name, repo_cli, package_file, kanban_boards_root
 import hashlib
@@ -597,11 +597,12 @@ def pd_one_appsheet_definition_inspect(app_id: str='', app_name: str='', version
         cmd += ['--version', str(version).strip()]
     return run_json(cmd, timeout=600)
 
-def pd_one_appsheet_definition_apply_approved(patch_envelope_path: str, dry_run: bool=True, ticket_id: str='', confirm_live_write: str='') -> str:
-    """Ticket-gated AppSheet definition save/promote with dry-run, snapshot, readback, rollback.
+def pd_one_appsheet_definition_apply_approved(patch_envelope_path: str, dry_run: bool=True, ticket_id: str='', requester_user_id: str='', origin_post_id: str='', confirm_live_write: str='') -> str:
+    """AppSheet definition save/promote with dry-run, snapshot, readback, rollback.
 
-    Live writes require an executable PDAPP ticket whose grant includes
-    appsheet_definition_apply, plus confirm_live_write='RUN LIVE APPSHEET DEFINITION APPLY'.
+    Live writes require confirm_live_write='RUN LIVE APPSHEET DEFINITION APPLY' plus either
+    an executable PDAPP ticket (appsheet_definition_apply grant) or Andy's verified
+    Mattermost origin_post_id with requester_user_id and a matching change_summary request.
     The patch envelope JSON must live under PD One cache/scratch or definition snapshots.
     """
     path = str(patch_envelope_path or '').strip()
@@ -611,8 +612,41 @@ def pd_one_appsheet_definition_apply_approved(patch_envelope_path: str, dry_run:
     if dry_run:
         cmd.append('--dry-run')
     else:
-        cmd += ['--live', '--ticket-id', str(ticket_id or '').strip(), '--confirm-live-write', str(confirm_live_write or '').strip()]
+        cmd.append('--live')
+        if str(ticket_id or '').strip():
+            cmd += ['--ticket-id', str(ticket_id or '').strip()]
+        if str(requester_user_id or '').strip():
+            cmd += ['--requester-user-id', str(requester_user_id or '').strip()]
+        if str(origin_post_id or '').strip():
+            cmd += ['--origin-post-id', str(origin_post_id or '').strip()]
+        cmd += ['--confirm-live-write', str(confirm_live_write or '').strip()]
     return run_json(cmd, timeout=600)
+
+
+def pd_one_gateway_restart(unit_name: str, dry_run: bool=True, requester_user_id: str='', origin_post_id: str='', confirm_live_write: str='') -> str:
+    """Restart an allowed Hermes gateway unit through user-bus busctl only (Andy origin post).
+
+    Live restart requires Andy's verified Mattermost origin_post_id, requester_user_id,
+    confirm_live_write='RESTART PD ONE GATEWAY', and unit_name in
+    hermes-gateway-pdone.service or hermes-gateway.service. Default dry_run=true.
+    """
+    unit = str(unit_name or '').strip()
+    if not unit:
+        raise ValueError('unit_name is required')
+    cmd = [sys.executable, str(SAFE_OPS()), 'gateway-restart', '--unit-name', unit]
+    if dry_run:
+        cmd.append('--dry-run')
+    else:
+        cmd += [
+            '--live',
+            '--requester-user-id',
+            str(requester_user_id or '').strip(),
+            '--origin-post-id',
+            str(origin_post_id or '').strip(),
+            '--confirm-live-write',
+            str(confirm_live_write or '').strip(),
+        ]
+    return run_json(cmd, timeout=180)
 
 def pd_one_legacy_xls_inspect(input_path: str, sheet: Optional[str]=None, max_sheets: int=10, preview_rows: int=25, preview_cols: int=25, max_nonempty_cells: int=400, max_merged_cells: int=20) -> str:
     """Inspect a bounded legacy .xls workbook without execute_code or raw xlrd loops."""
