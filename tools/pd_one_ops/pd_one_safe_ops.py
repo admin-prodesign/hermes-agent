@@ -474,6 +474,7 @@ __all__ = [
     'cmd_ecrn_docx_unique_text_patch',
     'cmd_epoch_milliseconds_to_iso',
     'cmd_equipment_workbook',
+    'cmd_gateway_restart',
     'cmd_google_docs_metadata_inspect',
     'cmd_google_drive_parent_chain',
     'cmd_google_drive_search_files',
