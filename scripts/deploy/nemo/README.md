@@ -220,7 +220,7 @@ This prints:
 - a tracked file in the live release differs from `git ls-tree <deployed sha>`, or is
   missing (git blob hashes, so mode-only noise does not count);
 - an untracked `.py` or `.sh` file sits in the release outside build output (`.venv`,
-  `.python`, `node_modules`, `web_dist`, `ui-tui/dist`, `__pycache__`);
+  `.python`, `node_modules`, `web_dist`, `ui-tui/dist`, `__pycache__`, `.build`, `.cache`);
 - a systemd unit or drop-in differs from a render against `current` or the running build:
   another release's path, a `.hermes/bin` wrapper the release lacks, or a stale
   `HERMES_RUNTIME_SHA`;
