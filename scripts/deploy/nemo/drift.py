@@ -28,6 +28,10 @@ from scripts.deploy.nemo.units import SHA_ENV, referenced_builds, render, root_s
 
 BUILD_OUTPUT_DIRS = frozenset({
     ".venv", ".python", "node_modules", "__pycache__", ".hermes", ".pytest_cache",
+    # In-tree scratch the release build writes and does not publish as source.
+    # The webapp workspace step mirrors apps/desktop into .build/webapp-workspace
+    # (those copies are the untracked .py files). node-deps writes .cache.
+    ".build", ".cache",
 })
 BUILD_OUTPUT_PATHS = ("hermes_cli/web_dist/", "ui-tui/dist/", "freeze.txt")
 EXTRA_SUFFIXES = (".py", ".sh")

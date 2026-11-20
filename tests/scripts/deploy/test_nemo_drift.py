@@ -106,6 +106,34 @@ def test_compare_tree_detects_tampered_py_and_ps1(mixed_eol_repo) -> None:
 
 
 @pytest.mark.platforms("linux", "macos")
+def test_build_scratch_leftovers_are_not_drift(mixed_eol_repo) -> None:
+    """Untracked modules under release-build scratch are not drift.
+
+    The webapp workspace step copies ``apps/desktop`` sources into
+    ``.build/webapp-workspace``, and node-deps writes ``.cache``. A modified
+    tracked file and an untracked module outside that scratch still alert.
+    """
+    _work, mirror, sha, release, _items = mixed_eol_repo
+    blobs = tree_blobs(mirror, sha)
+    leftover = release / ".build" / "webapp-workspace" / "apps" / "desktop" / "scripts" / "seed.py"
+    leftover.parent.mkdir(parents=True)
+    leftover.write_text("print('workspace copy')\n", encoding="utf-8")
+    cache_copy = release / ".cache" / "node-deps-previous" / "copied.py"
+    cache_copy.parent.mkdir(parents=True)
+    cache_copy.write_text("print('cache copy')\n", encoding="utf-8")
+    (release / "a.py").write_text("print('edited')\n", encoding="utf-8")
+    (release / "dropped.py").write_text("print('hand dropped')\n", encoding="utf-8")
+
+    report = DriftReport(sha=sha)
+    compare_tree(release, blobs, report, mirror=mirror, sha=sha)
+
+    assert report.modified == ["a.py"]
+    assert report.extra == ["dropped.py"]
+    assert not report.missing and not report.error
+    assert not report.clean
+
+
+@pytest.mark.platforms("linux", "macos")
 def test_batch_hash_object_calls_scale_with_attr_groups_not_files(mixed_eol_repo) -> None:
     _work, mirror, sha, _release, items = mixed_eol_repo
     groups = attribute_groups(mirror, sha, [rel for rel, _ in items])
