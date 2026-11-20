@@ -628,6 +628,7 @@ def build_parser():
         p.add_argument('--dry-run', action='store_true', default=True)
         p.add_argument('--live', dest='dry_run', action='store_false')
         p.add_argument('--ticket-id')
+        p.add_argument('--mm-post-id')
         p.add_argument('--confirm-live-write')
         p.set_defaults(func=cmd_google_group_change)
         p = sub.add_parser('auth-browser-status')
