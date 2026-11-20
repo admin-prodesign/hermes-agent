@@ -192,8 +192,14 @@ That should print one `<sha>\trefs/heads/main` line.
   step. A matching entry already recorded in `<home>/tools/facts.json` is used
   instead of downloading. The cache directory is dotted so `hermes pm gc` leaves
   it, and the script does not write `facts.json` or replace `~/.local/bin/pnpm`.
-  Gateway units keep their Python. The first deploy of this script still has to
-  be built by hand: the live worker runs the previous release's `build.sh`.
+  That same Node builds the desktop webapp
+  (`node apps/desktop/scripts/build-webapp.mjs` into `apps/desktop/dist-webapp`),
+  which the gateway serves when `webapp.enabled` is set. The compile failing, or
+  `dist-webapp/index.html` missing afterwards, fails the build. Cutover also
+  refuses the release when any profile has the webapp on and the bundle is
+  missing, so the not-built page cannot go live. Gateway units keep their
+  Python. The first deploy of this script still has to be built by hand: the
+  live worker runs the previous release's `build.sh`.
 
 ## Status
 
