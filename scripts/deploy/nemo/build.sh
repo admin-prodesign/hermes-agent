@@ -23,7 +23,7 @@ Usage: build.sh --sha SHA (--mirror DIR | --tarball FILE) [options]
   --previous PATH        Previous release to copy .python and frontend bits from.
   --staging PATH         Keep this directory when --stop-after is source or frontend.
   --stop-after STEP      source, frontend, or publish (default).
-  --skip-frontend        Do not install or build the dashboard.
+  --skip-frontend        Do not install or build the dashboard or the desktop webapp.
 
 Audit files land in <home>/upgrade-audits/<build>/.
 EOF
@@ -215,6 +215,8 @@ if [[ -n "${previous_path}" && -d "${previous_path}" ]]; then
   copy_tree "${previous_path}/.python" "${staging}/.python"
   copy_tree "${previous_path}/hermes_cli/web_dist" "${staging}/hermes_cli/web_dist"
   copy_tree "${previous_path}/ui-tui/dist" "${staging}/ui-tui/dist"
+  # Previous generation only: the webapp build keeps chunks open tabs still load, then replaces this tree.
+  copy_tree "${previous_path}/apps/desktop/dist-webapp" "${staging}/apps/desktop/dist-webapp"
   if locks_match "${previous_path}" "${staging}"; then
     copy_tree "${previous_path}/node_modules" "${staging}/node_modules"
   fi
@@ -302,9 +304,24 @@ if [[ "${skip_frontend}" != "1" ]]; then
     if [[ "${web_fresh}" != "true" ]]; then
       node "scripts/build/web.mjs"
     fi
+    # The gateway serves apps/desktop/dist-webapp from this release. The pinned
+    # Node (frontend-tools; engines.node >= 26, the lock's node pin) is already
+    # on PATH. A failed compile must not publish: the listener would answer
+    # with the not-built page.
+    node "apps/desktop/scripts/build-webapp.mjs"
   )
+  webapp_index="${staging}/apps/desktop/dist-webapp/index.html"
+  [[ -f "${webapp_index}" ]] || die "desktop webapp build failed: ${webapp_index} is missing"
+  # Compile scratch. The pnpm store under the Hermes home keeps the packages.
+  rm -rf "${staging}/.build/webapp-workspace"
   nemo_python -m scripts.deploy.nemo.cli mark-frontend --release "${staging}"
 fi
+
+# Profiles with webapp.enabled serve this bundle. --skip-frontend must not
+# publish a release that would answer with the not-built page.
+nemo_python -m scripts.deploy.nemo.cli require-webapp \
+  --release "${staging}" --hermes-home "${home}" \
+  || die "refusing to publish a release without the desktop webapp bundle"
 
 if [[ "${stop_after}" == "frontend" ]]; then
   write_build_manifest "frontend"

@@ -164,6 +164,13 @@ manifest="${home}/upgrade-audits/${build}/manifest.json"
 venv_python="${release}/.venv/bin/python"
 [[ -x "${venv_python}" ]] || die "release interpreter missing: ${venv_python}"
 
+# Before preflight or any swap. The gateway serves apps/desktop/dist-webapp from
+# this release when webapp.enabled is set; without index.html the listener
+# answers with the not-built page.
+nemo_python -m scripts.deploy.nemo.cli require-webapp \
+  --release "${release}" --hermes-home "${home}" \
+  || die "refusing to cut over ${release}; nothing was changed"
+
 if [[ -z "${sha}" && -f "${manifest}" ]]; then
   sha="$(nemo_python -m scripts.deploy.nemo.cli manifest-get --path "${manifest}" --key sha || true)"
 fi

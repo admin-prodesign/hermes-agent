@@ -46,6 +46,7 @@ from scripts.deploy.nemo.units import is_user_unit, target_for, unit_files
 from scripts.deploy.nemo.verify import DEFAULT_PORT_HOST
 from scripts.deploy.nemo.verify_mcp import compile_plan, scripts_in_release
 from scripts.deploy.nemo.verify_ws import static_problems
+from scripts.deploy.nemo.webapp_bundle import webapp_bundle_problem
 
 
 def _home(args: argparse.Namespace) -> Path:
@@ -200,6 +201,14 @@ def cmd_verify_ws(args: argparse.Namespace) -> int:
     for problem in problems:
         print(problem, file=sys.stderr)
     return 1 if problems else 0
+
+
+def cmd_require_webapp(args: argparse.Namespace) -> int:
+    problem = webapp_bundle_problem(args.release, _home(args))
+    if problem:
+        print(problem, file=sys.stderr)
+        return 1
+    return 0
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
@@ -481,6 +490,14 @@ def register(sub) -> None:
     verify_ws = sub.add_parser("verify-ws", help="static dashboard preinstall checks")
     verify_ws.add_argument("--release", required=True, type=Path)
     verify_ws.set_defaults(func=cmd_verify_ws)
+
+    require_webapp = sub.add_parser(
+        "require-webapp",
+        help="fail when webapp.enabled is set and dist-webapp/index.html is missing",
+    )
+    _add_home(require_webapp)
+    require_webapp.add_argument("--release", required=True, type=Path)
+    require_webapp.set_defaults(func=cmd_require_webapp)
 
     gate = sub.add_parser("gate", help="wait until every profile is quiet")
     _add_home(gate)

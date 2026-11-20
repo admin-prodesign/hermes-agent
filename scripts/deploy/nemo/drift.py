@@ -33,7 +33,9 @@ BUILD_OUTPUT_DIRS = frozenset({
     # (those copies are the untracked .py files). node-deps writes .cache.
     ".build", ".cache",
 })
-BUILD_OUTPUT_PATHS = ("hermes_cli/web_dist/", "ui-tui/dist/", "freeze.txt")
+BUILD_OUTPUT_PATHS = (
+    "hermes_cli/web_dist/", "ui-tui/dist/", "apps/desktop/dist-webapp/", "freeze.txt",
+)
 EXTRA_SUFFIXES = (".py", ".sh")
 GIT_LINK_MODE = "120000"
 GIT_SUBMODULE_MODE = "160000"
