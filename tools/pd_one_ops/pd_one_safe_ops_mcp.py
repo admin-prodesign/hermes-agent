@@ -142,6 +142,7 @@ __all__ = [
     'pd_one_employee_watch',
     'pd_one_epoch_milliseconds_to_iso',
     'pd_one_equipment_workbook_build',
+    'pd_one_gateway_restart',
     'pd_one_google_docs_document_ops',
     'pd_one_google_docs_metadata_inspect',
     'pd_one_google_drive_parent_chain',
