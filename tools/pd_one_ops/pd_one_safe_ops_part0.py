@@ -1447,7 +1447,16 @@ def cmd_google_group_change(args: argparse.Namespace) -> None:
     if action == 'create-group':
         fail('live create-group is not enabled; use add-member/remove-member with a typed ticket')
     from pd_one_google_group_member_ops import LIVE_CONFIRMATION, apply_member_change
-    emit(apply_member_change(action=action, group=group, member=member or '', role=args.role, dry_run=False, ticket_id=args.ticket_id, confirm_live_write=getattr(args, 'confirm_live_write', None)))
+    emit(apply_member_change(
+        action=action,
+        group=group,
+        member=member or '',
+        role=args.role,
+        dry_run=False,
+        ticket_id=args.ticket_id,
+        mm_post_id=getattr(args, 'mm_post_id', None),
+        confirm_live_write=getattr(args, 'confirm_live_write', None),
+    ))
     return
 
 def http_status(url: str, timeout: float=3.0) -> dict[str, Any]:

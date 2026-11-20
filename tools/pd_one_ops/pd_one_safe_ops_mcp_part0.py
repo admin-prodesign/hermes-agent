@@ -851,9 +851,25 @@ def pd_one_google_docs_document_ops(action: str='list_registered_documents', doc
         logging.getLogger('pd_one_ops').exception('pd one command failed')
         return _json_result({'status': 'error', 'error': 'google_docs_document_ops_failed', 'detail': str(exc)})
 
-def pd_one_google_group_change_apply(group: str, action: str, member: str, ticket_id: str, role: str='MEMBER', confirm_live_write: str='') -> str:
-    """Apply a ticket-bound Google Group member add/remove with readback."""
-    cmd = [sys.executable, str(Path(resolve_configured_path('~/.hermes/profiles/pdone/tools/pd_one_google_group_member_ops.py'))), '--group', group, '--action', action, '--member', member, '--role', role, '--live', '--ticket-id', ticket_id, '--confirm-live-write', confirm_live_write]
+def pd_one_google_group_change_apply(group: str, action: str, member: str, ticket_id: str='', mm_post_id: str='', role: str='MEMBER', confirm_live_write: str='') -> str:
+    """Apply a Google Group member add/remove with readback.
+
+    Live apply requires confirm_live_write='RUN LIVE GOOGLE GROUP MEMBER CHANGE' plus either
+    an executable PDAPP ticket_id or Andy's verified Mattermost mm_post_id (ticket_id may
+    use an mm-post:<id> alias). When mm_post_id is set, ticket_id is not passed.
+    """
+    script = Path(resolve_configured_path('~/.hermes/profiles/pdone/tools/pd_one_google_group_member_ops.py'))
+    cmd = [sys.executable, str(script), '--group', group, '--action', action, '--member', member, '--role', role, '--live', '--confirm-live-write', confirm_live_write]
+    post_ref = str(mm_post_id or '').strip()
+    ticket_ref = str(ticket_id or '').strip()
+    if post_ref:
+        cmd += ['--mm-post-id', post_ref.removeprefix('mm-post:') if post_ref.startswith('mm-post:') else post_ref]
+    elif ticket_ref.startswith('mm-post:'):
+        cmd += ['--mm-post-id', ticket_ref.removeprefix('mm-post:')]
+    elif ticket_ref:
+        cmd += ['--ticket-id', ticket_ref]
+    else:
+        raise ValueError('live Google group change requires ticket_id or mm_post_id')
     return run_json(cmd, timeout=90)
 
 def pd_one_smb_unc_content_search(root: str, terms: list[str], match_mode: str='OR', ticket_id: Optional[str]=None, requester_user_id: Optional[str]=None) -> str:
