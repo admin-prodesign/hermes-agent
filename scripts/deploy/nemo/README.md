@@ -389,14 +389,26 @@ Supervisor push (reads `state/hermes_autonomous_supervisor/state.json`):
 .venv/bin/python -m scripts.hermes_autonomous_supervisor tick --dry-run
 ```
 
-Router dry-run (synthetic failure event):
+Router dry-run (synthetic failure event). Parent flags (`--config`, `--state-dir`,
+`--dry-run`, `--hermes-home`) go before the `send` subcommand:
 
 ```bash
-.venv/bin/python -m scripts.pd_one_notification_router send \
+.venv/bin/python -m scripts.pd_one_notification_router \
+  --dry-run \
+  send \
   --route pd_one_failure_escalations \
-  --json '{"summary":"synthetic test","fingerprint":"dry-run","severity":"error"}' \
-  --dry-run
+  --json '{"summary":"synthetic test","fingerprint":"dry-run","severity":"error"}'
 ```
+
+Cutover copies `failure_autofix_first_pass.py`, `failure_autofix_page.py`,
+`pd_one_notification_router.py`, `hermes_release_paths.py`, and
+`neo_watch_webhook.py` into `$HERMES_HOME/scripts`. The first-pass gate then
+runs `python -m scripts.pd_one_notification_router` from `runtime/current`
+(else `releases/current`) so `pre_targets` is the release router's hold, not a
+stale profile copy. If that checkout is missing, the gate logs it and execs
+the profile router. The queue worker file is left in place: it calls the
+refreshed gate, and the release tree does not contain the worker's host-only
+imports.
 
 Ack from Neo automation (suppresses held Mattermost release):
 

@@ -27,8 +27,14 @@ from email.utils import formatdate, make_msgid
 from pathlib import Path
 from typing import Any
 
-from scripts.deploy.nemo import neo_watch_webhook as neo
-from scripts.deploy.nemo.layout import resolve_hermes_home
+try:
+    from scripts.deploy.nemo import neo_watch_webhook as neo
+except ImportError:  # profile copy under ~/.hermes/scripts, next to neo_watch_webhook.py
+    import neo_watch_webhook as neo
+try:
+    from scripts.deploy.nemo.layout import resolve_hermes_home
+except ImportError:  # same profile copy; the release package is not on sys.path
+    from hermes_release_paths import resolve_hermes_home
 
 LOG = logging.getLogger(__name__)
 
@@ -95,10 +101,20 @@ def validate_target(target: str) -> tuple[str, str]:
 
 def validate_route(name: str, route: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    try:
-        validate_target(str((route.get('primary') or {}).get('target') or ''))
-    except Exception as exc:
-        errors.append(f'{name}.primary.target: {exc}')
+    # The documented escalation route has pre_targets and targets, and no
+    # primary. Requiring primary made `send --body` raise before the hold.
+    pre_targets = route.get('pre_targets')
+    has_pre = isinstance(pre_targets, list) and any(
+        isinstance(item, str) and item.strip() for item in pre_targets
+    )
+    primary_target = str((route.get('primary') or {}).get('target') or '')
+    if primary_target:
+        try:
+            validate_target(primary_target)
+        except Exception as exc:
+            errors.append(f'{name}.primary.target: {exc}')
+    elif not has_pre:
+        errors.append(f'{name}.primary.target: missing')
     fallback = route.get('fallback') or {}
     if fallback.get('target'):
         try:

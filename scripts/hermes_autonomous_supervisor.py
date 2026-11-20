@@ -28,6 +28,7 @@ from typing import Any, Callable
 from scripts.deploy.nemo import neo_watch_webhook as neo
 from scripts.deploy.nemo.layout import resolve_hermes_home
 from scripts.deploy.nemo.pdone_alert_watchdog import _finding_alertable, redact_value
+from scripts.hermes_release_paths import log_fallback, resolve_release_root
 
 HERMES = Path('/home/prodesign/.hermes')
 PDONE = HERMES / 'profiles/pdone'
@@ -1035,8 +1036,44 @@ def _serialize_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return redact_value(items)
 
 
+def _router_cwd() -> str:
+    """Directory from which ``python -m scripts.pd_one_notification_router`` imports."""
+    here = Path(__file__).resolve().parents[1]
+    if (here / 'scripts' / 'pd_one_notification_router.py').is_file():
+        return str(here)
+    root = resolve_release_root()
+    if root is not None:
+        return str(root)
+    log_fallback('notification router release copy missing; supervisor cwd ' + str(here))
+    return str(here)
+
+
 def _router_cmd(home: Path, *args: str) -> list[str]:
-    return [sys.executable, '-m', 'scripts.pd_one_notification_router', *args, '--hermes-home', str(home)]
+    # --hermes-home is a parent option. After the subcommand, argparse exits 2.
+    return [
+        sys.executable,
+        '-m',
+        'scripts.pd_one_notification_router',
+        '--hermes-home',
+        str(home),
+        *args,
+    ]
+
+
+def _run_router(cmd: list[str], *, timeout: float) -> subprocess.CompletedProcess[str] | None:
+    try:
+        return subprocess.run(
+            cmd,
+            cwd=_router_cwd(),
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
 
 
 def escalate_deadman(home: Path, *, correlation: str, summary: str, dry_run: bool) -> bool:
@@ -1057,18 +1094,16 @@ def escalate_deadman(home: Path, *, correlation: str, summary: str, dry_run: boo
     if dry_run:
         print(json.dumps({'deadman_escalation': event, 'cmd': cmd}, indent=2))
         return True
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, check=False)
-    except (OSError, subprocess.TimeoutExpired):
+    proc = _run_router(cmd, timeout=120)
+    if proc is None:
         return False
     return proc.returncode == 0
 
 
 def is_correlation_acked(home: Path, correlation: str) -> bool:
     cmd = _router_cmd(home, 'is-acked', '--correlation-key', correlation)
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
-    except (OSError, subprocess.TimeoutExpired):
+    proc = _run_router(cmd, timeout=30)
+    if proc is None:
         return False
     if proc.returncode != 0:
         return False

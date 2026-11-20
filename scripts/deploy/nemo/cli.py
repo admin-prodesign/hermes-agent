@@ -35,6 +35,7 @@ from scripts.deploy.nemo.manifest import (
     AUTO_RELEASE_SUFFIX, read_manifest, record_build_manifest, release_dir_name, write_manifest,
 )
 from scripts.deploy.nemo.postcheck import run_postcheck
+from scripts.deploy.nemo.profile_scripts import sync_profile_scripts
 from scripts.deploy.nemo.preflight import changed_files, plan_for
 from scripts.deploy.nemo.probe import run_probe
 from scripts.deploy.nemo.release_swap import runtime_links as resolve_runtime_links
@@ -260,6 +261,13 @@ def cmd_cutover(args: argparse.Namespace) -> int:
     for warning in result["warnings"]:
         print(f"warning: {warning}", file=sys.stderr)
     print(json.dumps(result, indent=2, sort_keys=True))
+    # Cron executes $HERMES_HOME/scripts, which the release symlink does not update.
+    # A missing file is logged inside the sync and does not roll the cutover back.
+    try:
+        sync_profile_scripts(releases / args.build, home)
+    except Exception as exc:  # health: allow BLE001 -- cutover already swapped the release; a copy failure must not roll it back
+        logging.getLogger(__name__).exception("profile script sync failed open")
+        print(f"warning: profile script sync failed open: {exc}", file=sys.stderr)
     return 0
 
 

@@ -39,6 +39,10 @@ except ImportError:  # script next to the page module (~/.hermes/scripts copy)
         latch_times_from_state,
         render_needs_decision_page,
     )
+try:
+    from scripts.hermes_release_paths import log_fallback, resolve_release_root
+except ImportError:  # profile copy under ~/.hermes/scripts
+    from hermes_release_paths import log_fallback, resolve_release_root
 
 RECEIPT_PATH = Path(
     os.environ.get(
@@ -82,42 +86,84 @@ def _page_for(
     )
 
 
-def _maybe_page(alert: dict[str, Any], markdown: str) -> dict[str, Any]:
-    """Best-effort named-route page; never raises into the repair path."""
-    if not Path(NOTIFICATION_ROUTER_PYTHON).is_file() and not Path(NOTIFICATION_ROUTER).is_file():
-        return {"status": "skipped", "reason": "router_missing"}
-    event = str(alert.get("event_type") or "")
-    if event.startswith("pd-neo."):
-        return {"status": "skipped", "reason": "pd_neo_surface"}
+def router_send_argv(
+    alert: dict[str, Any],
+    markdown: str,
+    *,
+    config: Path | None = None,
+    state_dir: Path | None = None,
+) -> tuple[list[str], str | None]:
+    """Argv and cwd for one escalation page.
+
+    ``--config`` and ``--state-dir`` are parent options. Placing them after
+    ``send`` makes argparse exit 2, and the page is dropped. When a release
+    checkout is installed, run its router (``python -m`` with that checkout as
+    cwd) so ``pre_targets`` is honored. Otherwise log and exec the profile copy.
+    """
+    config_path = config or Path(
+        os.environ.get(
+            "PD_ONE_NOTIFICATION_ROUTES",
+            "/home/prodesign/.hermes/config/notification-routes.json",
+        )
+    )
+    state_path = state_dir or Path(
+        os.environ.get(
+            "PD_ONE_NOTIFICATION_STATE_DIR",
+            "/home/prodesign/.hermes/state/notification-router",
+        )
+    )
     source = str(alert.get("source") or "unknown")
     run_id = str(alert.get("run_id") or int(time.time()))
     event_id = f"failure-autofix-page:{source}:{run_id}"[:180]
     title = f"Failure autofix needs decision: {source}"[:120]
+    flags = ["--config", str(config_path), "--state-dir", str(state_path)]
+    send = [
+        "send",
+        "--route",
+        ESCALATION_ROUTE,
+        "--event-id",
+        event_id,
+        "--correlation-key",
+        f"failure-autofix:{source}",
+        "--severity",
+        "error",
+        "--title",
+        title,
+        "--body",
+        markdown,
+    ]
+    release = resolve_release_root()
+    if release is not None:
+        venv_python = release / ".venv" / "bin" / "python"
+        if venv_python.is_file():
+            python_bin = str(venv_python)
+        elif Path(NOTIFICATION_ROUTER_PYTHON).is_file():
+            python_bin = NOTIFICATION_ROUTER_PYTHON
+        else:
+            python_bin = sys.executable
+        return [python_bin, "-m", "scripts.pd_one_notification_router", *flags, *send], str(release)
+    log_fallback(
+        "notification router release copy missing; "
+        f"falling back to {NOTIFICATION_ROUTER}"
+    )
     python_bin = NOTIFICATION_ROUTER_PYTHON if Path(NOTIFICATION_ROUTER_PYTHON).is_file() else sys.executable
+    return [python_bin, str(NOTIFICATION_ROUTER), *flags, *send], None
+
+
+def _maybe_page(alert: dict[str, Any], markdown: str) -> dict[str, Any]:
+    """Best-effort named-route page; never raises into the repair path."""
+    event = str(alert.get("event_type") or "")
+    if event.startswith("pd-neo."):
+        return {"status": "skipped", "reason": "pd_neo_surface"}
+    release = resolve_release_root()
+    router_installed = Path(NOTIFICATION_ROUTER_PYTHON).is_file() or Path(NOTIFICATION_ROUTER).is_file()
+    if release is None and not router_installed:
+        return {"status": "skipped", "reason": "router_missing"}
+    argv, cwd = router_send_argv(alert, markdown)
     try:
         proc = subprocess.run(
-            [
-                python_bin,
-                "-m",
-                "scripts.pd_one_notification_router",
-                "send",
-                "--config",
-                str(Path(os.environ.get("PD_ONE_NOTIFICATION_ROUTES", "/home/prodesign/.hermes/config/notification-routes.json"))),
-                "--state-dir",
-                str(Path(os.environ.get("PD_ONE_NOTIFICATION_STATE_DIR", "/home/prodesign/.hermes/state/notification-router"))),
-                "--route",
-                ESCALATION_ROUTE,
-                "--event-id",
-                event_id,
-                "--correlation-key",
-                f"failure-autofix:{source}",
-                "--severity",
-                "error",
-                "--title",
-                title,
-                "--body",
-                markdown,
-            ],
+            argv,
+            cwd=cwd,
             text=True,
             capture_output=True,
             timeout=60,
