@@ -52,7 +52,6 @@ __all__ = [
     '_PdHandled',
     '_PdReturn',
     '_PdUnset',
-    '_PdUnset',
     '_approved_existing_worker_path',
     '_approved_output_dir',
     '_apps_script_file',

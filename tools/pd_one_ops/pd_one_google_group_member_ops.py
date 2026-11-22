@@ -64,8 +64,7 @@ def andy_user_id() -> str:
 
 def normalize_mm_post_id(value: str) -> str:
     text = str(value or '').strip()
-    if text.startswith(MM_POST_PREFIX):
-        text = text[len(MM_POST_PREFIX):]
+    text = text.removeprefix(MM_POST_PREFIX)
     if not MATTERMOST_POST_ID_RE.fullmatch(text):
         fail(f'invalid Mattermost mm_post_id: {value!r}')
     return text

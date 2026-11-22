@@ -629,7 +629,7 @@ def _reapply_durability_barriers(conn: sqlite3.Connection) -> bool:
         _apply_macos_checkpoint_barrier(conn)
         _enforce_macos_synchronous_full(conn)
         return True
-    except Exception:  # schema still unparseable, or anything else — pragmas cannot be set yet
+    except Exception:  # health: allow BLE001 -- schema still unparseable, or anything else: pragmas cannot be set yet
         return False
 
 

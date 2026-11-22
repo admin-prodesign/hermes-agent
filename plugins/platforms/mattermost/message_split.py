@@ -14,7 +14,7 @@ This is used by ``MattermostAdapter.truncate_message``.
 from __future__ import annotations
 
 import re
-from typing import List, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 INDICATOR_RESERVE = 12  # room for "\n(XX/XX)" on its own line
 FENCE_CLOSE = "\n```"
@@ -23,6 +23,33 @@ HR_RE = re.compile(r"(?m)^\s*-{3,}\s*$")
 FENCE_LINE_RE = re.compile(r"^\s*```")
 
 Block = tuple[int, int, str]  # start, end, kind
+
+
+def first_markdown_heading(message: str) -> Optional[dict[str, Any]]:
+    """Return details for the first non-blank line if it is a Markdown heading."""
+    text = str(message or "")
+    position = 0
+    for line in text.splitlines(keepends=True):
+        line_without_break = line.rstrip("\r\n")
+        stripped = line_without_break.strip()
+        line_end = position + len(line)
+        if not stripped:
+            position = line_end
+            continue
+        match = re.match(
+            r"^(?P<indent>\s*)(?P<marks>#{1,6})\s+(?P<title>\S.*?)(?P<trailing>\s*)$",
+            line_without_break)
+        if not match:
+            return None
+        return {
+            "start": position,
+            "end": line_end,
+            "indent": match.group("indent") or "",
+            "marks": match.group("marks"),
+            "title": match.group("title").strip(),
+            "line_break": line[len(line_without_break):],
+        }
+    return None
 
 
 def split_mattermost_message(content: str, max_length: int = 4000) -> list[str]:

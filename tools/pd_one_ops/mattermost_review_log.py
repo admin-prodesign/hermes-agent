@@ -41,7 +41,6 @@ __all__ = [
     '_PdLazyMod',
     '_PdReturn',
     '_PdUnset',
-    '_PdUnset',
     '_scan_attachments_locked',
     '_scan_dms_locked',
     '_scan_interactions_locked',

@@ -38,6 +38,7 @@ from plugins.platforms.mattermost.hr_private_output import (
     guard_adapter_outbound as _guard_hr_outbound,
     guard_standalone_outbound as _guard_hr_standalone,
 )
+from plugins.platforms.mattermost.message_split import first_markdown_heading
 from plugins.platforms.mattermost.mentions import (
     bot_mention_patterns, legacy_bot_usernames, with_mentions_disabled as _with_mentions_disabled,
 )
@@ -1184,29 +1185,7 @@ class MattermostAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _first_markdown_heading(message: str) -> Optional[dict[str, Any]]:
-        """Return details for the first non-blank line if it is a Markdown heading."""
-        text = str(message or "")
-        position = 0
-        for line in text.splitlines(keepends=True):
-            line_without_break = line.rstrip("\r\n")
-            stripped = line_without_break.strip()
-            line_end = position + len(line)
-            if not stripped:
-                position = line_end
-                continue
-            match = re.match(r"^(?P<indent>\s*)(?P<marks>#{1,6})\s+(?P<title>\S.*?)(?P<trailing>\s*)$", line_without_break)
-            if not match:
-                return None
-            title = match.group("title").strip()
-            return {
-                "start": position,
-                "end": line_end,
-                "indent": match.group("indent") or "",
-                "marks": match.group("marks"),
-                "title": title,
-                "line_break": line[len(line_without_break):],
-            }
-        return None
+        return first_markdown_heading(message)
 
     @classmethod
     def _has_markdown_heading(cls, message: str) -> bool:

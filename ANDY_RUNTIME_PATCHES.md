@@ -11,7 +11,7 @@ Do not replay DROP or UPSTREAM-NOW.
 | Destination tag | official `v0.23.3` (NousResearch/hermes-agent), annotated |
 | Peeled commit | `caafe5389ae585ef77387a962aee05b1bcf17029` |
 | Before (previous main) | `87bded48036e304b2373e080184ece2f17fb13d0` (merge of #105, 2026-11-20) |
-| After (rebase merge) | `7119fda28b9140719ce5967687d3b1bd95357874` — first parent the peeled tag, second parent the before SHA. The branch tip is the commit that records this SHA. |
+| After (rebase merge) | `7119fda28b9140719ce5967687d3b1bd95357874` — first parent the peeled tag, second parent the before SHA. The PR head is that merge plus the ledger stamp and the CI lint adaptations. |
 | Previous overlay | `v0.23.1` peeled `3b421578588243f920886e6fe79a6faa87ea026e` (PR #92). It is the merge-base of the before SHA and `v0.23.3`. |
 | Method | checkout the peeled tag, then `git merge --no-ff` of the before SHA. A linear `rebase --onto` would replay the other parent of the v0.23.1 overlay (~50k fork commits) or would drop the overlay. Do not squash: the tag must stay an ancestor. |
 | Recorded before state | HEAD `87bded48036e304b2373e080184ece2f17fb13d0`; `git describe --tags` was `v2026.5.7-108440-g87bded4803` before official tags were fetched, and `v0.23.1-50850-g87bded48036` after (v0.23.1 is an ancestor). Latest calendar ancestor tag `v2026.5.7`. Dirty list empty. |
@@ -94,6 +94,18 @@ Earlier tag steps a host still below 53 would also run: 51 removes `cron.bot_cha
 - `pyproject.toml` vs the tag is only the house `[nemo]` extra and the matching office pins under `[test]` (`honcho-ai==2.5.1`, `browser-cookie3==0.20.1`, `pyyaml==6.0.3`, `requests==2.34.2`, `openpyxl==3.1.5`, `python-docx==1.2.0`, `python-pptx==1.0.2`, `matplotlib==3.11.2`, plus `hermes-agent[mcp]` and `hermes-agent[messaging]`).
 - `uv.lock` vs the tag is `+456 / -1` after `python -m pm.cli lock`.
 - `pm/lock.json` matches the tag (it differs from main because main was still on the v0.23.1 lock).
+
+## CI adaptations on top of the merge
+
+v0.23.3's `scripts/check` failed on the merged tree until:
+
+- duplicate `__all__` entries in the pd_one ops modules were removed, and `normalize_mm_post_id` uses `str.removeprefix` (same result)
+- `MattermostAdapter._first_markdown_heading` moved into `message_split.first_markdown_heading` so `adapter.py` stays under 2000 lines (1988)
+- the v0.23.3 redact cases moved to `tests/agent/test_redact_token_shapes.py` so `test_redact.py` stays under 2000 lines (1959)
+- new upstream `except Exception` and profile-setter lines that the ratchet treats as new versus `87bded4803` carry `# health: allow` on the line
+- two house reads use `encoding="utf-8-sig"`
+
+`python scripts/check` then reported 22 checks ok. These are not KEEP drops.
 
 ## Rollback
 

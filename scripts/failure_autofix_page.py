@@ -126,7 +126,7 @@ def latch_times_from_state(
         return None, None
     path = state_path if state_path is not None else _state_path()
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         return None, None
     signatures = data.get("signatures") if isinstance(data, dict) else None
