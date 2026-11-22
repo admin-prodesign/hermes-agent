@@ -1,0 +1,21 @@
+{
+  "note": "Deploy patch for pdone cron job 9606f49ec7ec. This is not a jobs.json replacement. Apply only set. Do not change leave_unchanged, the monitor gate, or any spend tripwire.",
+  "job_id": "9606f49ec7ec",
+  "set": {
+    "prompt": "You are PD One. This job prepares the IT meeting progress summary. It does not post, send, or edit Mattermost.\n\nAuthority: Andy Lin, exact Mattermost sender 5nak6m7nmf8kudbrwbtccazbgc, approved this recurring summary in IT channel jp47xmyu8prytmqrhimaw9hy7e on 2026-11-10, including Markdown tables. Do not ask for another approval. Do not create a PDAPP ticket.\n\nThe pre-run script stdout is the only evidence. If it is not_due, do not write the pending file. Final response: not_due.\n\nWhen the script prints a due packet, follow skill it-meeting-progress-summary. Write only the pending file it names, and only when its ready checks pass. Final response is one line: ready YYYY-MM-DD. Do not paste the summary. If those checks cannot pass, do not write the file. Final response: blocked <section>.",
+    "skills": ["it-meeting-progress-summary"],
+    "skill": "it-meeting-progress-summary",
+    "model": "grok-4.7",
+    "script": "it_meeting_progress_summary_gather.py",
+    "enabled_toolsets": ["file", "no_mcp"]
+  },
+  "leave_unchanged": {
+    "name": "IT meeting progress summary prepare",
+    "schedule_expr": "10 4 * * 2",
+    "deliver": "local",
+    "failure_deliver": "mattermost:5gmqtwqf7bde3cyihas79xi8ie",
+    "monitor_script": "it_meeting_progress_summary_gate.py",
+    "enabled": true,
+    "provider": null
+  }
+}

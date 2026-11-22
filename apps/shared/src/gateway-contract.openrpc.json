@@ -8793,17 +8793,8 @@
             "title": "Request Id"
           },
           "source": {
-            "default": "cli",
-            "enum": [
-              "cli",
-              "tui",
-              "gui",
-              "acp",
-              "tool",
-              "oneshot"
-            ],
-            "title": "Source",
-            "type": "string"
+            "$ref": "#/components/schemas/SessionCreateSource",
+            "default": "cli"
           },
           "cwd": {
             "anyOf": [
@@ -38722,6 +38713,19 @@
         ],
         "title": "SessionCreateResult",
         "type": "object"
+      },
+      "SessionCreateSource": {
+        "enum": [
+          "acp",
+          "cli",
+          "gui",
+          "oneshot",
+          "pdapp-executor",
+          "tool",
+          "tui"
+        ],
+        "title": "SessionCreateSource",
+        "type": "string"
       },
       "SessionCwdSetParams": {
         "additionalProperties": false,

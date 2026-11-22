@@ -290,6 +290,10 @@ FROM runtime_base AS python_deps
 # ~25 MB) is baked so the microsoft-office and pdf skills work out of the box:
 # this venv is sealed and has no pip, so the agent could not add them itself.
 #
+# [nemo] is the production-host closure on top of the base install
+# (`.[nemo]`): honcho-ai for the Honcho plugin, and PyYAML for the gateway
+# run script and model_policy/modelctl.py.
+#
 # Source binding is created after the source copy below. setup.py is copied here too: the
 # recorded selection's stamp hashes the packaging files, and must match the full tree copied below.
 COPY pyproject.toml setup.py uv.lock ./
@@ -303,7 +307,8 @@ RUN python3 -m pm.build_env --source /opt/hermes --python /usr/local/bin/python3
     --cache /opt/hermes/uv-cache \
     --out /opt/hermes/.venv --no-install-project --sealed --record-selection \
     --extra all --extra messaging --extra otlp --extra anthropic --extra bedrock \
-    --extra azure-identity --extra matrix --extra google-chat --extra fal --extra documents
+    --extra azure-identity --extra matrix --extra google-chat --extra fal --extra documents \
+    --extra nemo
 
 # Icons render on the runtime environment: Pillow and resvg-py are core
 # dependencies. A stage of its own so the frontend stage keeps building its

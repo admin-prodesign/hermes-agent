@@ -1,0 +1,14 @@
+{
+  "should_use": [
+    "Pull March ActivityLog records for 程俊龍 from AppSheet.",
+    "Export AppSheet rows for PersonID SRQUDSAU to Excel.",
+    "Build an AppSheet security filter for HR_Employees.",
+    "Debug why my AppSheet bot keeps duplicating records.",
+    "Figure out which base table this AppSheet slice really comes from before exporting data."
+  ],
+  "should_not_use": [
+    "Hi",
+    "Thanks",
+    "Summarize this news article"
+  ]
+}

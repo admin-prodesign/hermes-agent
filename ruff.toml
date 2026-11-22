@@ -6,6 +6,14 @@ indent-width = 4
 # version-gated fix must stay valid where annotations are evaluated eagerly (< 3.14).
 target-version = "py311"
 
+# Live nemo office-skill scripts, vendored from the 2026-11-17 snapshot.
+# They are not Hermes core. Rewriting them onto this ruff set would change
+# the scripts the host already runs. extend-exclude keeps the default excludes.
+extend-exclude = [
+    "profiles/pdone/skills/productivity/**",
+    "profiles/pdone/skills/visual-office-qa/**",
+]
+
 [format]
 # Like Black, use double quotes for strings.
 quote-style = "double"

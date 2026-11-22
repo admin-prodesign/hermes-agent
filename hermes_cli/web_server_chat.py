@@ -482,10 +482,19 @@ async def _ws_gate(ws: WebSocket, kind: str) -> Optional[tuple[str, str, str]]:
 
 async def _pty_fail(ws: WebSocket, exc: BaseException, *, surface: str = "Chat") -> None:
     """Tell the user why chat could not start, then close 1011 so the SPA renders
-    "Start new session". The raw exception goes to the server log only."""
+    "Start new session". The raw exception goes to the server log only.
+
+    A missing terminal install on a read-only release was already warned once
+    inside ``ensure_dashboard_terminal_deps``; don't log it again per reconnect.
+    """
+    from hermes_cli.terminal_node_deps import TerminalDepsUnavailable
     from hermes_cli.web_routers.chat_ws_errors import chat_start_failure_message
-    _log.warning("pty start failed: %s: %s", type(exc).__name__, exc)
-    await ws.send_text(f"\r\n\x1b[31m{chat_start_failure_message(exc, surface=surface)}\x1b[0m\r\n")
+    if isinstance(exc, TerminalDepsUnavailable):
+        text = exc.user_message
+    else:
+        _log.warning("pty start failed: %s: %s", type(exc).__name__, exc)
+        text = chat_start_failure_message(exc, surface=surface)
+    await ws.send_text(f"\r\n\x1b[31m{text}\x1b[0m\r\n")
     await ws.close(code=1011)
 
 
