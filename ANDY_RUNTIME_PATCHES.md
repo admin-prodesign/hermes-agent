@@ -11,7 +11,7 @@ Do not replay DROP or UPSTREAM-NOW.
 | Destination tag | official `v0.23.3` (NousResearch/hermes-agent), annotated |
 | Peeled commit | `caafe5389ae585ef77387a962aee05b1bcf17029` |
 | Before (previous main) | `87bded48036e304b2373e080184ece2f17fb13d0` (merge of #105, 2026-11-20) |
-| After | the merge commit on `cursor/rebase-onto-v0.23.3-3cc9` whose first parent is the peeled tag and whose second parent is the before SHA. That commit is the tip that adds this ledger. |
+| After (rebase merge) | `7119fda28b9140719ce5967687d3b1bd95357874` — first parent the peeled tag, second parent the before SHA. The branch tip is the commit that records this SHA. |
 | Previous overlay | `v0.23.1` peeled `3b421578588243f920886e6fe79a6faa87ea026e` (PR #92). It is the merge-base of the before SHA and `v0.23.3`. |
 | Method | checkout the peeled tag, then `git merge --no-ff` of the before SHA. A linear `rebase --onto` would replay the other parent of the v0.23.1 overlay (~50k fork commits) or would drop the overlay. Do not squash: the tag must stay an ancestor. |
 | Recorded before state | HEAD `87bded48036e304b2373e080184ece2f17fb13d0`; `git describe --tags` was `v2026.5.7-108440-g87bded4803` before official tags were fetched, and `v0.23.1-50850-g87bded48036` after (v0.23.1 is an ancestor). Latest calendar ancestor tag `v2026.5.7`. Dirty list empty. |
