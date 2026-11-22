@@ -71,7 +71,7 @@ def parse_maybe(value: Any) -> Any:
 
 
 def load_rows(raw_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    obj = json.loads(raw_path.read_text())
+    obj = json.loads(raw_path.read_text(encoding="utf-8-sig"))
     if isinstance(obj, list):
         return obj, {}
     if isinstance(obj, dict):

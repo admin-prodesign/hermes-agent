@@ -9,6 +9,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from gateway.config import PlatformConfig
 from gateway.platforms.webhook import WebhookAdapter, _WebhookDeliveryIdentity
+from tests.fixtures.storage_holder import raw_holder
 from tests.gateway.fixtures.webhook_route_authority import mount_authority
 
 
@@ -37,7 +38,8 @@ async def test_log_route_runs_post_script_with_payload_and_response():
         {'prompt': '{text}', 'deliver': 'log', 'post_script': 'notify.py'}, 'post-one', {'text': 'hello'})
     try:
         runner = adapter._message_handler.__self__
-        row = runner.session_authority.db._read_one('SELECT payload_json FROM session_admissions')
+        row = raw_holder(runner.session_authority.persistence)._read_one(
+            'SELECT payload_json FROM session_admissions')
         retained = json.loads(row['payload_json'])['native_text_v1']['webhook_delivery']
         assert retained == {'deliver': 'log', 'deliver_extra': {}}
 

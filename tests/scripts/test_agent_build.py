@@ -434,10 +434,11 @@ def test_automatic_frontends_use_requested_snapshot_not_current_checkout(tmp_pat
     monkeypatch.setattr(stage, "stage_native", native)
     out = tmp_path / "out"
     assert stage.main(["--out", str(out), "--ref", revision]) == 0
-    assert len(built_sources) == 4
+    assert len(built_sources) == 5
     assert node_commands[0][1].endswith("node-deps.mjs")
     assert "--reuse" in node_commands[0]
-    assert node_commands[0].count("--workspace") == 2
+    assert node_commands[0].count("--workspace") == 3
+    assert "apps/desktop" in node_commands[0]
     published = out / "hermes-agent" / "node_modules"
     assert (published / ".hermes-node-deps").read_text(encoding="utf-8") == "receipt\n"
     assert (published / "web" / "package.json").read_text(encoding="utf-8") == "{}"

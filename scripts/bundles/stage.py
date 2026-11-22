@@ -45,15 +45,19 @@ def main(argv=None) -> int:
         env = {**os.environ, "HERMES_PYTHON": str(icon_python)}
         from hermes_cli.terminal_node_deps import publish_terminal_node_modules, terminal_deps_install_command
 
+        node_deps = terminal_deps_install_command(source)
+        if "apps/desktop" not in node_deps:
+            node_deps = [*node_deps, "--workspace", "apps/desktop"]
         commands = [
-            terminal_deps_install_command(source),
+            node_deps,
             ["scripts/generate-icons.mjs", "--source", str(source), "--out", str(products / "icons")],
             ["scripts/build/tui.mjs", "--source", str(source), "--out", str(products / "tui")],
             ["scripts/build/web.mjs", "--source", str(source), "--icons", str(products / "icons"), "--out", str(products / "web")],
+            ["scripts/build/webapp.mjs", "--source", str(source), "--out", str(products / "webapp")],
         ]
         for command in commands:
             subprocess.run([node, *command], cwd=ROOT, env=env, check=True)
-        args.frontends = {"tui": products / "tui", "web": products / "web"}
+        args.frontends = {name: products / name for name in ("tui", "web", "webapp")}
         status = stage_native(args)
         if status == 0:
             # The git snapshot omits node_modules. Keep the build-time install

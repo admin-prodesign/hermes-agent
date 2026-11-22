@@ -217,7 +217,7 @@ def _envelope_paths(tmp_path, monkeypatch, *, change_summary: list[str] | None =
 
 
 def test_apply_live_authorized_by_andy_origin_post_without_pdapp(tmp_path, monkeypatch):
-    envelope_path, proposed = _envelope_paths(tmp_path, monkeypatch)
+    envelope_path, _proposed = _envelope_paths(tmp_path, monkeypatch)
     monkeypatch.setattr(ops, "andy_origin_user_id", lambda: ANDY_USER_ID)
 
     def _fetch(post_id: str) -> dict:
