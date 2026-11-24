@@ -659,10 +659,12 @@ def _resolve_single_delivery_target(
         if resolution_error:
             logger.warning("Invalid cron delivery target '%s': %s", deliver_value, resolution_error)
             return None
-        # Chat-only target on the origin chat adopts the origin lane where it is a durable place
-        # (Telegram topic, Slack thread); Matrix/Mattermost threads are per-message ids -> top-level.
+        # Chat-only target on the origin chat adopts the origin lane where the thread is a
+        # durable place (Telegram topic, Slack thread, Mattermost root post). Matrix stays
+        # top-level: its origin thread is the creating message's own id. A different channel
+        # never inherits, and an explicit thread is left as written.
         if (
-            thread_id is None and platform_key in ("telegram", "slack")
+            thread_id is None and platform_key in ("telegram", "slack", "mattermost")
             and origin
             and str(origin.get("platform") or "").lower() == platform_key
             and str(origin.get("chat_id")) == str(chat_id)

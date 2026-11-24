@@ -73,13 +73,13 @@ def test_different_chat_does_not_inherit_the_origin_thread():
 
 @pytest.mark.parametrize("platform, chat, thread", [
     ("matrix", "!abc:srv", "$evt1"),
-    ("mattermost", "chan1", "post9"),
     ("discord", "42", "77"),
 ])
 def test_platforms_without_durable_topic_lanes_keep_posting_top_level(platform, chat, thread):
-    """Matrix (auto_thread) and Mattermost (reply_mode: thread) stamp the creation message's own
-    id as the origin thread; inheriting it would move existing room jobs into that message's
-    reply thread with no top-level opt-out. Only Telegram topics and Slack threads inherit."""
+    """Matrix (auto_thread) stamps the creation message's own id as the origin thread; inheriting
+    it would move existing room jobs into that message's reply thread with no top-level opt-out.
+    Discord thread ids are not scoped inside the chat id the same way. Mattermost root posts are
+    a durable lane and inherit on the origin channel (test_cron_mattermost_thread_delivery)."""
     origin = {"platform": platform, "chat_id": chat, "thread_id": thread}
     target = _resolved(_job(f"{platform}:{chat}", origin))
     assert target["thread_id"] is None

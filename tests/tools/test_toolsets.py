@@ -57,6 +57,30 @@ class TestGetToolset:
         finally:
             del TOOLSETS["_mergetest"]
 
+    def test_registry_builtin_toolset_does_not_shadow_mcp_server_alias(self, monkeypatch):
+        # Built-in tools registered under the MCP server's bare name hijack
+        # resolve_toolset(server_name): get_toolset() treats the name as a plugin
+        # toolset and ignores the MCP alias. Keep builtins on a distinct toolset.
+        reg = ToolRegistry()
+        reg.register(
+            name="pd_one_appsheet_table_probe",
+            toolset="pdone_safe_ops_builtin",
+            schema=_make_schema("pd_one_appsheet_table_probe", "Probe"),
+            handler=_dummy_handler,
+        )
+        reg.register(
+            name="pd_one_sheets_batch_update",
+            toolset="mcp-pdone_safe_ops",
+            schema=_make_schema("pd_one_sheets_batch_update", "Sheets"),
+            handler=_dummy_handler,
+        )
+        reg.register_toolset_alias("pdone_safe_ops", "mcp-pdone_safe_ops")
+        monkeypatch.setattr("tools.registry.registry", reg)
+
+        assert "pd_one_sheets_batch_update" in resolve_toolset("pdone_safe_ops")
+        assert "pd_one_appsheet_table_probe" not in resolve_toolset("pdone_safe_ops")
+        assert resolve_toolset("pdone_safe_ops_builtin") == ["pd_one_appsheet_table_probe"]
+
 class TestResolveToolset:
 
     def test_cycle_detection(self):

@@ -437,7 +437,7 @@ async def _send_telegram(token, chat_id, message, media_files=None, thread_id=No
             media_files = [(path, False) for path in detail.get("refused", ())]
             last_msg = last_msg or (SimpleNamespace(message_id=None) if result.success else None)
         for media_path, is_voice in media_files:
-            if not os.path.exists(media_path):
+            if not await asyncio.to_thread(os.path.exists, media_path):
                 warnings.append(f"Media file not found, skipping: {media_path}")
                 logger.warning(warnings[-1])
                 # Caption mode suppressed the text send; the file is gone, so deliver the words alone.
@@ -446,7 +446,7 @@ async def _send_telegram(token, chat_id, message, media_files=None, thread_id=No
                         last_msg = await _send_telegram_message_with_retry(
                             bot, chat_id=int_chat_id, text=_tg_caption, parse_mode=send_parse_mode, **text_kwargs)
                         _tg_caption = None  # delivered — don't re-caption a later file
-                    except Exception as _cap_err:
+                    except Exception as _cap_err:  # health: allow BLE001 -- a missing file still delivers the caption warning
                         logger.warning("Telegram caption-fallback send failed for missing media: %s",
                                        _sanitize_error_text(_cap_err))
                 continue

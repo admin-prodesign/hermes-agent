@@ -157,10 +157,10 @@ hermes cron run <job_id>    # 触发一次以测试
 
 | 扩展名 | 解释器 |
 |-----------|-------------|
-| `.sh`、`.bash` | `/bin/bash` |
-| 其他任意扩展名 | `sys.executable`（当前 Python），或一个[自定义解释器](#使用你自己的-python-环境) |
+| `.sh`、`.bash` | `PATH` 中的 `bash`（否则 `/bin/bash`），且发布 venv 的 `bin` 在 `PATH` 最前 |
+| 其他任意扩展名 | 发布 venv 的 Python，或一个[自定义解释器](#使用你自己的-python-环境) |
 
-我们有意**不**遵循 `#!/...` shebang——保持解释器集合明确且精简，可减少调度器信任的攻击面。
+发布解释器优先是托管依赖环境，否则是检出目录的 `.venv` 或 `venv`，再否则是正在跑网关的进程。我们有意**不**遵循 cron 脚本自身的 `#!/...` shebang——调度器选择解释器。包装脚本仍然可用：子进程里的 `python3` 和 `#!/usr/bin/env python3` 会先看到 venv 的 `bin`。
 
 ### 使用你自己的 Python 环境
 

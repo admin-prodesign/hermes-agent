@@ -1512,6 +1512,9 @@ class GatewayInboundMixin(
         message_text = label_shared_sender(
             source, message_text, group_sessions_per_user=getattr(self.config, "group_sessions_per_user", True),
             thread_sessions_per_user=getattr(self.config, "thread_sessions_per_user", False))
+        # Captured before the channel-context wrap so memory recall can use the new message
+        # without the permission bridge. The model prompt below is unchanged.
+        event._memory_recall_user_text = message_text
         # After the sender-prefix so the prefix applies only to the trigger message, not the backfill.
         if getattr(event, "channel_context", None):
             message_text = f"{event.channel_context}\n\n[New message]\n{message_text}"

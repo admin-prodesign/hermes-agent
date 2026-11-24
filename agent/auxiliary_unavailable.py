@@ -222,6 +222,33 @@ def missing_provider_credentials_message(provider_id: str) -> str:
             + (f"{remedy}, or {switch}" if remedy else switch.capitalize()))
 
 
+_AUTO_RESCUABLE_PROVIDERS = frozenset({"", "auto", "openrouter", "custom"})
+
+
+def explicit_route_rescue(
+    task: Optional[str], resolved_provider: Optional[str], *, async_mode: bool,
+) -> Optional[tuple[Any, Optional[str], str]]:
+    """The route an explicit aux provider falls to when it cannot build a client.
+
+    Only the task's own ``fallback_chain`` may answer; with none, raise. The auto chain would pick
+    another logged-in provider and send it the pinned model (an ``xai-oauth`` Grok slug on
+    ``openai-codex`` is an HTTP 400). Returns ``(client, model, label)``, or None for providers that
+    may walk the auto chain (auto, openrouter, keyless custom), which must drop the pinned model.
+    """
+    explicit = (resolved_provider or "").strip().lower()
+    if explicit in _AUTO_RESCUABLE_PROVIDERS:
+        return None
+    from agent.auxiliary_client import _to_async_client, _try_configured_fallback_for_unavailable_client
+
+    fb_client, fb_model, fb_label = _try_configured_fallback_for_unavailable_client(task, explicit)
+    if fb_client is None:
+        nous_detail = nous_credential_failure_detail() if explicit == "nous" else None
+        raise AuxiliaryClientUnavailable(nous_detail or missing_provider_credentials_message(explicit))
+    if async_mode:
+        fb_client, fb_model = _to_async_client(fb_client, fb_model or "", is_vision=(task == "vision"))
+    return fb_client, fb_model, fb_label or explicit
+
+
 def _nous_credential_present(exc: BaseException) -> bool:
     """True when a Nous credential exists that failed — a coded error (``invalid_grant``, a quarantine
     marker, ``refresh_failed``) or persisted Nous auth state. The uncoded "not logged into Nous Portal"
