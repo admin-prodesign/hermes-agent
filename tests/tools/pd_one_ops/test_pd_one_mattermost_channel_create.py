@@ -105,3 +105,60 @@ def test_channel_create_apply_readback(captured_emit):
     assert payload['membership_readback']['added_usernames'] == ['alice']
     assert payload['membership_readback']['member_count_observed'] == 1
     assert any(c[0] == 'POST' and c[1] == '/api/v4/channels' for c in calls)
+
+
+def test_channel_create_dry_run_member_username_with_period(captured_emit):
+    base = 'https://mm.example'
+    headers = {'Authorization': 'Bearer test'}
+    me = {'id': 'u_bot', 'username': 'bot'}
+    user_lookup_path: str | None = None
+
+    def mm_req(method, b, h, path, **kwargs):
+        nonlocal user_lookup_path
+        assert b == base
+        assert method != 'POST', 'dry_run must not POST'
+        if path == '/api/v4/teams/name/acme':
+            return {'id': 'team1', 'name': 'acme'}
+        if path == '/api/v4/users/username/andy.lin':
+            user_lookup_path = path
+            return {'id': 'u_andy', 'username': 'andy.lin', 'delete_at': 0}
+        raise AssertionError(f'unexpected {method} {path}')
+
+    with patch('tools.pd_one_ops.pd_one_safe_ops_part2.mattermost_context', return_value=(base, headers, me)), patch('tools.pd_one_ops.pd_one_safe_ops_part2.mm_request', side_effect=mm_req):
+        cmd_mattermost_channel_create(Namespace(team_name='acme', channel_name='proj-channel', display_name='Project Alpha', purpose='coord', member_username=['andy.lin'], action='dry_run', confirm_live_write=None))
+    assert user_lookup_path == '/api/v4/users/username/andy.lin'
+    plan = captured_emit[0]['create_plan']
+    assert plan['member_add_plan'] == [{'user_id': 'u_andy', 'username': 'andy.lin'}]
+
+
+def test_channel_create_dry_run_member_username_with_at_prefix(captured_emit):
+    base = 'https://mm.example'
+    headers = {'Authorization': 'Bearer test'}
+    me = {'id': 'u_bot', 'username': 'bot'}
+
+    def mm_req(method, b, h, path, **kwargs):
+        assert b == base
+        if path == '/api/v4/teams/name/acme':
+            return {'id': 'team1', 'name': 'acme'}
+        if path == '/api/v4/users/username/andy.lin':
+            return {'id': 'u_andy', 'username': 'andy.lin', 'delete_at': 0}
+        raise AssertionError(f'unexpected {method} {path}')
+
+    with patch('tools.pd_one_ops.pd_one_safe_ops_part2.mattermost_context', return_value=(base, headers, me)), patch('tools.pd_one_ops.pd_one_safe_ops_part2.mm_request', side_effect=mm_req):
+        cmd_mattermost_channel_create(Namespace(team_name='acme', channel_name='proj-channel', display_name='Project Alpha', purpose='coord', member_username=['@andy.lin'], action='dry_run', confirm_live_write=None))
+    payload = captured_emit[0]
+    assert payload['requested']['member_usernames'] == ['andy.lin']
+    assert payload['create_plan']['member_add_plan'] == [{'user_id': 'u_andy', 'username': 'andy.lin'}]
+
+
+@pytest.mark.parametrize('team_name,channel_name', [('bad.name', 'ok-channel'), ('acme', 'bad.name')])
+def test_channel_create_rejects_dot_in_team_or_channel_slug(team_name, channel_name):
+    with pytest.raises(SystemExit) as exc:
+        cmd_mattermost_channel_create(Namespace(team_name=team_name, channel_name=channel_name, display_name='Display', purpose='coord', member_username=[], action='dry_run', confirm_live_write=None))
+    assert exc.value.code == 2
+
+
+def test_channel_create_rejects_hidden_style_member_username():
+    with pytest.raises(SystemExit) as exc:
+        cmd_mattermost_channel_create(Namespace(team_name='acme', channel_name='proj-channel', display_name='Display', purpose='coord', member_username=['.hidden'], action='dry_run', confirm_live_write=None))
+    assert exc.value.code == 2

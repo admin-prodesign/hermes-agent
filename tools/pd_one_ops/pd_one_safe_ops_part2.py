@@ -370,8 +370,8 @@ def _normalize_mm_username_list(raw: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for item in raw or []:
-        u = validate_mattermost_name(str(item).strip().lower(), 'member_username')
-        key = u.lower()
+        u = validate_mattermost_member_username(str(item))
+        key = u
         if key in seen:
             continue
         seen.add(key)
