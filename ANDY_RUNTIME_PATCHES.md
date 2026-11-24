@@ -8,13 +8,12 @@ Do not replay DROP or UPSTREAM-NOW.
 
 | | |
 |---|---|
-| Destination tag | official `v0.23.3` (NousResearch/hermes-agent), annotated |
-| Peeled commit | `caafe5389ae585ef77387a962aee05b1bcf17029` |
-| Before (previous main) | `87bded48036e304b2373e080184ece2f17fb13d0` (merge of #105, 2026-11-20) |
-| After (rebase merge) | `7119fda28b9140719ce5967687d3b1bd95357874` — first parent the peeled tag, second parent the before SHA. The PR head is that merge plus the ledger stamp and the CI lint adaptations. |
-| Previous overlay | `v0.23.1` peeled `3b421578588243f920886e6fe79a6faa87ea026e` (PR #92). It is the merge-base of the before SHA and `v0.23.3`. |
-| Method | checkout the peeled tag, then `git merge --no-ff` of the before SHA. A linear `rebase --onto` would replay the other parent of the v0.23.1 overlay (~50k fork commits) or would drop the overlay. Do not squash: the tag must stay an ancestor. |
-| Recorded before state | HEAD `87bded48036e304b2373e080184ece2f17fb13d0`; `git describe --tags` was `v2026.5.7-108440-g87bded4803` before official tags were fetched, and `v0.23.1-50850-g87bded48036` after (v0.23.1 is an ancestor). Latest calendar ancestor tag `v2026.5.7`. Dirty list empty. |
+| Destination tag | official `v0.23.4` (NousResearch/hermes-agent), annotated `3ac54e1012be`, peeled `8fc0374447313e276f6b9a2764bfc750190c966a` |
+| Before (previous main) | `607472c055f4f5a1558981b43a87ef5a3acbb40d` (merge of #108, 2026-11-24; includes #106 v0.23.3 overlay, #107, #108) |
+| After (rebase merge) | `36ec386728e9e034899547e20aa1d4184b644d45` — first parent the peeled tag, second parent the before SHA. The PR head is that merge plus the ledger stamp and the v0.23.4 CI lint adaptations. |
+| Previous overlay | `v0.23.3` peeled `caafe5389ae585ef77387a962aee05b1bcf17029` (PR #106). It is an ancestor of the before SHA. |
+| Method | checkout the peeled tag, branch `overlay/v0.23.4`, then `git merge --no-ff` of the before SHA. A linear `rebase --onto` would replay fork-only history or drop the overlay. Do not squash: the tag must stay an ancestor. |
+| Recorded before state | HEAD `607472c055f4f5a1558981b43a87ef5a3acbb40d`; dirty list empty on this run. |
 
 ## Classification rule
 
@@ -47,31 +46,25 @@ as not equivalent (`+`):
 - `22f8c5db81` fix(deploy) build desktop webapp into every nemo release
 - `fd53e24157` feat(pdone) Andy Mattermost post auth for Google group member ops
 
-## KEEP scorecard (this rebase)
+## KEEP scorecard (v0.23.4 rebase)
 
-Conflicted, kept (11 content conflicts). None were skipped.
+Conflicted, kept (2 content conflicts). None were skipped.
 
 | Surface | Result |
 |---|---|
-| `cron/scheduler_script.py` | Conflicted. Kept `_resolve_release_python` (nemo `releases/current` venv when no PM store). `project_root_str()` is already upstream; the house `parents[1]` fallback was not put back. |
-| `gateway/platforms/webhook.py` | Conflicted. Kept `_maybe_run_webhook_post_script`. Took the tag's log line (length at info, body at debug). |
-| `gateway/run_inbound.py` | Conflicted. Kept `event._memory_recall_user_text`. Used upstream `label_shared_sender` (Slack id neutralization is already in the tag). |
-| `gateway/session_worker_delegation.py` | Conflicted. Did not replay the pre-persistence SQLite `_dispatch`. The pdapp-executor allowlist moved to `DELEGATION_ORIGIN_SOURCES` in `persistence/authority/coordination.py`. |
-| `plugins/platforms/mattermost/adapter.py` | Conflicted. `is_bot` was already computed the same way above the hunk. Kept the `build_session_key` import. PD One policy/workflow calls outside the hunk stayed. |
-| `plugins/platforms/telegram/standalone.py` | Conflicted on the rewritten send-error handlers only. Took the tag's handlers. The house `asyncio.to_thread(os.path.exists, media_path)` check is outside the hunk and remains. |
-| `scripts/bundles/stage.py` | Conflicted. Kept `terminal_deps_install_command` (`--reuse`) and `publish_terminal_node_modules`, and the tag's `apps/desktop` workspace plus `webapp` frontend. |
-| `scripts/install_root_lint_baseline.json` | Conflicted. Union of both baselines, counts at the max, so neither house pd_one sites nor tag sites fall under the ratchet. |
-| `tests/agent/test_bitwarden_secrets.py` | Conflicted. Kept the tag's URL-validation tests and the house rate-limit tests. The rate-limit calls now pass `PROJECT_ID` (a UUID) because v0.23.3 rejects any other project id before the retry. |
-| `tests/scripts/test_agent_build.py` | Conflicted. Assertions match the combined command: 5 build steps, `--reuse`, three `--workspace` entries including `apps/desktop`, and the published `node_modules` receipt. |
-| `uv.lock` | Conflicted. Restored the tag lock, then `python -m pm.cli lock` for the merged `pyproject.toml`. |
+| `tui_gateway/contracts/canonical_sessions.py` | v0.23.4 moved `CanonicalClientIdentity` to `tui_gateway/contracts/common.py`. Kept the tag import from `.common`, added house `WireEnum` + `SessionCreateSource` built from `gateway.session_policy.SURFACES` (includes `pdapp-executor`). |
+| `apps/shared/src/gateway-contract.generated.ts` | Dropped the duplicate `CanonicalClientIdentity` hunk from main; kept v0.23.4's definition (with `kind`) and house `SessionCreateSource` including `pdapp-executor`. Regenerated with `scripts/gen_gateway_contracts.py`. |
 
-Auto-merged (replayed clean, not hand-edited): the rest of the house tree, including `gateway/session_policy.py` (`pdapp-executor` keeps its stored label and runs as cli), `agent/secret_sources/bitwarden.py` rate-limit retry, memory-recall modules, Mattermost PD One helpers, `profiles/pdone/`, the `[nemo]` extra, cron CWA TLS helpers, and `hermes_cli/terminal_node_deps.py`.
+Auto-merged (replayed clean, not hand-edited): the full house tree from the v0.23.3 overlay plus #107 (Mattermost cron thread delivery) and #108 (Mattermost member usernames with dots), including `gateway/session_policy.py`, PD One ops, nemo extras, and Mattermost cron targeting.
 
-Already upstream, not copied a second time:
+House commits on main since the v0.23.3 overlay merge (`7119fda28b..607472c055`, non-merge):
 
-- `project_root_str()` for cron script argv (the PR #92 KEEP).
-- `label_shared_sender` Slack `<@U…>` neutralization.
-- Session-store move. `SCHEMA_VERSION` stays 33 and now lives in `persistence/sqlite/_schema_ddl.py`. `hermes_state_common.py` is the tag's 17-line downgrade marker. House did not edit that file between v0.23.1 and `87bded4803`.
+- `bc9a7e8acf` fix(cron): deliver Mattermost jobs into the named thread (#107)
+- `34cddc8948` fix(pd_one_ops): allow dots in Mattermost member usernames (#108)
+
+## KEEP scorecard (v0.23.3 rebase, PR #106)
+
+Historical reference — eleven content conflicts; see git history at `7119fda28b` and the PR #106 description.
 
 ## DROP / UPSTREAM-NOW
 
@@ -97,18 +90,12 @@ Earlier tag steps a host still below 53 would also run: 51 removes `cron.bot_cha
 
 ## CI adaptations on top of the merge
 
-v0.23.3's `scripts/check` failed on the merged tree until:
+v0.23.4 merge (on top of #106's adaptations): `scripts/check` failed on ruff until `tools/pd_one_ops/pd_one_safe_ops_part1.py` sorted `validate_mattermost_member_username` before `validate_mattermost_name` in `__all__` and used `str.removeprefix('@')` for member username normalization (#108).
 
-- duplicate `__all__` entries in the pd_one ops modules were removed, and `normalize_mm_post_id` uses `str.removeprefix` (same result)
-- `MattermostAdapter._first_markdown_heading` moved into `message_split.first_markdown_heading` so `adapter.py` stays under 2000 lines (1988)
-- the v0.23.3 redact cases moved to `tests/agent/test_redact_token_shapes.py` so `test_redact.py` stays under 2000 lines (1959)
-- new upstream `except Exception` and profile-setter lines that the ratchet treats as new versus `87bded4803` carry `# health: allow` on the line
-- two house reads use `encoding="utf-8-sig"`
-
-`python scripts/check` then reported 22 checks ok. These are not KEEP drops.
+`python scripts/check` then reported 22 checks ok. No `boundary_lint` or `catalog_core_imports` baseline changes were required (unlike PR #106).
 
 ## Rollback
 
 ```
-git reset --hard 87bded48036e304b2373e080184ece2f17fb13d0
+git reset --hard 607472c055f4f5a1558981b43a87ef5a3acbb40d
 ```
