@@ -42,6 +42,7 @@ from plugins.platforms.mattermost.message_split import first_markdown_heading
 from plugins.platforms.mattermost.mentions import (
     bot_mention_patterns, legacy_bot_usernames, with_mentions_disabled as _with_mentions_disabled,
 )
+from plugins.platforms.mattermost.send_targets import parse_send_target
 from agent.auxiliary_client import async_call_llm
 
 logger = logging.getLogger(__name__)
@@ -1979,6 +1980,7 @@ def register(ctx) -> None:
         install_hint="pip install aiohttp", setup_fn=interactive_setup,
         apply_yaml_config_fn=_apply_yaml_config,  # YAML→env bridge (see _YAML_BRIDGE)
         cron_deliver_env_var="MATTERMOST_HOME_CHANNEL",
+        target_ref_syntax_fn=parse_send_target,  # "<channel_id>[:<root_post_id>]"
         standalone_sender_fn=_standalone_send,  # out-of-process cron; without it `deliver=mattermost` fails
         max_message_length=MAX_POST_LENGTH, emoji="💬", allow_update_command=True,
         platform_hint=_PLATFORM_HINT,
