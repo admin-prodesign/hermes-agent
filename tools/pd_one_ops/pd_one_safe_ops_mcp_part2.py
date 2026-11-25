@@ -2,13 +2,97 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Optional
 
 from tools.pd_one_ops.launch import python_argv
 from tools.pd_one_ops.pd_one_safe_ops_mcp_part0 import *
 from tools.pd_one_ops.site_config import resolve_configured_path
 
-__all__ = ["pd_one_unc_docx_table"]
+__all__ = [
+    "pd_one_appsheet_user_access",
+    "pd_one_mattermost_channel_member_add",
+    "pd_one_mattermost_thread_move",
+    "pd_one_unc_docx_table",
+]
+
+
+def pd_one_appsheet_user_access(
+    person_id: str,
+    name_zh: str,
+    email: str,
+    notification_groups: list[str],
+    authorizing_post_id: str,
+    dry_run: bool = True,
+    confirm_live_write: str = "",
+) -> str:
+    """Grant AppSheet login/settings for one HR employee with Andy Mattermost post authorization."""
+    try:
+        from tools.pd_one_ops.pd_one_appsheet_user_access_ops import execute_appsheet_user_access
+
+        payload = execute_appsheet_user_access(
+            person_id=person_id,
+            name_zh=name_zh,
+            email=email,
+            notification_groups=notification_groups,
+            authorizing_post_id=authorizing_post_id,
+            dry_run=dry_run,
+            confirm_live_write=confirm_live_write,
+        )
+        return _json_result(payload)
+    except Exception as exc:
+        logging.getLogger("pd_one_ops").exception("pd one command failed")
+        return _json_result(
+            {"status": "error", "error": "invalid_request", "detail": str(exc)},
+        )
+
+
+def pd_one_mattermost_channel_member_add(
+    channel_id: str,
+    username: str,
+    requester_id: str,
+    confirm: str = "",
+) -> str:
+    """Add an active Mattermost user to a channel (admin requester, membership readback)."""
+    try:
+        from tools.pd_one_ops.pd_one_mattermost_channel_member_ops import execute_channel_member_add
+
+        payload = execute_channel_member_add(
+            channel_id=channel_id,
+            username=username,
+            requester_id=requester_id,
+            confirm=confirm,
+        )
+        return _json_result(payload)
+    except Exception as exc:
+        logging.getLogger("pd_one_ops").exception("pd one command failed")
+        return _json_result(
+            {"status": "error", "error": "invalid_request", "detail": str(exc)},
+        )
+
+
+def pd_one_mattermost_thread_move(
+    post_id: str,
+    channel_id: str,
+    requester_id: str,
+    confirm: str = "",
+) -> str:
+    """Move a Mattermost thread to another channel (admin or it_support_operator)."""
+    try:
+        from tools.pd_one_ops.pd_one_mattermost_thread_move_ops import execute_thread_move
+
+        payload = execute_thread_move(
+            post_id=post_id,
+            channel_id=channel_id,
+            requester_id=requester_id,
+            confirm=confirm,
+        )
+        return _json_result(payload)
+    except Exception as exc:
+        logging.getLogger("pd_one_ops").exception("pd one command failed")
+        return _json_result(
+            {"status": "error", "error": "invalid_request", "detail": str(exc)},
+        )
 
 
 def pd_one_unc_docx_table(
