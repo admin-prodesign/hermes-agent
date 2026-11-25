@@ -19,6 +19,7 @@ from tools.pd_one_hr_fields import (
 _ROW_KEYS = ("rows", "Rows", "data")
 _HR_EMPLOYEE_TOOLS = frozenset({
     "pd_one_appsheet_hr_employee_patch",
+    "pd_one_appsheet_user_access",
     "appsheet_record_ops",
 })
 _HR_EMPLOYEE_TABLES = frozenset({"HR_Employees", *PRIVATE_HRS_TABLES})
@@ -54,7 +55,7 @@ def hr_path(payload: Any, *, table: str = "", tool_name: str = "", arguments: di
         return True
     if tool_name in _HR_EMPLOYEE_TOOLS and table_name in _HR_EMPLOYEE_TABLES:
         return True
-    if tool_name == "pd_one_appsheet_hr_employee_patch":
+    if tool_name in {"pd_one_appsheet_hr_employee_patch", "pd_one_appsheet_user_access"}:
         return True
     if tool_name == "appsheet_record_ops" and table_name in _HR_EMPLOYEE_TABLES:
         return True
