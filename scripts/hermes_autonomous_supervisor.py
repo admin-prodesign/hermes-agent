@@ -1154,7 +1154,8 @@ def maybe_notify_neo(
     if fingerprint and fingerprint != notified:
         last_pushed = str(pushed.get('fingerprint') or '')
         if last_pushed != fingerprint:
-            if neo.resolve_webhook_url() is None and not dry_run:
+            neo.load_webhook_secrets_env(home)
+            if neo.resolve_webhook_url(home=home) is None and not dry_run:
                 neo.log_missing_webhook_once()
                 save_json(neo_push_path(home), push_state, dry_run=dry_run)
                 return state
@@ -1168,7 +1169,10 @@ def maybe_notify_neo(
                 last_seen=neo.iso_now(now),
             )
             poster = post_fn or neo.post_json_webhook
-            ok = poster(payload, dry_run=dry_run)
+            if poster is neo.post_json_webhook:
+                ok = poster(payload, dry_run=dry_run, home=home)
+            else:
+                ok = poster(payload, dry_run=dry_run)
             if ok:
                 pushed['fingerprint'] = fingerprint
                 pushed['first_seen'] = pushed.get('first_seen') or neo.iso_now(now)
