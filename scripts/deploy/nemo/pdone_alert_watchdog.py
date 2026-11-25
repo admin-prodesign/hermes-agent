@@ -81,7 +81,7 @@ def _parse_iso(text: str | None) -> datetime | None:
 
 def secrets_path(home: Path) -> Path:
     override = os.environ.get("NEO_WATCH_SECRETS_FILE", "").strip()
-    return Path(override).expanduser() if override else home / DEFAULT_SECRETS_REL / "neo-watch-webhook.env"
+    return Path(override).expanduser() if override else home / DEFAULT_SECRETS_REL
 
 
 def state_dir(home: Path) -> Path:

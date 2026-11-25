@@ -191,7 +191,13 @@ def neo_is_acked(state: dict[str, Any], correlation: str) -> bool:
     return correlation in acked
 
 
-def deliver_webhook_neo(target: str, event: dict[str, Any], *, dry_run: bool) -> bool:
+def deliver_webhook_neo(
+    target: str,
+    event: dict[str, Any],
+    *,
+    dry_run: bool,
+    home: Path | None = None,
+) -> bool:
     platform, rest = validate_target(f'webhook:{target}' if ':' not in target else target)
     if platform != 'webhook':
         raise ValueError('expected webhook target')
@@ -201,13 +207,13 @@ def deliver_webhook_neo(target: str, event: dict[str, Any], *, dry_run: bool) ->
     payload = dict(event)
     payload.setdefault('schema', neo.SCHEMA_SUPERVISOR)
     payload.setdefault('sent_at', neo.iso_now())
-    return neo.post_json_webhook(payload, dry_run=dry_run, url=url)
+    return neo.post_json_webhook(payload, dry_run=dry_run, url=url, home=home)
 
 
 def deliver_neo_target(home: Path, target: str, event: dict[str, Any], *, dry_run: bool) -> bool:
     platform, rest = validate_target(target if ':' in target else f'mattermost:{target}')
     if platform == 'webhook':
-        return deliver_webhook_neo(rest, event, dry_run=dry_run)
+        return deliver_webhook_neo(rest, event, dry_run=dry_run, home=home)
     if platform == 'mattermost':
         message = str(event.get('summary') or event.get('message') or json.dumps(event, ensure_ascii=False))
         receipt = deliver_mattermost(rest, message, dry_run)
@@ -300,9 +306,18 @@ def send_route(
 
     pre_targets = route.get('pre_targets')
     if isinstance(pre_targets, list) and pre_targets:
+        pre_target_ok = True
         for target in pre_targets:
             if isinstance(target, str):
-                deliver_neo_target(home, target, event, dry_run=dry_run)
+                ok = deliver_neo_target(home, target, event, dry_run=dry_run)
+                if not ok:
+                    pre_target_ok = False
+                    LOG.error(
+                        'pre_target delivery failed for route %r target %r correlation %s',
+                        route_name,
+                        target,
+                        correlation,
+                    )
         hold = hold_minutes(route)
         hold_until = now + dt.timedelta(minutes=hold)
         held_entry = {
@@ -321,7 +336,12 @@ def send_route(
             held.append(held_entry)
             state['held_for_neo'] = held
         save_neo_router_state(home, state, dry_run=dry_run)
-        return {'status': 'held', 'correlation_key': correlation, 'hold_until': held_entry['hold_until']}
+        return {
+            'status': 'held',
+            'correlation_key': correlation,
+            'hold_until': held_entry['hold_until'],
+            'pre_target_ok': pre_target_ok,
+        }
 
     targets = route.get('targets') or route.get('primary_targets')
     if not isinstance(targets, list) or not targets:

@@ -46,6 +46,58 @@ def test_parse_target_webhook() -> None:
     assert rest == "neo"
 
 
+def test_bearer_resolved_from_secrets_file(home: Path, monkeypatch) -> None:
+    for key in (
+        "NEO_WATCH_WEBHOOK_KEY",
+        "BRIEFING_REPAIR_WEBHOOK_BEARER",
+        "BRIEFING_REPAIR_WEBHOOK_TOKEN",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    neo._loaded_secrets_for.clear()
+    secrets = home / "secrets" / "neo-watch-webhook.env"
+    secrets.parent.mkdir(parents=True, exist_ok=True)
+    secrets.write_text("NEO_WATCH_WEBHOOK_KEY=from-secrets-file\n", encoding="utf-8")
+    secrets.chmod(0o600)
+    _, _, token = neo.resolve_bearer_token(home=home)
+    assert token == "from-secrets-file"
+
+
+def test_secrets_file_does_not_override_existing_env(home: Path, monkeypatch) -> None:
+    monkeypatch.setenv("NEO_WATCH_WEBHOOK_KEY", "env-wins")
+    neo._loaded_secrets_for.clear()
+    secrets = home / "secrets" / "neo-watch-webhook.env"
+    secrets.parent.mkdir(parents=True, exist_ok=True)
+    secrets.write_text("NEO_WATCH_WEBHOOK_KEY=from-secrets-file\n", encoding="utf-8")
+    secrets.chmod(0o600)
+    _, _, token = neo.resolve_bearer_token(home=home)
+    assert token == "env-wins"
+
+
+def test_send_route_pre_target_ok_false_on_webhook_failure(home: Path, monkeypatch) -> None:
+    _routes(
+        home,
+        {
+            "schema_version": 1,
+            "routes": {
+                "pd_one_failure_escalations": {
+                    "pre_targets": ["webhook:neo"],
+                    "hold_minutes": 10,
+                    "targets": ["mattermost:@admin"],
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(neo, "post_json_webhook", lambda *a, **k: False)
+    result = send_route(
+        home,
+        "pd_one_failure_escalations",
+        {"summary": "boom", "fingerprint": "fp-fail"},
+        dry_run=False,
+    )
+    assert result["status"] == "held"
+    assert result.get("pre_target_ok") is False
+
+
 def test_hold_ack_suppresses_mattermost_release(home: Path, monkeypatch) -> None:
     _routes(
         home,
@@ -178,6 +230,8 @@ def test_supervisor_deadman_single_escalation(home: Path, monkeypatch) -> None:
 
 
 def test_webhook_auth_headers_bearer_and_hmac(monkeypatch) -> None:
+    neo._loaded_secrets_for.clear()
+    monkeypatch.delenv("NEO_WATCH_WEBHOOK_KEY", raising=False)
     monkeypatch.setenv("BRIEFING_REPAIR_WEBHOOK_BEARER", "tok")
     monkeypatch.setenv("BRIEFING_REPAIR_WEBHOOK_HMAC_SECRET", "sek")
     body = b'{"a":1}'

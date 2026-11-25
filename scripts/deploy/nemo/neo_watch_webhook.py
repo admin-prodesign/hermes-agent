@@ -11,6 +11,7 @@ import ssl
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone, UTC
+from pathlib import Path
 from typing import Any
 
 LOG = logging.getLogger(__name__)
@@ -36,6 +37,53 @@ _HMAC_ENV_KEYS = (
 )
 
 _logged_missing_url = False
+_SECRETS_REL = Path("secrets") / "neo-watch-webhook.env"
+_loaded_secrets_for: set[str] = set()
+
+
+def _resolve_hermes_home(home: Path | None = None) -> Path:
+    if home is not None:
+        return home.expanduser().resolve()
+    env = os.environ.get("HERMES_HOME", "").strip()
+    if env:
+        return Path(env).expanduser().resolve()
+    return Path.home() / ".hermes"
+
+
+def load_webhook_secrets_env(home: Path | None = None) -> None:
+    """Load ``secrets/neo-watch-webhook.env`` into ``os.environ`` (no override of set values)."""
+    resolved = _resolve_hermes_home(home)
+    key = str(resolved)
+    if key in _loaded_secrets_for:
+        return
+    path = resolved / _SECRETS_REL
+    if not path.is_file():
+        _loaded_secrets_for.add(key)
+        return
+    mode = path.stat().st_mode & 0o777
+    if mode != 0o600:
+        LOG.warning(
+            "Neo watch webhook secrets file %s has mode %03o (expected 0600)",
+            path,
+            mode,
+        )
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if "=" not in stripped:
+                continue
+            name, _, value = stripped.partition("=")
+            name = name.strip()
+            if not name:
+                continue
+            if os.environ.get(name, "").strip():
+                continue
+            os.environ[name] = value.strip()
+    except OSError as exc:
+        LOG.warning("Could not read Neo watch webhook secrets from %s: %s", path, exc)
+    _loaded_secrets_for.add(key)
 
 
 def _utc_now() -> datetime:
@@ -53,7 +101,8 @@ def correlation_key(fingerprint: str) -> str:
     return f"{CORRELATION_PREFIX}{fp}"
 
 
-def resolve_webhook_url() -> str | None:
+def resolve_webhook_url(*, home: Path | None = None) -> str | None:
+    load_webhook_secrets_env(home)
     for key in _URL_ENV_KEYS:
         if key not in os.environ:
             continue
@@ -62,8 +111,9 @@ def resolve_webhook_url() -> str | None:
     return DEFAULT_NEO_WEBHOOK_URL
 
 
-def resolve_bearer_token() -> tuple[str, str, str]:
+def resolve_bearer_token(*, home: Path | None = None) -> tuple[str, str, str]:
     """Return (header_name, prefix, token)."""
+    load_webhook_secrets_env(home)
     header = os.environ.get("NEO_WATCH_WEBHOOK_KEY_HEADER", "Authorization").strip() or "Authorization"
     prefix = os.environ.get("NEO_WATCH_WEBHOOK_KEY_PREFIX", "Bearer ")
     for key in _BEARER_ENV_KEYS:
@@ -73,7 +123,8 @@ def resolve_bearer_token() -> tuple[str, str, str]:
     return header, prefix, ""
 
 
-def resolve_hmac_secret() -> str:
+def resolve_hmac_secret(*, home: Path | None = None) -> str:
+    load_webhook_secrets_env(home)
     for key in _HMAC_ENV_KEYS:
         value = os.environ.get(key, "").strip()
         if value:
@@ -111,12 +162,12 @@ def _ssl_verify_context() -> ssl.SSLContext:
     return ctx
 
 
-def build_auth_headers(body_bytes: bytes) -> dict[str, str]:
-    header_name, prefix, token = resolve_bearer_token()
+def build_auth_headers(body_bytes: bytes, *, home: Path | None = None) -> dict[str, str]:
+    header_name, prefix, token = resolve_bearer_token(home=home)
     headers: dict[str, str] = {"Content-Type": "application/json"}
     if token:
         headers[header_name] = f"{prefix}{token}" if prefix else token
-    secret = resolve_hmac_secret()
+    secret = resolve_hmac_secret(home=home)
     if secret:
         digest = hmac.new(secret.encode("utf-8"), body_bytes, hashlib.sha256).hexdigest()
         headers["X-Hermes-Signature"] = f"sha256={digest}"
@@ -147,17 +198,24 @@ def build_supervisor_alert_payload(
     }
 
 
-def post_json_webhook(payload: dict[str, Any], *, dry_run: bool = False, url: str | None = None) -> bool:
+def post_json_webhook(
+    payload: dict[str, Any],
+    *,
+    dry_run: bool = False,
+    url: str | None = None,
+    home: Path | None = None,
+) -> bool:
     if dry_run:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return True
-    target = (url or resolve_webhook_url() or "").strip()
+    load_webhook_secrets_env(home)
+    target = (url or resolve_webhook_url(home=home) or "").strip()
     if not target:
         log_missing_webhook_once()
         LOG.warning("Neo webhook URL unavailable; skipping POST")
         return False
     body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    headers = build_auth_headers(body)
+    headers = build_auth_headers(body, home=home)
     request = urllib.request.Request(target, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=30, context=_ssl_verify_context()):

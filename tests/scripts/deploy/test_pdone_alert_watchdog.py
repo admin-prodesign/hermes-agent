@@ -74,6 +74,10 @@ def test_collect_failed_units(home: Path) -> None:
     assert "unit:hermes-gateway-pdone" in live
 
 
+def test_secrets_path_points_at_neo_watch_webhook_env(home: Path) -> None:
+    assert watch.secrets_path(home) == home / "secrets" / "neo-watch-webhook.env"
+
+
 def test_permission_refusal_on_world_readable_secrets(home: Path, monkeypatch) -> None:
     path = watch.secrets_path(home)
     _secrets(path, mode=0o644, NEO_WATCH_WEBHOOK_URL="https://example.invalid/hook", NEO_WATCH_WEBHOOK_KEY="sekret")
