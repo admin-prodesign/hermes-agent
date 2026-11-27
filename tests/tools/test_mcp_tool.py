@@ -1511,6 +1511,36 @@ class TestBuildSafeEnv:
         assert "DATABASE_URL" not in result
         assert "API_SECRET" not in result
 
+    def test_foreign_dbus_not_passed_to_stdio_child(self):
+        from tools.mcp_tool_config import _build_safe_env
+        from tools.environments import dbus_session_env as dbus_env
+
+        fake_env = {
+            "PATH": "/usr/bin",
+            "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/untrusted-bus",
+        }
+        with patch.dict("os.environ", fake_env, clear=True), patch.object(
+            dbus_env, "_user_bus_socket_ready", return_value=True
+        ):
+            result = _build_safe_env(None)
+        assert "DBUS_SESSION_BUS_ADDRESS" not in result
+
+    def test_canonical_user_dbus_passed_when_socket_ready(self):
+        import os
+
+        from tools.mcp_tool_config import _build_safe_env
+        from tools.environments import dbus_session_env as dbus_env
+
+        uid = os.getuid()
+        address = f"unix:path=/run/user/{uid}/bus"
+        fake_env = {"PATH": "/usr/bin", "DBUS_SESSION_BUS_ADDRESS": address}
+        with patch.dict("os.environ", fake_env, clear=True), patch.object(
+            dbus_env, "_user_bus_socket_ready", return_value=True
+        ):
+            result = _build_safe_env(None)
+        assert result["DBUS_SESSION_BUS_ADDRESS"] == address
+        assert result["XDG_RUNTIME_DIR"] == f"/run/user/{uid}"
+
     def test_windows_location_vars_passed_without_secrets(self):
         """Windows launcher tools need location vars, but secrets stay filtered."""
         from tools.mcp_tool_config import _build_safe_env

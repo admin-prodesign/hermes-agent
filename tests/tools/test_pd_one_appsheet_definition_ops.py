@@ -47,6 +47,55 @@ def _sample_app(version: str = "v1") -> dict:
     }
 
 
+def test_editor_cookie_paths_prefers_desktop_when_readable(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    desktop = tmp_path / "browser-profiles" / "pdone-desktop"
+    desktop.mkdir(parents=True)
+    desktop_cookie = desktop / "Default" / "Cookies"
+    desktop_key = desktop / "Local State"
+    desktop_cookie.parent.mkdir(parents=True)
+    desktop_cookie.write_bytes(b"sqlite")
+    desktop_key.write_bytes(b"{}")
+    desktop_cookie.chmod(0o644)
+    desktop_key.chmod(0o644)
+
+    cookie, key = ops.editor_cookie_paths()
+    assert cookie == desktop_cookie
+    assert key == desktop_key
+
+
+def test_editor_cookie_paths_falls_back_to_legacy_when_desktop_unreadable(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    profile = tmp_path / "profiles" / "pdone"
+    legacy_cookie = (
+        profile / "legacy-openclaw/browser/openclaw/user-data/Default/Cookies"
+    )
+    legacy_key = profile / "legacy-openclaw/browser/openclaw/user-data/Local State"
+    legacy_cookie.parent.mkdir(parents=True)
+    legacy_cookie.write_bytes(b"legacy")
+    legacy_key.write_bytes(b"{}")
+
+    cookie, key = ops.editor_cookie_paths()
+    assert cookie == legacy_cookie.resolve()
+    assert key == legacy_key.resolve()
+
+
+def test_load_app_401_is_clear_unauthorized():
+    import requests
+
+    class _Resp:
+        status_code = 401
+        text = "unauthorized"
+
+        def json(self):
+            return {}
+
+    client = ops.EditorClient(requests.Session(), app_id=ops.DEFAULT_APP_ID, app_name=ops.DEFAULT_APP_NAME)
+    client._session.get = lambda *a, **k: _Resp()  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="unauthorized"):
+        client.load_app("")
+
+
 def test_mcp_handlers_register_definition_tools():
     handlers = safe_ops.mcp_read_handlers()
     assert "pd_one_appsheet_definition_inspect" in handlers

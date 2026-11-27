@@ -206,6 +206,13 @@ def _build_safe_env(user_env: Optional[dict]) -> dict:
     env = {
         key: value for key, value in os.environ.items()
         if key in _SAFE_ENV_KEYS or key.upper() in _SAFE_ENV_KEYS_CASE_INSENSITIVE or key.startswith("XDG_")}
+    from tools.environments.dbus_session_env import mcp_safe_dbus_session_bus_address
+
+    dbus_address = mcp_safe_dbus_session_bus_address()
+    if dbus_address is not None:
+        env["DBUS_SESSION_BUS_ADDRESS"] = dbus_address
+        if not env.get("XDG_RUNTIME_DIR"):
+            env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
     # Source-tagged names are process-wide (any profile's hydration tags them) while os.environ
     # holds only the LAUNCH profile's values, so the value must come from the active profile's
     # secret scope; a profile that lacks the name gets nothing, never another profile's token.
