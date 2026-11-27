@@ -54,18 +54,33 @@ def _reexec_into_appsheet_venv() -> None:
     os.execv(str(APPSHEET_VENV_PY), [str(APPSHEET_VENV_PY), os.path.abspath(__file__), *sys.argv[1:]])
 
 
+def _browser_cookie_files_readable(cookie_file: Path, key_file: Path) -> bool:
+    try:
+        return os.access(cookie_file, os.R_OK) and os.access(key_file, os.R_OK)
+    except OSError:
+        return False
+
+
 def editor_cookie_paths() -> tuple[Path, Path]:
-    cookie = Path(
+    desktop_cookie = Path(
+        resolve_configured_path("~/.hermes/browser-profiles/pdone-desktop/Default/Cookies")
+    )
+    desktop_key = Path(
+        resolve_configured_path("~/.hermes/browser-profiles/pdone-desktop/Local State")
+    )
+    legacy_cookie = Path(
         resolve_configured_path(
             "~/.hermes/profiles/pdone/legacy-openclaw/browser/openclaw/user-data/Default/Cookies"
         )
     )
-    key = Path(
+    legacy_key = Path(
         resolve_configured_path(
             "~/.hermes/profiles/pdone/legacy-openclaw/browser/openclaw/user-data/Local State"
         )
     )
-    return cookie, key
+    if _browser_cookie_files_readable(desktop_cookie, desktop_key):
+        return desktop_cookie, desktop_key
+    return legacy_cookie, legacy_key
 
 
 def definitions_root(app_id: str) -> Path:
@@ -179,6 +194,9 @@ class EditorClient:
 
     @classmethod
     def from_cookie_files(cls, cookie_file: Path, key_file: Path, *, app_id: str, app_name: str) -> EditorClient:
+        from tools.environments.dbus_session_env import ensure_user_dbus_session_in_environ
+
+        ensure_user_dbus_session_in_environ()
         import browser_cookie3
         import requests
 
@@ -197,6 +215,12 @@ class EditorClient:
             f"?version={version}&checkConsistency=true&useUpdatedWarningText=false"
         )
         response = self._session.get(url, timeout=600, headers={"Accept": "application/json"})
+        if response.status_code == 401:
+            raise RuntimeError(
+                "AppSheet editor session is unauthorized (HTTP 401). "
+                "Sign in to the AppSheet editor in the desktop Chrome profile "
+                "(~/.hermes/browser-profiles/pdone-desktop) and retry."
+            )
         response.raise_for_status()
         payload = response.json()
         return payload, parse_app(payload)
